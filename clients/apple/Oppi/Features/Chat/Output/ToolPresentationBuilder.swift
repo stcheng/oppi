@@ -491,6 +491,8 @@ enum ToolPresentationBuilder {
         switch metadata.fileType {
         case .markdown:
             return .markdown(text: text)
+        case .orgMode:
+            return .markdown(text: orgToMarkdown(text))
         case .image, .audio, .video:
             return .readMedia(
                 output: text,
@@ -498,7 +500,7 @@ enum ToolPresentationBuilder {
                 startLine: startLine
             )
         case .html, .plain, .code, .json, .pdf, .binary,
-             .latex, .orgMode, .mermaid, .graphviz, .none:
+             .latex, .mermaid, .graphviz, .none:
             return .code(
                 text: text,
                 language: metadata.language,
@@ -518,6 +520,8 @@ enum ToolPresentationBuilder {
             // Incremental markdown pipeline (tail-only CommonMark parse)
             // handles streaming efficiently. Previously downgraded to .text.
             return .markdown(text: text)
+        case .orgMode:
+            return .markdown(text: orgToMarkdown(text))
         case .image, .audio, .video:
             return .readMedia(
                 output: text,
@@ -525,7 +529,7 @@ enum ToolPresentationBuilder {
                 startLine: startLine
             )
         case .html, .plain, .code, .json, .pdf, .binary,
-             .latex, .orgMode, .mermaid, .graphviz, .none:
+             .latex, .mermaid, .graphviz, .none:
             return .code(
                 text: text,
                 language: metadata.language,
@@ -653,6 +657,16 @@ enum ToolPresentationBuilder {
         }
 
         return candidate
+    }
+
+    /// Convert org mode source text to markdown for the `.markdown` render pipeline.
+    /// Uses the same OrgParser → OrgToMarkdownConverter → MarkdownBlockSerializer
+    /// chain as OrgModeFileView.
+    private static func orgToMarkdown(_ orgText: String) -> String {
+        let parser = OrgParser()
+        let orgBlocks = parser.parse(orgText)
+        let mdBlocks = OrgToMarkdownConverter.convert(orgBlocks)
+        return MarkdownBlockSerializer.serialize(mdBlocks)
     }
 
     // periphery:ignore - used by ToolPresentationBuilderTests via @testable import
