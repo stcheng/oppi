@@ -3,18 +3,27 @@ import SwiftUI
 // MARK: - Org Section Tree
 
 /// A section in the org document tree.
-struct OrgSection: Identifiable {
+struct OrgSection: Identifiable, Sendable {
     let id = UUID()
     let level: Int
     let heading: OrgBlock?
     let bodyBlocks: [OrgBlock]
     let children: [OrgSection]
+    /// Pre-computed body groups for rendering. Computed once during tree build
+    /// so the SwiftUI body evaluation does zero markdown conversion.
+    let precomputedBodyGroups: [OrgBodyGroup]
 
     var hasContent: Bool { !bodyBlocks.isEmpty || !children.isEmpty }
 }
 
+/// A body group — either a drawer (rendered natively) or pre-serialized markdown text.
+enum OrgBodyGroup: Sendable {
+    case drawer(name: String, properties: [OrgDrawerProperty])
+    case markdown(String)
+}
+
 /// Initial fold state from `#+STARTUP:`.
-enum OrgFoldState {
+enum OrgFoldState: Sendable {
     case overview  // only level-1 headings
     case content   // all headings, body hidden initially
     case showAll   // everything expanded
@@ -45,11 +54,39 @@ func buildOrgSectionTree(_ blocks: [OrgBlock]) -> (sections: [OrgSection], foldS
         cursor += 1
     }
     if !zerothBody.isEmpty {
-        sections.append(OrgSection(level: 0, heading: nil, bodyBlocks: zerothBody, children: []))
+        sections.append(OrgSection(level: 0, heading: nil, bodyBlocks: zerothBody, children: [], precomputedBodyGroups: computeBodyGroups(zerothBody)))
     }
 
     sections.append(contentsOf: parseHeadingSections(blocks: blocks, cursor: &cursor, parentLevel: 0))
     return (sections, foldState)
+}
+
+/// Pre-compute body groups: split on drawers, convert non-drawer blocks to markdown text.
+/// Called during tree build (off main thread via Task.detached).
+private func computeBodyGroups(_ blocks: [OrgBlock]) -> [OrgBodyGroup] {
+    var groups: [OrgBodyGroup] = []
+    var pending: [OrgBlock] = []
+
+    func flushPending() {
+        guard !pending.isEmpty else { return }
+        let md = OrgToMarkdownConverter.serializeDirectly(pending)
+        let trimmed = md.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmed.isEmpty {
+            groups.append(.markdown(trimmed))
+        }
+        pending = []
+    }
+
+    for block in blocks {
+        if case .drawer(let name, let props) = block {
+            flushPending()
+            groups.append(.drawer(name: name, properties: props))
+        } else {
+            pending.append(block)
+        }
+    }
+    flushPending()
+    return groups
 }
 
 private func parseHeadingSections(blocks: [OrgBlock], cursor: inout Int, parentLevel: Int) -> [OrgSection] {
@@ -69,7 +106,7 @@ private func parseHeadingSections(blocks: [OrgBlock], cursor: inout Int, parentL
         }
 
         let children = parseHeadingSections(blocks: blocks, cursor: &cursor, parentLevel: level)
-        sections.append(OrgSection(level: level, heading: heading, bodyBlocks: body, children: children))
+        sections.append(OrgSection(level: level, heading: heading, bodyBlocks: body, children: children, precomputedBodyGroups: computeBodyGroups(body)))
     }
 
     return sections
@@ -141,13 +178,14 @@ private struct OrgSectionView: View {
                 }
             }
         } label: {
-            // Render the entire heading (including fold indicator) as one markdown
-            // block through the markdown pipeline. This guarantees the chevron
-            // aligns with the text since it's part of the same text flow.
-            MarkdownContentViewWrapper(
-                content: headingMarkdown,
-                textSelectionEnabled: false,
-                plainTextFallbackThreshold: nil
+            // Native SwiftUI text rendering — avoids MarkdownContentViewWrapper
+            // roundtrip (org → markdown string → CommonMark parse → UIKit view).
+            // Eliminates one UIKit view creation + Auto Layout per heading.
+            OrgNativeHeadingView(
+                heading: section.heading ?? .comment(""),
+                level: section.level,
+                hasContent: section.hasContent,
+                isExpanded: isExpanded
             )
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
@@ -155,42 +193,12 @@ private struct OrgSectionView: View {
         .buttonStyle(.plain)
     }
 
-    private var headingMarkdown: String {
-        guard case .heading(let level, let keyword, _, let title, let tags) = section.heading else {
-            return ""
-        }
-        var inlines = [MarkdownInline]()
-
-        // Level-specific bullets — filled = expanded, outline = collapsed.
-        // Small geometric shapes that don't overpower the heading text.
-        let expandedBullets = ["◈", "•", "‣", "◦", "·", "·"]
-        let collapsedBullets = ["◇", "◦", "▹", "·", "·", "·"]
-        let idx = min(level - 1, expandedBullets.count - 1)
-        let bullet = (section.hasContent && !isExpanded)
-            ? collapsedBullets[idx]
-            : expandedBullets[idx]
-        inlines.append(.text("\(bullet) "))
-
-        if let kw = keyword {
-            inlines.append(.strong([.text(kw)]))
-            inlines.append(.text(" "))
-        }
-        inlines.append(contentsOf: title.map { OrgToMarkdownConverter.convertSingleInline($0) })
-        if !tags.isEmpty {
-            inlines.append(.text("  "))
-            inlines.append(.code(":" + tags.joined(separator: ":") + ":"))
-        }
-        let mdBlocks: [MarkdownBlock] = [.heading(level: min(level, 6), inlines: inlines)]
-        return MarkdownBlockSerializer.serialize(mdBlocks)
-    }
-
     // MARK: - Body + children
 
     @ViewBuilder
     private var sectionBody: some View {
-        // Split body blocks: drawers get special UI, everything else goes through markdown.
-        let groups = groupBodyBlocks(section.bodyBlocks)
-        ForEach(Array(groups.enumerated()), id: \.offset) { _, group in
+        // Use pre-computed body groups — conversion done during tree build (off main thread).
+        ForEach(Array(section.precomputedBodyGroups.enumerated()), id: \.offset) { _, group in
             switch group {
             case .drawer(let name, let properties):
                 OrgDrawerView(name: name, properties: properties)
@@ -210,38 +218,125 @@ private struct OrgSectionView: View {
             OrgSectionView(section: child, initialFoldState: initialFoldState, depth: depth + 1)
         }
     }
+}
 
-    private enum BodyGroup {
-        case drawer(name: String, properties: [OrgDrawerProperty])
-        case markdown(String)
+// MARK: - Native Heading View
+
+/// Renders an org heading directly as SwiftUI Text — no MarkdownContentViewWrapper.
+/// Matches the visual style of markdown headings (font sizes, bold, colors)
+/// while avoiding the org → markdown → CommonMark → UIKit roundtrip.
+private struct OrgNativeHeadingView: View {
+    let heading: OrgBlock
+    let level: Int
+    let hasContent: Bool
+    let isExpanded: Bool
+
+    // Heading font sizes matching markdown pipeline (H1=24, H2=20, H3=17, H4+=15)
+    private var fontSize: CGFloat {
+        switch level {
+        case 1: return 24
+        case 2: return 20
+        case 3: return 17
+        default: return 15
+        }
     }
 
-    private func groupBodyBlocks(_ blocks: [OrgBlock]) -> [BodyGroup] {
-        var groups: [BodyGroup] = []
-        var pending: [OrgBlock] = []
-
-        func flushPending() {
-            guard !pending.isEmpty else { return }
-            let mdBlocks = OrgToMarkdownConverter.convert(pending)
-            let md = MarkdownBlockSerializer.serialize(mdBlocks)
-            let trimmed = md.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !trimmed.isEmpty {
-                groups.append(.markdown(trimmed))
-            }
-            pending = []
+    // Paragraph spacing before heading (matching MarkdownContentViewWrapper)
+    private var topPadding: CGFloat {
+        switch level {
+        case 1: return 20
+        case 2: return 16
+        case 3: return 12
+        default: return 8
         }
-
-        for block in blocks {
-            if case .drawer(let name, let props) = block {
-                flushPending()
-                groups.append(.drawer(name: name, properties: props))
-            } else {
-                pending.append(block)
-            }
-        }
-        flushPending()
-        return groups
     }
+
+    private var bullet: String {
+        let expandedBullets = ["◈", "•", "‣", "◦", "·", "·"]
+        let collapsedBullets = ["◇", "◦", "▹", "·", "·", "·"]
+        let idx = min(level - 1, expandedBullets.count - 1)
+        return (hasContent && !isExpanded) ? collapsedBullets[idx] : expandedBullets[idx]
+    }
+
+    var body: some View {
+        guard case .heading(_, let keyword, _, let title, let tags) = heading else {
+            return Text("").eraseToAnyView()
+        }
+
+        return buildHeadingText(keyword: keyword, title: title, tags: tags)
+            .padding(.top, topPadding)
+            .eraseToAnyView()
+    }
+
+    // swiftlint:disable shorthand_operator
+    private func buildHeadingText(keyword: String?, title: [OrgInline], tags: [String]) -> Text {
+        var text = Text("\(bullet) ")
+            .font(.system(size: fontSize, weight: .bold))
+            .foregroundStyle(Color.themeMdHeading)
+
+        if let kw = keyword {
+            text = text + Text("\(kw) ")
+                .font(.system(size: fontSize, weight: .heavy))
+                .foregroundStyle(kw == "DONE" ? Color.themeGreen : Color.themeOrange)
+        }
+
+        for inline in title {
+            text = text + renderInline(inline, baseSize: fontSize)
+        }
+
+        if !tags.isEmpty {
+            text = text + Text("  ")
+            text = text + Text(":" + tags.joined(separator: ":") + ":")
+                .font(.system(size: max(fontSize - 4, 11), design: .monospaced))
+                .foregroundStyle(Color.themeComment)
+        }
+
+        return text
+    }
+    // swiftlint:enable shorthand_operator
+
+    private func renderInline(_ inline: OrgInline, baseSize: CGFloat) -> Text {
+        switch inline {
+        case .text(let str):
+            return Text(str)
+                .font(.system(size: baseSize, weight: .bold))
+                .foregroundStyle(Color.themeMdHeading)
+        case .bold(let children):
+            return children.reduce(Text("")) { $0 + renderInline($1, baseSize: baseSize) }
+        case .italic(let children):
+            let inner = children.reduce(Text("")) { $0 + renderInline($1, baseSize: baseSize) }
+            return inner.italic()
+        case .code(let str), .verbatim(let str):
+            return Text(str)
+                .font(.system(size: max(baseSize - 2, 11), design: .monospaced))
+                .foregroundStyle(Color.themeFg)
+        case .underline(let children):
+            let inner = children.reduce(Text("")) { $0 + renderInline($1, baseSize: baseSize) }
+            return inner.underline()
+        case .strikethrough(let children):
+            let inner = children.reduce(Text("")) { $0 + renderInline($1, baseSize: baseSize) }
+            return inner.strikethrough()
+        case .link(_, let description):
+            let label = description?.map { inlineToString($0) }.joined() ?? "link"
+            return Text(label)
+                .font(.system(size: baseSize, weight: .bold))
+                .foregroundStyle(Color.themeBlue)
+        }
+    }
+
+    private func inlineToString(_ inline: OrgInline) -> String {
+        switch inline {
+        case .text(let s): return s
+        case .bold(let c), .italic(let c), .underline(let c), .strikethrough(let c):
+            return c.map { inlineToString($0) }.joined()
+        case .code(let s), .verbatim(let s): return s
+        case .link(let url, let desc): return desc?.map { inlineToString($0) }.joined() ?? url
+        }
+    }
+}
+
+private extension View {
+    func eraseToAnyView() -> AnyView { AnyView(self) }
 }
 
 // MARK: - Collapsible Drawer View

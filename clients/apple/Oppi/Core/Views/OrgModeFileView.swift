@@ -7,6 +7,10 @@ import SwiftUI
 /// `MarkdownContentViewWrapper` / `AssistantMarkdownContentView` stack used for
 /// `.md` files. This gives org mode identical fonts, colors, code blocks, and
 /// spacing as markdown — no separate renderer needed.
+///
+/// Performance: section tree is parsed once in `.task(id:)` and cached in `@State`.
+/// This avoids re-parsing on every body evaluation (state changes, environment updates)
+/// and stabilizes `OrgSection.id` UUIDs for scroll position preservation.
 struct OrgModeFileView: View {
     let content: String
     let filePath: String?
@@ -16,6 +20,9 @@ struct OrgModeFileView: View {
     @Environment(\.selectedTextPiActionRouter) private var piRouter
     @State private var showRaw = false
     @State private var showFullScreen = false
+
+    /// Cached section tree — parsed once, stable UUIDs across body re-evaluations.
+    @State private var cachedTree: (sections: [OrgSection], foldState: OrgFoldState)?
 
     private var lineCount: Int {
         content.split(separator: "\n", omittingEmptySubsequences: false).count
@@ -29,13 +36,6 @@ struct OrgModeFileView: View {
         return MarkdownBlockSerializer.serialize(mdBlocks)
     }
 
-    /// Parse org content into a foldable section tree.
-    private var orgSections: (sections: [OrgSection], foldState: OrgFoldState) {
-        let parser = OrgParser()
-        let orgBlocks = parser.parse(content)
-        return buildOrgSectionTree(orgBlocks)
-    }
-
     var body: some View {
         Group {
             if presentation.usesInlineChrome {
@@ -43,6 +43,16 @@ struct OrgModeFileView: View {
             } else {
                 documentBody
             }
+        }
+        .task(id: content) {
+            // Parse off the caller's context. OrgParser is Sendable + nonisolated,
+            // so the heavy work runs without blocking the main thread.
+            let tree = await Task.detached {
+                let parser = OrgParser()
+                let blocks = parser.parse(content)
+                return buildOrgSectionTree(blocks)
+            }.value
+            cachedTree = tree
         }
         .sheet(isPresented: $showFullScreen) {
             FullScreenCodeView(
@@ -111,8 +121,7 @@ struct OrgModeFileView: View {
                             .font(.appCaptionMono)
                             .foregroundStyle(.themeFg)
                             .applyInlineTextSelectionPolicy(inlineSelectionEnabled)
-                    } else {
-                        let tree = orgSections
+                    } else if let tree = cachedTree {
                         OrgFoldableContentView(
                             sections: tree.sections,
                             initialFoldState: tree.foldState
@@ -150,9 +159,8 @@ struct OrgModeFileView: View {
                         ? fileContentSourceContext(filePath: filePath, language: SyntaxLanguage.orgMode.displayName)
                         : nil
                 )
-            } else {
+            } else if let tree = cachedTree {
                 ScrollView(.vertical) {
-                    let tree = orgSections
                     OrgFoldableContentView(
                         sections: tree.sections,
                         initialFoldState: tree.foldState
