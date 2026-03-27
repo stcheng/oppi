@@ -1,4 +1,5 @@
 import AVKit
+import Network
 import PDFKit
 import SwiftUI
 
@@ -12,14 +13,20 @@ import SwiftUI
 /// - Video/Audio: native AVPlayer with playback controls
 /// - PDF: PDFKit with scroll, zoom, and text selection
 /// - Plain text: monospaced with line numbers
+///
+/// Large text files (>1MB) show a size warning before loading.
+/// On cellular networks, an additional data warning is displayed.
 struct FileBrowserContentView: View {
     let workspaceId: String
     let filePath: String
     let fileName: String
+    /// Known file size from directory listing. Nil when opened from search results.
+    var fileSize: Int?
 
     @Environment(\.apiClient) private var apiClient
     @Environment(AppNavigation.self) private var navigation
     @State private var content: FileContentPhase = .loading
+    @State private var isExpensiveNetwork = false
 
     private var fileExtension: String {
         fileName.split(separator: ".").last.map(String.init)?.lowercased() ?? ""
@@ -56,6 +63,8 @@ struct FileBrowserContentView: View {
             case .loading:
                 ProgressView()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+            case .sizeWarning(let bytes):
+                fileSizeWarningView(bytes: bytes)
             case .error(let message):
                 ContentUnavailableView(
                     "Unable to Load",
@@ -90,6 +99,58 @@ struct FileBrowserContentView: View {
         .navigationTitle(fileName)
         .navigationBarTitleDisplayMode(.inline)
         .task { await loadContent() }
+        .task { await checkNetworkCost() }
+    }
+
+    // MARK: - Size Warning
+
+    /// Threshold for showing a file size warning (1 MB).
+    private static let sizeWarningThreshold = 1_024 * 1_024
+
+    @ViewBuilder
+    private func fileSizeWarningView(bytes: Int) -> some View {
+        VStack(spacing: 16) {
+            Spacer()
+
+            Image(systemName: "doc.text")
+                .font(.system(size: 48))
+                .foregroundStyle(.themeComment)
+
+            Text(fileName)
+                .font(.headline)
+                .foregroundStyle(.themeFg)
+
+            Text(SessionFormatting.byteCount(bytes))
+                .font(.subheadline.monospacedDigit())
+                .foregroundStyle(.themeComment)
+
+            VStack(spacing: 8) {
+                Label("Large file — loading may be slow", systemImage: "exclamationmark.triangle")
+                    .font(.callout)
+                    .foregroundStyle(.themeYellow)
+
+                if isExpensiveNetwork {
+                    Label("You're on a cellular connection", systemImage: "antenna.radiowaves.left.and.right")
+                        .font(.callout)
+                        .foregroundStyle(.themeOrange)
+                }
+            }
+            .padding(.top, 4)
+
+            Button {
+                Task { await loadContent(force: true) }
+            } label: {
+                Text("Load File")
+                    .font(.body.weight(.medium))
+                    .frame(maxWidth: 200)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(.themeSyntaxKeyword)
+            .padding(.top, 8)
+
+            Spacer()
+        }
+        .frame(maxWidth: .infinity)
     }
 
     // MARK: - Image View
@@ -114,11 +175,22 @@ struct FileBrowserContentView: View {
 
     // MARK: - Loading
 
-    private func loadContent() async {
+    private func loadContent(force: Bool = false) async {
         guard let api = apiClient else {
             content = .error("Not connected")
             return
         }
+
+        // For text files with known size above threshold, show a warning first.
+        if !force, mediaCategory == .text,
+           let size = fileSize, size > Self.sizeWarningThreshold
+        {
+            content = .sizeWarning(size)
+            return
+        }
+
+        content = .loading
+
         do {
             let category = mediaCategory
 
@@ -145,6 +217,21 @@ struct FileBrowserContentView: View {
         } catch {
             content = .error(error.localizedDescription)
         }
+    }
+
+    // MARK: - Network
+
+    /// One-shot check for expensive network (cellular, hotspot).
+    private func checkNetworkCost() async {
+        let expensive = await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
+            let monitor = NWPathMonitor()
+            monitor.pathUpdateHandler = { path in
+                monitor.cancel()
+                continuation.resume(returning: path.isExpensive)
+            }
+            monitor.start(queue: DispatchQueue(label: "com.oppi.file-browser-net-check"))
+        }
+        isExpensiveNetwork = expensive
     }
 }
 
@@ -330,6 +417,7 @@ private enum MediaCategory {
 
 private enum FileContentPhase: Equatable {
     case loading
+    case sizeWarning(Int)
     case error(String)
     case text(String)
     case image(Data)
@@ -341,6 +429,7 @@ private enum FileContentPhase: Equatable {
     static func == (lhs: Self, rhs: Self) -> Bool {
         switch (lhs, rhs) {
         case (.loading, .loading): true
+        case (.sizeWarning(let a), .sizeWarning(let b)): a == b
         case (.error(let a), .error(let b)): a == b
         case (.text(let a), .text(let b)): a == b
         case (.image(let a), .image(let b)): a == b

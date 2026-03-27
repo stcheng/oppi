@@ -18,7 +18,7 @@ import type { RouteContext, RouteDispatcher, RouteHelpers } from "./types.js";
 const execFileAsync = promisify(execFile);
 
 const MAX_IMAGE_FILE_SIZE = 50 * 1024 * 1024; // 50 MB
-const MAX_TEXT_FILE_SIZE = 1 * 1024 * 1024; // 1 MB (browse mode)
+const MAX_TEXT_FILE_SIZE = 10 * 1024 * 1024; // 10 MB (browse mode)
 const MAX_DIR_ENTRIES = 1000;
 const MAX_SEARCH_RESULTS = 100;
 const GIT_TIMEOUT_MS = 5000;

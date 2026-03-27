@@ -160,7 +160,7 @@ struct FileBrowserView: View {
         } else {
             NavigationLink {
                 let filePath = entry.path ?? (parentPath.isEmpty ? entry.name : "\(parentPath)\(entry.name)")
-                FileBrowserContentView(workspaceId: workspaceId, filePath: filePath, fileName: entry.name)
+                FileBrowserContentView(workspaceId: workspaceId, filePath: filePath, fileName: entry.name, fileSize: entry.size)
             } label: {
                 Label {
                     VStack(alignment: .leading, spacing: 2) {
