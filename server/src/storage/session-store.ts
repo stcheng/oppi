@@ -8,11 +8,59 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+/** Backfill cache token fields for sessions persisted before cacheRead/cacheWrite existed. */
+function backfillTokens(session: Session): void {
+  if (session.tokens && !("cacheRead" in session.tokens)) {
+    (session.tokens as Record<string, number>).cacheRead = 0;
+    (session.tokens as Record<string, number>).cacheWrite = 0;
+  }
+}
+
 export class SessionStore {
+  /** In-memory session cache. Populated lazily on first read, updated on every write. */
+  private cache: Map<string, Session> | null = null;
+
   constructor(private readonly configStore: ConfigStore) {}
 
   private getSessionPath(sessionId: string): string {
     return join(this.configStore.getSessionsDir(), `${sessionId}.json`);
+  }
+
+  /** Populate the cache from disk. Called once on first access. */
+  private ensureCache(): Map<string, Session> {
+    if (this.cache) return this.cache;
+
+    this.cache = new Map();
+    const baseDir = this.configStore.getSessionsDir();
+    if (!existsSync(baseDir)) return this.cache;
+
+    for (const file of readdirSync(baseDir)) {
+      // Only load <sessionId>.json — skip auxiliary files like *.annotations.json
+      if (!file.endsWith(".json")) continue;
+      if (file.indexOf(".") !== file.length - 5) continue;
+
+      const path = join(baseDir, file);
+      try {
+        const raw = JSON.parse(readFileSync(path, "utf-8")) as unknown;
+        if (!isRecord(raw)) {
+          console.error(`[storage] Corrupt session file ${path}, skipping`);
+          continue;
+        }
+
+        const session = raw.session as Session | undefined;
+        if (!session) {
+          console.error(`[storage] Corrupt session file ${path}, skipping`);
+          continue;
+        }
+
+        backfillTokens(session);
+        this.cache.set(session.id, session);
+      } catch {
+        console.error(`[storage] Corrupt session file ${path}, skipping`);
+      }
+    }
+
+    return this.cache;
   }
 
   createSession(name?: string, model?: string): Session {
@@ -44,9 +92,17 @@ export class SessionStore {
 
     const payload = JSON.stringify({ session }, null, 2);
     writeFileSync(path, payload, { mode: 0o600 });
+
+    // Update in-memory cache
+    this.ensureCache().set(session.id, session);
   }
 
   getSession(sessionId: string): Session | undefined {
+    const cache = this.ensureCache();
+    const cached = cache.get(sessionId);
+    if (cached) return cached;
+
+    // Fallback: file may have been written externally (unlikely but safe)
     const path = this.getSessionPath(sessionId);
     if (!existsSync(path)) return undefined;
 
@@ -54,13 +110,9 @@ export class SessionStore {
       const raw = JSON.parse(readFileSync(path, "utf-8")) as unknown;
       if (!isRecord(raw)) return undefined;
       const session = raw.session as Session | undefined;
-      // Backfill cache token fields for sessions persisted before cacheRead/cacheWrite existed.
-      // Type says they exist but on-disk data may lack them — intentional `as` cast for migration.
-      if (session?.tokens && !("cacheRead" in session.tokens)) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const t = session.tokens as any;
-        session.tokens = { input: t.input, output: t.output, cacheRead: 0, cacheWrite: 0 };
-      }
+      if (!session) return undefined;
+      backfillTokens(session);
+      cache.set(session.id, session);
       return session;
     } catch {
       return undefined;
@@ -68,42 +120,8 @@ export class SessionStore {
   }
 
   listSessions(): Session[] {
-    const baseDir = this.configStore.getSessionsDir();
-    if (!existsSync(baseDir)) return [];
-
-    const sessions: Session[] = [];
-
-    for (const file of readdirSync(baseDir)) {
-      // Only load <sessionId>.json — skip auxiliary files like *.annotations.json
-      if (!file.endsWith(".json")) continue;
-      if (file.indexOf(".") !== file.length - 5) continue;
-
-      const path = join(baseDir, file);
-      try {
-        const raw = JSON.parse(readFileSync(path, "utf-8")) as unknown;
-        if (!isRecord(raw)) {
-          console.error(`[storage] Corrupt session file ${path}, skipping`);
-          continue;
-        }
-
-        const session = raw.session as Session | undefined;
-        if (!session) {
-          console.error(`[storage] Corrupt session file ${path}, skipping`);
-          continue;
-        }
-
-        // Backfill cache token fields for sessions created before cache tracking
-        if (session.tokens && !("cacheRead" in session.tokens)) {
-          (session.tokens as Record<string, number>).cacheRead = 0;
-          (session.tokens as Record<string, number>).cacheWrite = 0;
-        }
-
-        sessions.push(session);
-      } catch {
-        console.error(`[storage] Corrupt session file ${path}, skipping`);
-      }
-    }
-
+    const cache = this.ensureCache();
+    const sessions = Array.from(cache.values());
     // Sort by last activity (most recent first)
     return sessions.sort((a, b) => b.lastActivity - a.lastActivity);
   }
@@ -113,6 +131,7 @@ export class SessionStore {
     if (!existsSync(path)) return false;
 
     rmSync(path);
+    this.ensureCache().delete(sessionId);
     return true;
   }
 }

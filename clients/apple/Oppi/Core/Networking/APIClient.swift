@@ -127,16 +127,9 @@ actor APIClient {
     /// List all sessions for the authenticated user by aggregating
     /// workspace-scoped session lists.
     func listSessions() async throws -> [Session] {
-        let workspaces = try await listWorkspaces()
-        var sessions: [Session] = []
-        sessions.reserveCapacity(workspaces.count * 2)
-
-        for workspace in workspaces {
-            let workspaceSessions = try await listWorkspaceSessions(workspaceId: workspace.id)
-            sessions.append(contentsOf: workspaceSessions)
-        }
-
-        return sessions.sorted { $0.lastActivity > $1.lastActivity }
+        let data = try await get("/sessions")
+        struct Response: Decodable { let sessions: [Session] }
+        return try JSONDecoder().decode(Response.self, from: data).sessions
     }
 
     // periphery:ignore - used by APIClientTests via @testable import

@@ -44,6 +44,13 @@ const LOCAL_SESSION_META_READ_BYTES = 16_384;
 const MAX_SESSION_FILE_BYTES = 10 * 1024 * 1024;
 
 export function createSessionRoutes(ctx: RouteContext, helpers: RouteHelpers): RouteDispatcher {
+  /** Bulk list: all sessions across all workspaces in one response. */
+  function handleListAllSessions(res: ServerResponse): void {
+    const sessions = ctx.storage.listSessions().map((s) => ctx.ensureSessionContextWindow(s));
+
+    helpers.json(res, { sessions });
+  }
+
   function handleListWorkspaceSessions(workspaceId: string, res: ServerResponse): void {
     const workspace = ctx.storage.getWorkspace(workspaceId);
     if (!workspace) {
@@ -938,6 +945,12 @@ export function createSessionRoutes(ctx: RouteContext, helpers: RouteHelpers): R
   }
 
   return async ({ method, path, url, req, res }) => {
+    // ── Bulk session list (all workspaces) ──
+    if (path === "/sessions" && method === "GET") {
+      handleListAllSessions(res);
+      return true;
+    }
+
     // ── Workspace-scoped session routes (v2 API) ──
 
     const wsSessionsMatch = path.match(/^\/workspaces\/([^/]+)\/sessions$/);

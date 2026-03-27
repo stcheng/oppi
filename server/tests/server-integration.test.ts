@@ -1169,9 +1169,12 @@ describe("error handling", () => {
     expect(res.status).toBe(404);
   });
 
-  it("returns 404 for top-level /sessions (must be workspace-scoped)", async () => {
+  it("returns all sessions via bulk GET /sessions", async () => {
     const res = await get("/sessions");
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.sessions).toBeDefined();
+    expect(Array.isArray(body.sessions)).toBe(true);
   });
 
   it("returns 404 for nonexistent workspace", async () => {
