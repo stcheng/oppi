@@ -1,4 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { resolve, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { DefaultResourceLoader, SettingsManager, getAgentDir } from "@mariozechner/pi-coding-agent";
 
@@ -116,7 +118,23 @@ export function createWorkspaceRoutes(ctx: RouteContext, helpers: RouteHelpers):
       noThemes: true,
     });
     await loader.reload();
-    return loader.getSystemPrompt() ?? "";
+
+    // If a custom SYSTEM.md exists, return that.
+    const custom = loader.getSystemPrompt();
+    if (custom) return custom;
+
+    // Otherwise, generate the built-in Pi base system prompt.
+    // buildSystemPrompt isn't in the package's exports map, so import via
+    // file URL to bypass Node's package-exports resolution.
+    const thisDir = dirname(fileURLToPath(import.meta.url));
+    const modFile = resolve(
+      thisDir,
+      "../../node_modules/@mariozechner/pi-coding-agent/dist/core/system-prompt.js",
+    );
+    const { buildSystemPrompt } = (await import(`file://${modFile}`)) as {
+      buildSystemPrompt: (opts?: { cwd?: string }) => string;
+    };
+    return buildSystemPrompt({ cwd });
   }
 
   async function handleListLocalSessions(res: ServerResponse): Promise<void> {
