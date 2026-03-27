@@ -74,9 +74,41 @@ Stop a running child session. Only works on sessions in the caller's spawn tree 
 
 ## Spawn tree
 
-Sessions form a tree: each child tracks its `parentSessionId`. The tree has a max depth of 1 — children cannot spawn their own children (use `detached: true` for independent sessions that need spawn capability).
+Sessions form a tree: each child tracks its `parentSessionId`. The tree has a configurable max depth (default: 1 — children cannot spawn their own children). Set `subagents.maxDepth` to allow deeper trees, or use `detached: true` for independent sessions that bypass the tree entirely with full spawn capability.
 
 The iOS app renders the spawn tree with a collapsible status bar showing each child's state, cost, and duration. The parent session's cost aggregates the full tree.
+
+## Visibility model
+
+A parent waiting on a child (via `wait=true`) receives aggregate progress updates — status, message count, cost, and elapsed time. It does **not** receive individual tool calls, streaming text, or tool output from the child. This is intentional: the parent's context window is expensive, and flooding it with every `bash` and `read` from a child would be wasteful.
+
+Progress updates are event-driven, not polled. The server's internal subscribe mechanism delivers `state` messages at turn-level boundaries (agent start, agent end, message end, tool start). A 30-second fallback poll exists as a safety net but is not the primary mechanism.
+
+To inspect a child's detailed execution, use `inspect_agent` after the fact — it reads the child's JSONL trace file and provides progressive disclosure from overview down to individual tool output.
+
+## Lifecycle configuration
+
+All subagent lifecycle behavior is configurable via `config.subagents`:
+
+```json
+{
+  "subagents": {
+    "maxDepth": 1,
+    "autoStopWhenDone": true,
+    "startupGraceMs": 60000,
+    "defaultWaitTimeoutMs": 1800000
+  }
+}
+```
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `maxDepth` | `1` | How many levels deep agents can spawn. `1` = parent-child only. `2` = allows grandchildren. `0` = spawning disabled. |
+| `autoStopWhenDone` | `true` | Whether children automatically stop after completing their work. When `false`, children stay alive for follow-up messages via `send_message`. |
+| `startupGraceMs` | `60000` | How long (ms) to wait for a child to start producing output before killing it. Covers VM boot, model loading, and first LLM response. Increase for sandbox environments with slow startup. |
+| `defaultWaitTimeoutMs` | `1800000` | Default timeout (ms) for `spawn_agent(wait=true)` when the caller doesn't specify `timeout_seconds`. |
+
+Set via CLI: `oppi config set subagents '{"maxDepth": 2, "autoStopWhenDone": false}'`. Partial updates merge with defaults.
 
 ## Git safety
 
