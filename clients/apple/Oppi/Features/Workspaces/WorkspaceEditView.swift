@@ -49,6 +49,27 @@ struct WorkspaceEditView: View {
         skills.filter { !selectedSkills.contains($0.name) }
     }
 
+    private var filteredModels: [ModelInfo] {
+        Self.filterModels(availableModels, query: defaultModel)
+    }
+
+    /// Filter and rank models by fuzzy-matching `query` against name and ID.
+    /// Returns all models when the query is empty or exactly matches a model ID.
+    nonisolated static func filterModels(_ models: [ModelInfo], query: String) -> [ModelInfo] {
+        if query.isEmpty { return models }
+        if models.contains(where: { $0.id == query }) { return models }
+
+        let scored: [(model: ModelInfo, score: Int)] = models.compactMap { model in
+            let nameScore = FuzzyMatch.match(query: query, candidate: model.name)?.score
+            let idScore = FuzzyMatch.match(query: query, candidate: model.id)?.score
+            guard let best = [nameScore, idScore].compactMap({ $0 }).max() else {
+                return nil
+            }
+            return (model, best)
+        }
+        return scored.sorted { $0.score > $1.score }.map(\.model)
+    }
+
     private var workspaceForEditing: Workspace {
         guard let activeServerId,
               let scoped = workspaceStore.workspacesByServer[activeServerId]?
@@ -278,7 +299,7 @@ struct WorkspaceEditView: View {
                     .autocorrectionDisabled()
                     .textInputAutocapitalization(.never)
 
-                ForEach(availableModels) { model in
+                ForEach(filteredModels) { model in
                     Button {
                         defaultModel = model.id
                     } label: {

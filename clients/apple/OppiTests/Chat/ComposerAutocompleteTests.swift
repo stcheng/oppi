@@ -60,6 +60,58 @@ struct ComposerAutocompleteTests {
         #expect(ComposerAutocomplete.context(for: "@src/chat ") == .none)
     }
 
+    // MARK: - Fuzzy Match
+
+    @Test func fuzzyMatchFindsNonContiguousMatches() {
+        let commands = makeSlashCommands([
+            ("compact", "Compact context", "prompt"),
+            ("copy", "Copy message", "prompt"),
+        ])
+        let suggestions = ComposerAutocomplete.slashSuggestions(query: "cmpct", commands: commands)
+        #expect(suggestions.map(\.name) == ["compact"])
+    }
+
+    @Test func fuzzyMatchRanksContiguousPrefixHigher() {
+        let commands = makeSlashCommands([
+            ("disco", "Discover something", "prompt"),
+            ("compact", "Compact context", "prompt"),
+            ("copy", "Copy message", "prompt"),
+        ])
+        let suggestions = ComposerAutocomplete.slashSuggestions(query: "co", commands: commands)
+        #expect(suggestions.count == 3)
+        #expect(suggestions[0].name == "compact")
+        #expect(suggestions[1].name == "copy")
+        #expect(suggestions[2].name == "disco")
+    }
+
+    @Test func fuzzyMatchHandlesSubsequenceTypoPatterns() {
+        let commands = makeSlashCommands([
+            ("check_agents", "Check agents", "prompt"),
+            ("compact", "Compact context", "prompt"),
+        ])
+        let suggestions = ComposerAutocomplete.slashSuggestions(query: "chek", commands: commands)
+        #expect(suggestions.map(\.name) == ["check_agents"])
+    }
+
+    @Test func emptyQueryReturnsAllSortedAlphabetically() {
+        let commands = makeSlashCommands([
+            ("copy", "Copy message", "prompt"),
+            ("ask", "Ask question", "prompt"),
+            ("build", "Build project", "prompt"),
+        ])
+        let suggestions = ComposerAutocomplete.slashSuggestions(query: "", commands: commands)
+        #expect(suggestions.map(\.name) == ["ask", "build", "copy"])
+    }
+
+    @Test func noMatchReturnsEmpty() {
+        let commands = makeSlashCommands([
+            ("compact", "Compact context", "prompt"),
+            ("copy", "Copy message", "prompt"),
+        ])
+        let suggestions = ComposerAutocomplete.slashSuggestions(query: "xyz", commands: commands)
+        #expect(suggestions.isEmpty)
+    }
+
     // File suggestion insertion, model, and parsing tests live in
     // FileSuggestionInsertionTests.swift (27 tests with thorough edge cases).
 

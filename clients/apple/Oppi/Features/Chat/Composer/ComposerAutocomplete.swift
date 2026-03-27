@@ -42,9 +42,7 @@ enum ComposerAutocomplete {
     ) -> [SlashCommand] {
         guard !commands.isEmpty else { return [] }
 
-        let normalized = query.lowercased()
         var deduped: [String: SlashCommand] = [:]
-
         for command in commands {
             let key = command.name.lowercased()
             if deduped[key] == nil {
@@ -52,33 +50,26 @@ enum ComposerAutocomplete {
             }
         }
 
-        let filtered: [SlashCommand]
-        if normalized.isEmpty {
-            filtered = Array(deduped.values)
-        } else {
-            filtered = deduped.values.filter { command in
-                command.name.lowercased().contains(normalized)
+        guard !query.isEmpty else {
+            let sorted = deduped.values.sorted { $0.name.lowercased() < $1.name.lowercased() }
+            return Array(sorted.prefix(max(0, limit)))
+        }
+
+        var scored: [(command: SlashCommand, score: Int)] = []
+        for command in deduped.values {
+            if let result = FuzzyMatch.match(query: query, candidate: command.name) {
+                scored.append((command, result.score))
             }
         }
 
-        let sorted = filtered.sorted { lhs, rhs in
-            let lhsName = lhs.name.lowercased()
-            let rhsName = rhs.name.lowercased()
-            let lhsPrefix = lhsName.hasPrefix(normalized)
-            let rhsPrefix = rhsName.hasPrefix(normalized)
-
-            if lhsPrefix != rhsPrefix {
-                return lhsPrefix && !rhsPrefix
+        scored.sort { lhs, rhs in
+            if lhs.score != rhs.score {
+                return lhs.score > rhs.score
             }
-
-            if lhsName == rhsName {
-                return lhs.source.sortRank < rhs.source.sortRank
-            }
-
-            return lhsName < rhsName
+            return lhs.command.name.lowercased() < rhs.command.name.lowercased()
         }
 
-        return Array(sorted.prefix(max(0, limit)))
+        return Array(scored.prefix(max(0, limit)).map(\.command))
     }
 
     static func insertSlashCommand(_ command: SlashCommand, into text: String) -> String {
