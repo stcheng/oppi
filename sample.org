@@ -1,387 +1,662 @@
-#+TITLE: Getting Started Guide
+#+TITLE: Oppi — The Chaos Donkey's Guide to Mobile Agent Supervision
+#+AUTHOR: Chen
 #+STARTUP: nofold
+#+OPTIONS: toc:3
 
-GNU Emacs is one grand ol' adventure, let alone Doom Emacs. Before you start
-you'll need to set up Emacs, Doom, and its packages, then learn how to take care
-of your new puppy/operating system. This guide will walk you through installing,
-using, configuring and troubleshooting all of these things, to smooth you into
-your Emacs journey.
+* Preface
 
-This guide will gloss over many technicalities so you can get up and running as
-soon as possible. A more technical user manual is in the works for aspiring
-contributors who want a deeper understanding of how Doom Emacs works.
+You built an agent harness. Then you wanted to watch it from your phone.
+Then you wanted to *steer* it from your phone. Then you wanted it to ask
+you things while you're buying groceries. Then you wanted six of them
+running in parallel while you're buying groceries.
+
+This is the story of how a weekend project became a distributed system
+and nobody is sorry.
+
+* Part I: Why Supervise Agents from a Phone?
+
+** The Laptop Lid Problem
+
+Agents run on your server. Your server is in a closet. Your laptop is
+closed because you walked to the kitchen. The agent has a question. It
+waits. You come back twenty minutes later. The context window has moved
+on. The agent wrote a haiku about waiting instead.
+
+Mobile supervision solves this: the agent pings your phone, you tap
+=Allow=, the agent continues, you go back to making coffee.
+
+** The Grocery Store Principle
+
+The best time for an agent to need approval is when you're in aisle 7
+comparing oat milks. This is not a design principle anyone chose. It is
+a law of nature, like gravity or the fact that =node_modules= is always
+larger than the project.
+
+Oppi leans into this. Push notifications. Haptic taps. Glanceable
+session cards. You should be able to supervise a refactoring from the
+checkout line.
+
+** Trust but Verify (but Mostly Verify)
+
+Agents are confident. They will tell you they fixed the build while
+introducing a retain cycle. They will refactor your networking layer
+into something elegant that doesn't compile. They will write beautiful
+tests that test nothing.
+
+Your phone becomes the trust boundary. Every tool call, every file
+write, every =git commit= — visible, approvable, reversible. The agent
+proposes; you dispose (from a park bench, ideally).
+
+* Part II: Architecture of a Supervision System
+
+** The Server: A Mac in a Closet
 
 #+begin_quote
-If you feel like we've missed something, [[https://discord.gg/qvGgnVx][join us on our Discord server]] and let
-us know!
+"Any sufficiently advanced server infrastructure is indistinguishable
+from a Mac mini someone forgot about." — Not Arthur C. Clarke
 #+end_quote
 
-* Table of Contents :TOC_4:
-- [[#install][Install]]
- - [[#emacs--dependencies][Emacs & dependencies]]
- - [[#on-linux][On Linux]]
- - [[#ubuntu][Ubuntu]]
- - [[#fedora][Fedora]]
- - [[#arch-linux][Arch Linux]]
- - [[#nixos][NixOS]]
- - [[#opensuse][openSUSE]]
- - [[#gentoo-linux][Gentoo Linux]]
- - [[#on-macos][On macOS]]
- - [[#with-homebrew][With Homebrew]]
- - [[#with-macports][With MacPorts]]
- - [[#on-windows][On Windows]]
- - [[#with-chocolatey--scoop][With chocolatey / scoop]]
- - [[#with-a-precompiled-binary--git-bash][With a precompiled binary + Git Bash]]
- - [[#with-wsl--ubuntu-1804-lts][With WSL + Ubuntu 18.04 LTS]]
- - [[#doom-emacs][Doom Emacs]]
- - [[#the-bindoom-utility][The ~bin/doom~ utility]]
- - [[#install-doom-manually][Install Doom Manually]]
- - [[#install-doom-alongside-other-configs-with-chemacs2][Install Doom alongside other configs (with Chemacs2)]]
- - [[#externalsystem-dependencies][External/system dependencies]]
-- [[#update--rollback][Update & Rollback]]
- - [[#rollback][Rollback]]
- - [[#updowngrading-emacs][Up/Downgrading Emacs]]
-- [[#migrate][Migrate]]
- - [[#from-vanilla-emacs][From vanilla Emacs]]
- - [[#from-spacemacs][From Spacemacs]]
-- [[#configure][Configure]]
- - [[#modules][Modules]]
- - [[#package-management][Package management]]
- - [[#installing-packages][Installing packages]]
- - [[#installing-packages-from-external-sources][Installing packages from external sources]]
- - [[#pinning-packages-to-specific-commits][Pinning packages to specific commits]]
- - [[#disabling-packages][Disabling packages]]
- - [[#changing-a-recipe-for-an-included-package][Changing a recipe for an included package]]
- - [[#usingloading-local-packages][Using/loading local packages]]
- - [[#configuring-doom][Configuring Doom]]
- - [[#configuring-packages][Configuring packages]]
- - [[#reloading-your-config][Reloading your config]]
- - [[#binding-keys][Binding keys]]
- - [[#writing-your-own-modules][Writing your own modules]]
- - [[#file-structure][File structure]]
- - [[#initel][=init.el=]]
- - [[#configel][=config.el=]]
- - [[#packagesel][=packages.el=]]
- - [[#autoloadel-or-autoloadel][=autoload/*.el= OR =autoload.el=]]
- - [[#doctorel][=doctor.el=]]
- - [[#cliel][=cli.el=]]
- - [[#testtest-el][=test/**/test-*.el=]]
- - [[#additional-files][Additional files]]
- - [[#load-order][Load order]]
- - [[#flags][Flags]]
- - [[#doom-cookies][Doom cookies]]
- - [[#if][~;;;###if~]]
- - [[#package][~;;;###package~]]
- - [[#autodef][~;;;###autodef~]]
- - [[#common-mistakes-when-configuring-doom-emacs][Common mistakes when configuring Doom Emacs]]
- - [[#packages-are-eagerly-loaded][Packages are eagerly loaded]]
- - [[#manual-package-management][Manual package management]]
- - [[#using-org-babel-do-load-languages-to-load-your-babel-packages][Using ~org-babel-do-load-languages~ to load your babel packages]]
- - [[#using-delete-trailing-whitespaces-or-whitespace-cleanup-to-manage-leftover-whitespace][Using ~delete-trailing-whitespaces~ or ~whitespace-cleanup~ to manage leftover whitespace]]
-- [[#troubleshoot][Troubleshoot]]
- - [[#looking-up-documentation-and-state-from-within-emacs][Looking up documentation and state from within Emacs]]
- - [[#variables-functions-faces-etc][Variables, functions, faces, etc.]]
- - [[#for-doom-modules-packages-autodefs-etc][For Doom Modules, packages, autodefs, etc.]]
- - [[#how-to-extract-a-backtrace-from-an-error][How to extract a backtrace from an error]]
- - [[#enabling-debug-on-error][Enabling ~debug-on-error~]]
- - [[#a-backtrace-from-bindoom][A backtrace from ~bin/doom~]]
- - [[#evaluating-elisp-on-the-fly][Evaluating Elisp on-the-fly]]
- - [[#how-to-determine-the-origin-of-a-bug][How to determine the origin of a bug]]
- - [[#testing-in-dooms-sandbox][Testing in Doom's sandbox]]
- - [[#opening-the-sandbox][Opening the sandbox]]
- - [[#launching-the-sandbox][Launching the sandbox]]
- - [[#testing-packages-in-the-sandbox][Testing packages in the sandbox]]
- - [[#bisecting-your-private-config][Bisecting your private config]]
- - [[#bisecting-doom-emacs][Bisecting Doom Emacs]]
+The Oppi server runs as a macOS app. Not a Docker container. Not a
+Kubernetes pod. A genuine =.app= bundle sitting in =/Applications/=
+like it pays rent. It manages agent sessions as child processes with
+crash recovery, health monitoring, and the quiet dignity of a process
+that knows it will be killed by =mac-app.sh reinstall= at 2 AM.
 
-* Install
-This is what you'll have installed by the end of this section:
+*** Why a Mac App?
 
-- Git 2.23+
-- Emacs 27.1+ *(27.2 is recommended, or [[https://www.emacswiki.org/emacs/GccEmacs][native-comp]])*
-- [[https://github.com/BurntSushi/ripgrep][ripgrep]] 11.0+
-- GNU Find
-- (Optional) [[https://github.com/sharkdp/fd][fd]] 7.3.0+ (known as ~fd-find~ on Debian, Ubuntu & derivatives) --
- improves performance for many file indexing commands
+Three reasons:
 
-These packages ought to be available through the package managers of your
-operating system; i.e. homebrew & macports on macOS, scoop/chocolatey on
-Windows, or pacman/aptitude/etc on the various Linux distributions.
+1. Apple containers don't support Unix domain sockets (=ENOTSUP= on
+   bind mounts). TCP it is.
+2. Symlinks break inside Apple containers (=cpSync= copies them as
+   symlinks with missing targets). No =node_modules= for you.
+3. =launchd= plists are fine until you need to manage server lifecycle
+   from a native UI, at which point you realize you just want
+   =Process()= and a health check loop.
 
-** Emacs & dependencies
-*** On Linux
-Installation instructions for Emacs 27.1+ are listed below for many popular
-Linux distributions. In the unusual case that 27.1 or newer is unavailable on
-your system, you'll have to [[https://www.gnu.org/software/emacs/manual/html_node/efaq/Installing-Emacs.html][build it from source]] instead.
+The Mac app wraps the Node.js server, restarts it on crash, and
+provides a menu bar icon that does exactly one useful thing: show
+whether the server is alive.
 
-**** Ubuntu
-Emacs 27.x is not available through Ubuntu's package manager out-of-the-box, but
-is available through a PPA:
+*** The Event Stream
 
-#+BEGIN_SRC bash
-add-apt-repository ppa:kelleyk/emacs
-apt-get update
-apt-get install emacs27
-#+END_SRC
+Everything in Oppi flows through Server-Sent Events. The server
+maintains one SSE connection per client, multiplexing all session
+updates into a single stream. When an agent emits a tool call, the
+server broadcasts it. When you approve from your phone, the approval
+flows back through WebSocket. When six agents are running
+simultaneously, your phone receives a gentle river of structured JSON
+that the timeline reducer turns into UI.
 
-Or through snap:
+The protocol is versioned. The client negotiates. Unknown message types
+are logged and skipped. Forward compatibility is not optional when your
+server deploys at 2 AM and your phone updates whenever the App Store
+feels like it.
 
-#+BEGIN_SRC bash
-snap install emacs --classic
-#+END_SRC
+** The iOS Client: SwiftUI and Its Discontents
 
-In some cases, you may need to delete old version of emacs and it's dependencies first, before installing emacs27:
-#+BEGIN_SRC bash
-sudo apt remove emacs
-sudo apt autoremove
-#+END_SRC
+*** Many Small Stores
 
-***** Other dependencies
-Then install Doom's other dependencies:
-#+BEGIN_SRC bash
-apt-get install ripgrep fd-find
+Oppi uses many small =@Observable= stores. Not one big one. Not a
+Redux-style global state. Many tiny stores, each responsible for one
+screen's worth of state.
 
-# On 18.04 or older, ripgrep and fd-find won't be available in
-# official repos. You'll need to install them another way, e.g.
-sudo dpkg -i fd_8.2.1_amd64.deb # adapt version number and architecture
-sudo dpkg -i fd_8.2.1_amd64.deb # adapt version number and architecture
-#+END_SRC
+Why? Because SwiftUI re-renders are viral. Touch one property on a
+shared store and every view observing that store updates. With 50+
+properties across sessions, timelines, file browsers, and settings,
+a monolithic store would turn your phone into a space heater.
 
-**** Fedora
-#+BEGIN_SRC bash
-# required dependencies
-dnf install emacs git ripgrep
-# optional dependencies
-dnf install fd-find # is 'fd' in Fedora <28
-#+END_SRC
+Each store is =@MainActor=, =@Observable=, and deliberately isolated.
+Cross-store communication happens through explicit method calls, not
+shared mutable state. This is more code. It is also the only way to
+keep a 120Hz ProMotion display from dropping frames while six agents
+stream tool output simultaneously.
 
-**** Arch Linux
-#+BEGIN_SRC bash
-# required dependencies
-pacman -S git emacs ripgrep
-# optional dependencies
-pacman -S fd
-#+END_SRC
+*** The Timeline Reducer
 
-The above installs Emacs 27 (at the time of writing).
+The timeline is the heart of the chat experience. It takes a stream of
+server events — text deltas, tool calls, tool outputs, approvals,
+errors — and reduces them into a flat list of timeline entries.
 
-**** NixOS
-On NixOS Emacs 27.2 can be installed via ~nix-env -Ai nixos.emacs~, or
-permanently with the following added to ~etc/nixos/configuration.nix~:
+This sounds simple. It is not.
 
-#+BEGIN_SRC nix
-environment.systemPackages = with pkgs; [
- # required dependencies
- git
- emacs # Emacs 27.2
- ripgrep
- # optional dependencies
- coreutils # basic GNU utilities
- fd
- clang
-];
-#+END_SRC
+Tool calls arrive before their outputs. Outputs stream character by
+character. Some tool calls nest (an agent spawns a child, the child
+emits its own tool calls). The server can replay events on reconnect.
+The user can scroll while events stream. The keyboard can appear
+mid-stream, shifting the scroll position.
 
-Installing Emacs 28+ will require [[https://github.com/nix-community/emacs-overlay/issues][nix-community/emacs-overlay]]:
-#+BEGIN_SRC nix
-nixpkgs.overlays = [
- (import (builtins.fetchTarball https://github.com/nix-community/emacs-overlay/archive/master.tar.gz))
-];
+The reducer handles all of this. It maintains a map of pending tool
+calls, correlates outputs to their calls, merges streaming text into
+existing entries, and emits a stable list that =UICollectionView=
+can diff efficiently.
 
-environment.systemPackages = [
- pkgs.emacsGcc # Installs Emacs 28 + native-comp
-];
-#+END_SRC
+It processes roughly 10,000 events per second on an iPhone 16 Pro
+without dropping a frame.
 
-**** openSUSE
-***** Emacs 27.1
-Emacs can be installed from the [[https://software.opensuse.org/download.html?project=editors&package=emacs][package list]], or manually via zypper.
+*** Syntax Highlighting: The Unexpected Bottleneck
 
-For example, to install on openSUSE Leap 15.1 (requires root):
-#+BEGIN_SRC bash
-zypper addrepo https://download.opensuse.org/repositories/editors/openSUSE_Leap_15.1/editors.repo
-zypper refresh
-zypper install emacs
-#+END_SRC
+When an agent writes code, it appears in the timeline with syntax
+highlighting. This sounds like a solved problem. It is not, on iOS,
+in SwiftUI, with streaming content.
 
-If you already have an older version of Emacs installed, you will be prompted to
-install the update candidate (Emacs 27.1).
+The naive approach: parse the code, apply =NSAttributedString=
+attributes, hand it to a =UITextView=. This works until the code is
+1000 lines long and updating 30 times per second because the agent
+is streaming. At that point, attributed string diffing alone costs
+10ms per frame, and you're at 100% CPU rendering a Python script.
 
-***** ripgrep
-Download ripgrep 11.0.2 from [[https://software.opensuse.org/download/package?package=ripgrep&project=openSUSE%3AFactory][the package list]] or installed manually (requires
-root).
-#+BEGIN_SRC bash
-zypper addrepo https://download.opensuse.org/repositories/openSUSE:Factory/standard/openSUSE:Factory.repo
-zypper refresh
-zypper install ripgrep
-#+END_SRC
+Oppi's syntax highlighter is a hand-rolled scanner. No tree-sitter.
+No regex engine. Character-by-character classification into token
+ranges, then batch attribute application. It handles 20+ languages
+at under 1ms for typical code blocks. The trick is doing less: don't
+re-highlight unchanged lines, don't build an AST, don't care about
+semantic correctness. The user is reading agent output on a phone
+screen. "Good enough" highlighting at 120fps beats "perfect"
+highlighting at 15fps.
 
-Only ripgrep 0.8.1 is officially available on Leap 15.1 and 15.2, so you will
-need to install Rust to build ripgrep from source. Rust can be downloaded [[https://software.opensuse.org/package/rust][from
-the package list]] or installed manually via zypper (requires root), e.g.
-#+BEGIN_SRC bash
-zypper addrepo https://download.opensuse.org/repositories/openSUSE:Leap:15.1:Update/standard/openSUSE:Leap:15.1:Update.repo
-zypper refresh
-zypper install rust
-#+END_SRC
+** The File Browser: Reading Your Codebase from the Bus
 
-See the [[https://github.com/BurntSushi/ripgrep#building][ripgrep documentation]] for instructions on building from source.
+The file browser lets you navigate your workspace from your phone.
+Directory listings, fuzzy search, syntax-highlighted source, rendered
+markdown, inline images, PDF viewing, video/audio playback.
 
-**** Gentoo Linux
-Everything you need is in Gentoo's official =::gentoo= repository.
+The file index is fetched once and cached client-side. Fuzzy matching
+runs locally on-device with a hand-tuned scoring algorithm that
+weights path separators, consecutive matches, and basename hits. Search
+results appear as you type, with matched characters highlighted.
 
-***** Emacs
-To use Emacs graphically, enable the =gui= USE flag. And enable the =xft= USE flag to render fonts correctly (see
-[[https://github.com/hlissner/doom-emacs/issues/4876][issue #4876]])
-#+begin_src sh
-echo "app-editors/emacs gui xft" >> /etc/portage/package.use/emacs
+For large files, the client shows a size warning before downloading.
+On cellular networks, an additional warning appears because your agent
+just wrote a 3MB JSON fixture and you're on a metered connection in
+a parking garage.
+
+*** Org Mode Support
+
+Because some of us write in org. The renderer parses org syntax
+(headings, bold, italic, code, links, lists, tables, drawers, source
+blocks, keywords) and converts it to the markdown rendering pipeline.
+This gives org files identical typography and styling to markdown
+without a separate renderer.
+
+Sections are foldable. =#+STARTUP: overview= collapses to top-level
+headings. =#+STARTUP: content= shows all headings with bodies hidden.
+Drawers (=:PROPERTIES:=, =:LOGBOOK:=) render as collapsible UI
+elements. Source blocks get syntax highlighting. The org experience
+on a phone is better than most desktop editors, which is either a
+compliment to Oppi or an indictment of desktop editors.
+
+* Part III: The Feedback Loop
+
+** Measure Everything
+
+Oppi instruments aggressively. Time-to-first-token. Markdown streaming
+render cost. Timeline layout duration. Cell configuration time. Session
+list computation. WebSocket connect latency. Voice input pipeline
+stages.
+
+Every metric flows to Grafana. The release preflight dashboard has 39
+panels covering 50 iOS metrics. The server health dashboard has 24
+panels covering 29 server metrics. If a frame drops, we know why. If
+a connection stalls, we know where. If the app launches slowly, we
+know which store initialization took too long.
+
+This is not optional. You cannot optimize what you cannot see. And on
+a phone, where thermal throttling, memory pressure, and background
+task suspension conspire against you, visibility is survival.
+
+** The Experiment Loop
+
+Autoresearch is a pattern Oppi uses internally: define a metric, write
+a hypothesis, run an experiment, measure, keep or discard, repeat.
+
+The iOS build takes 45 seconds. The server type-check takes 1.7 seconds
+(down from 4.5 after parallelizing). Test suites run in under 30
+seconds. This means the feedback loop from "idea" to "measured result"
+is under two minutes.
+
+Two minutes is fast enough that you try things. You don't argue about
+whether approach A or B is faster — you measure both and keep the
+winner. This compounds. A hundred two-minute experiments over a month
+produce more optimization than a week of upfront design.
+
+** Error Analysis
+
+Agents make mistakes. Build failures, test failures, type errors, lint
+violations. Oppi tracks these across sessions, categorizes them,
+identifies patterns. If five agents in a row fail because they forgot
+to run =xcodegen generate=, that's not an agent problem — it's a
+missing guardrail.
+
+Session error analysis runs periodically. It scans JSONL trace files,
+extracts build errors, and reports recurring patterns. The output
+feeds back into =AGENTS.md= instructions, which feed into agent
+behavior, which reduces error rates, which shows up in the next
+analysis. The loop closes.
+
+* Part IV: Concurrency and Chaos
+
+** Six Agents, One Repo
+
+Multiple agents can run against the same workspace simultaneously.
+This is powerful and terrifying. Two agents editing the same file is
+a merge conflict. Two agents running =xcodebuild= is a SQLite lock.
+Two agents running =git checkout= is data loss.
+
+Rules:
+
+- Agents use =sim-pool.sh= for simulator builds (slot-based locking
+  with isolated =DerivedData= paths)
+- Sub-agents must not run builds, tests, or =xcodegen generate=
+- Sub-agents must not run =git checkout=, =git stash=, or modify
+  files outside their assigned scope
+- The parent agent does integration verification after sub-agents
+  finish
+
+These rules exist because they were each violated at least once, with
+consequences ranging from "mildly confusing" to "three hours of git
+forensics."
+
+** The Stash Mystery
+
+One evening, three sub-agents were dispatched to edit different files.
+All three reported success. All three files were empty on disk. The
+edits were found later in =git stash=. To this day, nobody knows how
+sub-agent edits ended up in the stash. The working theory involves
+a race condition between the edit tool's file write and something
+in the VS Code file watcher. The practical solution was: write files
+with =python3= instead of the edit tool.
+
+Distributed systems are distributed systems, even when the distributed
+system is three Claude instances sharing a working directory.
+
+** Swift Concurrency: A Love Letter
+
+Swift 6 strict concurrency checking is enabled. =SWIFT_STRICT_CONCURRENCY: complete=.
+All =@Observable= classes are =@MainActor=. There are no force unwraps
+in production code. The compiler enforces all of this.
+
+This is wonderful until you need to do anything on a background thread.
+=SwiftUI.task= inherits =@MainActor= isolation. If you put heavy work
+in a =.task= modifier, congratulations: you just blocked the main
+thread. Use =Task.detached=.
+
+=Duration= type gets redacted in =os_log=. Use =Int= milliseconds
+instead. =os_log .info= is not persisted in device archives. Use
+=.error= for performance diagnostics you need to read later.
+
+=NWPathMonitor= fires once with the current state, then fires again
+on changes. If you use =withCheckedContinuation= to get a one-shot
+reading, cancel the monitor in the callback or it leaks.
+
+These are the kinds of things you learn at 3 AM when the build finally
+succeeds and the runtime immediately does something inexplicable.
+
+* Part V: Rendering
+
+** The Rendering Philosophy
+
+Rendering in Oppi follows a few invariants:
+
+1. *Native over web.* No WebViews for content the OS can render natively.
+   =UITextView= for text. =PDFKit= for PDFs. =AVPlayer= for media.
+   WebViews are for HTML preview only.
+2. *Streaming-first.* Every renderer must handle partial content. The
+   agent is still typing. The markdown is half-formed. The code block
+   hasn't closed yet. Renderers must not crash, stall, or produce
+   garbage on incomplete input.
+3. *Dark theme, always.* The UI is dark. Exported content is light.
+   These are different themes with different palettes. =RenderTheme=
+   has both =.fallback= (dark) and =.light= variants.
+4. *Frame budget: 8ms.* At 120Hz, you get 8.3ms per frame. Rendering,
+   layout, and display must fit. If they don't, the timeline hitches.
+   Timeline hitches are tracked as a metric. They are not acceptable.
+
+** Mermaid and LaTeX
+
+Mermaid diagrams and LaTeX equations render natively via =CGContext=.
+No JavaScript. No MathJax. No KaTeX. Custom parsers, custom layout
+engines, custom renderers drawing directly to Core Graphics.
+
+This is more work than embedding a WebView. It is also 100x faster,
+works offline, respects the app's theme, and doesn't require shipping
+a JavaScript runtime for what is fundamentally "draw some boxes and
+arrows."
+
+Mermaid supports flowcharts, sequence diagrams, class diagrams, state
+diagrams, ER diagrams, Gantt charts, pie charts, and git graphs.
+LaTeX handles mathematical notation, symbols, fractions, matrices,
+and integrals. Both render at device screen scale for retina-quality
+output.
+
+The share sheet exports these as rendered images or PDFs. Tap for smart
+default (image). Long-press for format picker. Always light theme.
+Always device scale. No chrome, no watermarks, no branding.
+
+** The Markdown Pipeline
+
+Markdown rendering is the most complex subsystem in Oppi. It handles:
+
+- CommonMark parsing with extensions (tables, strikethrough, task lists)
+- Syntax-highlighted code blocks in 20+ languages
+- Inline images loaded from workspace files
+- LaTeX math expressions (inline and display)
+- Mermaid diagram blocks
+- Streaming content with incremental updates
+- Segment-based rendering for efficient UIKit view reuse
+
+The renderer breaks markdown into "segments" — contiguous runs of
+inline text, code blocks, tables, images, math, diagrams. Each segment
+maps to a reusable UIKit view. When streaming content updates, only
+affected segments are re-rendered. Unaffected segments keep their
+existing views, avoiding expensive layout passes.
+
+This is what makes it possible to stream a 2000-line markdown document
+at 30 updates per second without dropping frames. The alternative —
+re-rendering the entire document on every update — would be unusable
+after about 200 lines.
+
+* Part VI: Voice and Input
+
+** Voice Dictation
+
+Oppi supports voice input. Tap the microphone, speak, the text appears
+in the composer. This uses iOS speech recognition, which is good enough
+for English and decent for technical jargon after it's seen enough of
+your vocabulary.
+
+The pipeline has three stages:
+
+1. *Prewarm*: The speech recognizer is initialized ahead of time.
+   Cold start costs ~200ms. Prewarming on app launch eliminates this
+   from the user-visible path.
+2. *Recognition*: Real-time transcription with intermediate results.
+   The composer updates as you speak, showing tentative text that
+   refines over time.
+3. *Finalization*: When you stop speaking, the recognizer produces a
+   final result with higher confidence. This replaces the tentative
+   text.
+
+Voice setup time, first-result latency, and prewarm duration are all
+tracked as metrics. Because of course they are.
+
+** The Ask Extension
+
+Sometimes the agent needs your input. Not a yes/no approval — a choice.
+"Which approach should I take?" "What should this be named?" "Should I
+include tests for edge cases?"
+
+The ask extension renders these as tappable cards on your phone. Each
+option has a label and optional description. You can select one, select
+multiple, type a custom answer, or ignore the question entirely.
+
+The agent sees your response (or lack thereof) and continues. This
+turns what would be a blocking conversation into an asynchronous
+interaction. The agent asks at 2:14 PM. You answer at 2:47 PM while
+waiting for your burrito. The agent was doing other things in the
+meantime because it had five more tasks queued.
+
+* Part VII: Operations
+
+** Deployment
+
+Deployment is deliberately boring:
+
+1. =npm run check= passes (TypeScript, ESLint, Knip, Prettier)
+2. =mac-app.sh reinstall= rebuilds the Mac app and restarts the server
+3. =install.sh --launch= builds and installs the iOS app on device
+4. Push notifications confirm everything is connected
+
+There is no CI/CD. There is no staging environment. There is a Mac
+in a closet and an iPhone in a pocket. The test suite runs in 30
+seconds. Type-checking runs in 1.7 seconds. If it passes locally,
+it ships.
+
+This works because the user count is one. When the user count is one,
+"staging" is "running it on your phone for five minutes." When the
+user count is one, "rollback" is =git revert= and =reinstall=. When
+the user count is one, you optimize for iteration speed, not release
+ceremony.
+
+** Monitoring
+
+Grafana dashboards cover everything. Two dashboards, 63 panels total.
+
+The release preflight dashboard shows iOS client health: render times,
+network latency, voice pipeline, session list performance, frame
+budget compliance. Every metric has a reference SLO. Violations are
+flagged.
+
+The server health dashboard shows operations: turn duration, time to
+first token, WebSocket connections, event throughput, session lifecycle.
+These correlate with the iOS metrics to tell a complete story.
+
+When something is slow, the dashboards show where. When something
+broke, the dashboards show when. When an experiment improves a metric,
+the dashboards confirm the improvement is real and not a measurement
+artifact.
+
+** Sentry
+
+Crash reporting via Sentry. Both iOS and server. Breadcrumbs track
+the path to a crash. Release health shows crash-free rates per build.
+
+Debug builds on device use a real Sentry DSN (resolved from
+=~/.config/pios/sentry-dsn=). TestFlight builds force =SENTRY_DSN=""=
+because the one user already has the debug builds and doesn't need
+duplicate crash reports.
+
+* Part VIII: Philosophy
+
+** Embrace the Chaos
+
+Software development is not orderly. Agents introduce more entropy,
+not less. The correct response is not to fight the entropy but to
+build systems that thrive in it.
+
+Oppi's architecture assumes:
+- Agents will make mistakes (every action is supervisable)
+- The network will fail (reconnection is automatic, state is replayed)
+- The server will crash (the Mac app restarts it)
+- The phone will lose focus (push notifications bring you back)
+- Multiple agents will conflict (isolation rules prevent data loss)
+- Metrics will regress (dashboards catch regressions early)
+
+Designing for chaos means designing for recovery. Every failure mode
+has a recovery path. Every error is observable. Every action is
+reversible. The system doesn't prevent problems — it makes problems
+cheap and recoverable.
+
+** First Principles, Always
+
+Strip away assumptions. Find what's actually true. Build from there.
+
+The assumption was "agents need a web UI." The truth was "agents need
+a notification on your phone." The assumption was "markdown needs a
+JavaScript renderer." The truth was "=UITextView= with attributed
+strings is faster and better." The assumption was "the server needs
+Docker." The truth was "Apple containers break symlinks and Unix
+sockets, just use a Mac app."
+
+Every clever abstraction started as a direct solution to a specific
+problem. The abstractions that survived earned their place. The ones
+that didn't were deleted without ceremony.
+
+** The Fastest Feedback Loop Wins
+
+Everything in Oppi is optimized for the speed of the feedback loop.
+Parallel type-checking (2.6x faster). Bun for script execution (10ms
+vs 465ms). Slot-based simulator pools for parallel builds. Incremental
+markdown rendering for streaming content. Push notifications for
+agent questions.
+
+The goal is: change to signal in under two minutes. If you can verify
+a hypothesis in two minutes, you try more hypotheses. If you try more
+hypotheses, you find better solutions. If you find better solutions,
+the system improves. The loop is the product.
+
+** Solve It Once
+
+Every problem in Oppi is solved once, then encoded. Build errors
+become =AGENTS.md= instructions. Common patterns become skills.
+Reference implementations become templates. Metrics become dashboards.
+
+The next agent that runs starts smarter than the last one. The next
+session inherits the lessons of every previous session. The system
+accumulates knowledge like sediment — each layer making the foundation
+more stable.
+
+This is not automation. Automation is doing the same thing repeatedly.
+This is *accretion* — each iteration making the next iteration better.
+The system doesn't just run; it learns. Not in the machine learning
+sense. In the "we wrote it down so we don't forget" sense. Which,
+honestly, is the more reliable kind.
+
+* Appendix A: Glossary
+
+| Term           | Meaning                                           |
+|----------------+---------------------------------------------------|
+| Oppi           | The system described in this document              |
+| pi             | The underlying agent harness (CLI)                 |
+| Chaos Donkey   | The blog. Don't ask.                               |
+| Mac Studio     | The server. Yes, it's in a closet.                 |
+| Duh Ifone      | The iPhone. Named by autocorrect, kept for comedy. |
+| sim-pool       | Slot-based simulator locking for parallel builds   |
+| Timeline       | The chat message list (not a social media feed)    |
+| Reducer        | State machine that turns events into UI entries    |
+| Segment        | A contiguous chunk of rendered markdown            |
+| Store          | An =@Observable= class managing screen state       |
+| Skill          | A reusable instruction set for agents              |
+| Autoresearch   | Automated experiment loops for optimization        |
+| SLO            | Service Level Objective (reference target)         |
+| Frame budget   | 8.3ms at 120Hz. Don't exceed it.                   |
+| DerivedData    | Xcode's build cache. Fights back when shared.      |
+
+* Appendix B: Things That Broke
+
+A non-exhaustive list of things that broke and what we learned:
+
+1. *Sub-agent edits vanished into git stash.* Cause: unknown. Fix:
+   write files with =python3= instead of the edit tool when things
+   get weird.
+
+2. *=ENOTSUP= on Unix domain sockets in Apple containers.* Cause:
+   Apple's sandbox doesn't support UDS on bind mounts. Fix: TCP.
+
+3. *Symlinks break in Apple containers.* Cause: =cpSync= copies
+   symlinks as-is, targets don't exist inside the container. Fix:
+   don't use Apple containers for Node.js.
+
+4. *=os_log .info= not persisted.* Cause: macOS unified logging only
+   persists =.error= and above. Fix: use =.error= for anything you
+   need to read later. Accept that your debug logs are ephemeral.
+
+5. *=Duration= redacted in =os_log=.* Cause: Apple privacy policy
+   redacts non-scalar types. Fix: convert to =Int= milliseconds.
+
+6. *=SwiftUI .task= blocks main thread.* Cause: =.task= inherits
+   =@MainActor= isolation. Fix: =Task.detached= for heavy work.
+
+7. *=XcodeGen generate= overwrites =Info.plist=.* Cause: by design.
+   Fix: put keys in =project.yml info.properties=.
+
+8. *Two agents building simultaneously lock SQLite.* Cause: shared
+   =DerivedData= path. Fix: =sim-pool.sh= with per-slot isolated
+   =DerivedData=.
+
+9. *The file was "truncated" but actually contained the literal text
+   =[... truncated ...]=.* Cause: the source file was saved in a
+   truncated state. Fix: check the source before blaming the renderer.
+   Write your own test files.
+
+10. *Pi RPC doesn't stream =thinking_delta=.* It arrives in
+    =message_end= content only. Cause: protocol design. Fix: handle
+    it in =message_end= parsing.
+
+* Appendix C: Org Mode Quick Reference
+
+For those who don't speak org but ended up here anyway.
+
+** Headings
+
+#+begin_src org
+,* Level 1
+,** Level 2
+,*** Level 3
 #+end_src
 
-To install the latest unmasked version compatible with Doom:
-#+begin_src sh
-emerge '>=app-editors/emacs-27.0'
+** Markup
+
+#+begin_src org
+,*bold* /italic/ _underline_ =verbatim= ~code~ +strikethrough+
 #+end_src
 
-Or, for GCCEmacs/Native Compilation, use the live ebuild for version 28.0 with the =jit= USE flag:
+** Links
 
-Unmask the desired ebuild by adding the following to =package.accept_keywords=:
-#+begin_src
-=app-editors/emacs-28.0.9999 **
+#+begin_src org
+[[https://example.com][Click here]]
+[[file:./image.png]]
 #+end_src
 
-Add the =jit= USE flag to =package.use=:
-#+begin_src
-=app-editors/emacs-28.0.9999 jit
+** Lists
+
+#+begin_src org
+- Unordered item
+  - Nested item
+1. Ordered item
+2. Second item
+- [ ] Unchecked checkbox
+- [X] Checked checkbox
 #+end_src
 
-And emerge:
-#+begin_src sh
-emerge =app-editors/emacs-28.0.9999
+** Source Blocks
+
+#+begin_src org
+,#+begin_src python
+def hello():
+    print("hello from org mode")
+,#+end_src
 #+end_src
 
-***** Other Dependencies
-#+begin_src sh
-# required
-emerge '>=dev-vcs/git-2.23' '>=sys-apps/ripgrep-11.0' sys-apps/findutils
-# optional
-emerge '>=sys-apps/fd-7.3.0'
+** Tables
+
+#+begin_src org
+| Name  | Value |
+|-------+-------|
+| Alpha | 1     |
+| Beta  | 2     |
 #+end_src
 
-*** On macOS
-MacOS users have many options for installing Emacs, but not all of them are well
-suited to Doom. Before we get to that you'll need either the Homebrew or
-MacPorts package manager installed (you only need one):
+** Drawers
 
-+ [[http://brew.sh/][How to install Homebrew]]
-+ [[https://www.macports.org/install.php][How to install MacPorts]]
+#+begin_src org
+:PROPERTIES:
+:CREATED: 2026-03-27
+:AUTHOR: Chen
+:END:
+#+end_src
 
-**** With Homebrew
-First, Doom's dependencies:
-#+BEGIN_SRC bash
-# required dependencies
-brew install git ripgrep
-# optional dependencies
-brew install coreutils fd
-# Installs clang
-xcode-select --install
-#+END_SRC
+** Keywords
 
-For Emacs itself, these three formulas are the best options, ordered from most
-to least recommended for Doom (based on compatibility).
+#+begin_src org
+,#+TITLE: Document Title
+,#+AUTHOR: Author Name
+,#+STARTUP: nofold
+#+end_src
 
-- [[https://bitbucket.org/mituharu/emacs-mac/overview][emacs-mac]]. It offers good integration
- with macOS, native emojis and better childframe support.
- #+BEGIN_SRC bash
- brew tap railwaycat/emacsmacport
- brew install emacs-mac --with-modules
- ln -s /usr/local/opt/emacs-mac/Emacs.app /Applications/Emacs.app
- #+END_SRC
+That covers the basics. For the rest, there's always =C-h i= in Emacs.
+Or just ask an agent. It probably knows.
 
-- [[https://github.com/d12frosted/homebrew-emacs-plus][emacs-plus]]. Some users have
- experienced [flashing artifacts when scrolling](https://github.com/d12frosted/homebrew-emacs-plus/issues/314):
- #+BEGIN_SRC bash
- brew tap d12frosted/emacs-plus
- brew install emacs-plus
- ln -s /usr/local/opt/emacs-plus/Emacs.app /Applications/Emacs.app
- #+END_SRC
+* Colophon
 
-- [[https://formulae.brew.sh/formula/emacs][emacs]] is another acceptable option, **but does not provide a Emacs.app**:
- #+BEGIN_SRC bash
- brew install emacs
- #+END_SRC
+This document was written in org mode, rendered by Oppi's org renderer,
+viewed on an iPhone in a file browser that streams content from a Mac
+in a closet over Tailscale. The renderer converted org to markdown AST,
+the markdown pipeline produced attributed strings, UIKit laid them out,
+and Core Animation composited them onto a 120Hz ProMotion display.
 
-***** Where *not* to install Emacs from
-These builds/forks have known compatibility issues with Doom and are *very
-likely* to cause issues later on. They are not recommended:
+Total time from file open to full render: roughly 47 milliseconds.
 
-+ emacsformacosx.com
-+ ~brew cask install emacs~ (installs from emacsformacosx.com)
-+ AquaMacs
-+ XEmacs
-
-**** With MacPorts
-There are four ports (at time of writing) available through MacPorts, and they
-are all acceptable options:
-
-+ [[https://ports.macports.org/port/emacs/summary][emacs]] (27.2) and [[https://ports.macports.org/port/emacs-devel/summary][emacs-devel]] (28) -- Installs terminal-only Emacs
-+ [[https://ports.macports.org/port/emacs-app/summary][emacs-app]] (27.2), [[https://ports.macports.org/port/emacs-app-devel/summary][emacs-app-devel]] (28) -- Installs GUI Emacs
-+ [[https://ports.macports.org/port/emacs-mac-app/summary][emacs-mac-app]] (27.2) -- the [[https://bitbucket.org/mituharu/emacs-mac][Mitsuharu Yamamoto mac port]]
-
-Some of these ports do not add an =emacs= binary to your ~PATH~, which is
-necessary for Doom's installation process. You'll have to do so yourself by
-adding this to your shell config:
-
-#+BEGIN_SRC sh
-# Add this to ~/.zshrc or ~/.bash_profile
-export PATH="/Applications/MacPorts/Emacs.app/Contents/MacOS:$PATH"
-#+END_SRC
-
-Or by replacing ~/usr/local/bin/emacs~ with a shim script containing:
-#+BEGIN_SRC
-#!/bin/sh
-/Applications/MacPorts/Emacs.app/Contents/MacOS/Emacs "$@"
-#+END_SRC
-
-*** On Windows
-#+begin_quote
-*WARNING:* Emacs on Windows is much slower than its Linux or macOS counterparts.
-There are some suggestions on how to speed it up later in this section.
-#+end_quote
-
-There are three methods for installing Emacs 27.x on Windows, each with their
-pros and cons:
-
-+ With chocolatey/scoop
-+ With a precompiled binary + Git Bash
-+ With WSL2 + Ubuntu
-
-If you don't know which to choose, I highly recommend WSL; it produces the
-fastest and most stable environment of the three, but has the most complex
-installation process.
-
-Before moving on to installing Emacs et co, a few steps to prepare Windows for
-Emacs are necessary:
-
-1. Create a ~HOME~ [[https://mywindowshub.com/how-to-edit-system-environment-variables-for-a-user-in-windows-10/][system environment variable]].
-
- Set it to =C:\Users\USERNAME\=, otherwise Emacs will treat
- =C:\Users\USERNAME\AppData\Roaming= as your ~HOME~, which will cause issues
- later.
-
-2. Add =C:\Users\USERNAME\.emacs.d\bin= to your ~PATH~.
-
- This way, you don't have to type all of =C:\Users\USERNAME\.emacs.d\bin\doom=
- every time you need to run this script (and you'll need to, often).
-
- #+begin_quote
- A pre-existing PATH variable should already exist among your system
- variables. It contains a string of file paths separated by colons;
- ~pathA:pathB:pathC~. Prepend the path to bin/doom to that string, like so:
- ~C:\Users\username\.emacs.d\bin:pathA:pathB:pathC~
- #+end_quote
-
-3. Restart your system so your new values for ~HOME~ and ~PATH~ take effect.
-
-Now we're ready to move on!
-
-[... truncated ...]
+The irony of writing documentation about a system while that system
+renders the documentation is not lost on us. It's turtles all the way
+down. But at least the turtles are fast.
