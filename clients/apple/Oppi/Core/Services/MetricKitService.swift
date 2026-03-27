@@ -270,6 +270,22 @@ private enum MetricKitPayloadSerializer {
         return String(String(describing: value).prefix(140))
     }
 
+    private static func objectDictionary(_ payload: MXMetricPayload) -> [String: Any] {
+        let data = payload.jsonRepresentation()
+        if let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            return dict
+        }
+        return ["type": "MXMetricPayload", "error": "json_parse_failed"]
+    }
+
+    private static func objectDictionary(_ payload: MXDiagnosticPayload) -> [String: Any] {
+        let data = payload.jsonRepresentation()
+        if let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            return dict
+        }
+        return ["type": "MXDiagnosticPayload", "error": "json_parse_failed"]
+    }
+
     private static func objectDictionary(_ value: Any) -> [String: Any] {
         guard let object = value as? NSObject else {
             return ["payload": summarizeValue(value)]
