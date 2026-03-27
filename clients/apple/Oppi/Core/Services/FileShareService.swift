@@ -469,19 +469,38 @@ enum FileShareService {
         // Chart.js canvases that need time to animate and render.
         await waitForContentReady(webView: webView)
 
-        // Freeze Chart.js canvases as static images so they survive PDF render.
-        // WKWebView.pdf() may not capture <canvas> content reliably.
+        // Force Chart.js to re-render without animation so canvases have
+        // final content immediately, then swap canvases for static images
+        // since WKWebView.pdf() doesn't reliably capture <canvas>.
+        try? await webView.evaluateJavaScript("""
+            (function() {
+                // Force Chart.js charts to render without animation
+                if (window.Chart && Chart.instances) {
+                    var instances = Object.values(Chart.instances);
+                    instances.forEach(function(chart) {
+                        chart.options.animation = false;
+                        chart.options.animations = {};
+                        chart.update('none');
+                    });
+                }
+            })();
+        """)
+
+        // Give synchronous re-render a moment to complete
+        try? await Task.sleep(for: .milliseconds(200))
+
+        // Now freeze canvases to PNG images
         try? await webView.evaluateJavaScript("""
             (function() {
                 document.querySelectorAll('canvas').forEach(function(canvas) {
                     try {
+                        var dataURL = canvas.toDataURL('image/png');
+                        if (!dataURL || dataURL === 'data:,') return;
                         var img = new Image();
-                        img.src = canvas.toDataURL('image/png');
-                        img.style.cssText = canvas.style.cssText || '';
-                        img.width = canvas.width;
-                        img.height = canvas.height;
-                        img.style.width = '100%';
-                        img.style.height = 'auto';
+                        img.src = dataURL;
+                        img.style.cssText = window.getComputedStyle(canvas).cssText;
+                        img.style.width = canvas.offsetWidth + 'px';
+                        img.style.height = canvas.offsetHeight + 'px';
                         canvas.parentNode.replaceChild(img, canvas);
                     } catch(e) {}
                 });
@@ -516,20 +535,21 @@ enum FileShareService {
         for _ in 0..<maxAttempts {
             try? await Task.sleep(for: .milliseconds(200))
 
-            // Check if document is complete and no pending resource loads
             let ready = try? await webView.evaluateJavaScript("""
                 (function() {
                     if (document.readyState !== 'complete') return false;
-                    // Check if Chart.js charts have rendered (canvas has content)
+                    // Check if Chart.js canvases have drawn content
                     var canvases = document.querySelectorAll('canvas');
                     for (var i = 0; i < canvases.length; i++) {
                         var ctx = canvases[i].getContext('2d');
-                        if (!ctx) return false;
-                        // Check if canvas has any drawn content
+                        if (!ctx) continue;
                         try {
-                            var data = ctx.getImageData(0, 0, 1, 1).data;
-                            // If all pixels are transparent, chart hasn't rendered yet
-                        } catch(e) { /* cross-origin canvas, assume rendered */ }
+                            // Sample center pixel — Chart.js draws axes/data there
+                            var cx = Math.floor(canvases[i].width / 2);
+                            var cy = Math.floor(canvases[i].height / 2);
+                            var px = ctx.getImageData(cx, cy, 1, 1).data;
+                            if (px[3] === 0) return false; // still transparent
+                        } catch(e) { /* cross-origin, assume rendered */ }
                     }
                     return true;
                 })();
