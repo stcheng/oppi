@@ -34,9 +34,24 @@ struct FileShareServiceTests {
         #expect(format == .pdf)
     }
 
+    @Test func defaultFormatForOrgModeIsPDF() {
+        let format = FileShareService.defaultFormat(for: .orgMode("* Hello"))
+        #expect(format == .pdf)
+    }
+
+    @Test func defaultFormatForJSONIsPDF() {
+        let format = FileShareService.defaultFormat(for: .json("{\"key\": 1}"))
+        #expect(format == .pdf)
+    }
+
     @Test func defaultFormatForPlainTextIsSource() {
         let format = FileShareService.defaultFormat(for: .plainText("hello"))
         #expect(format == .source)
+    }
+
+    @Test func defaultFormatForImageDataIsImage() {
+        let format = FileShareService.defaultFormat(for: .imageData(Data(), filename: "test.png"))
+        #expect(format == .image)
     }
 
     @Test func defaultFormatForPDFDataIsPDF() {
@@ -62,6 +77,21 @@ struct FileShareServiceTests {
     @Test func imageDataHasOnlyImage() {
         let formats = FileShareService.availableFormats(for: .imageData(Data(), filename: "test.png"))
         #expect(formats == [.image])
+    }
+
+    @Test func pdfIsFirstAvailableFormatForRenderedTypes() {
+        // PDF should be listed first since it's the default
+        let htmlFormats = FileShareService.availableFormats(for: .html("<p>test</p>"))
+        #expect(htmlFormats.first == .pdf)
+
+        let mdFormats = FileShareService.availableFormats(for: .markdown("# test"))
+        #expect(mdFormats.first == .pdf)
+
+        let mermaidFormats = FileShareService.availableFormats(for: .mermaid("graph TD"))
+        #expect(mermaidFormats.first == .pdf)
+
+        let orgFormats = FileShareService.availableFormats(for: .orgMode("* test"))
+        #expect(orgFormats.first == .pdf)
     }
 
     // MARK: - RenderTheme.light
@@ -147,6 +177,86 @@ struct FileShareServiceTests {
         // Cleanup
         FileShareService.cleanupTempFiles()
         #expect(!FileManager.default.fileExists(atPath: dir.path))
+    }
+
+    // MARK: - Render Default
+
+    @Test func renderDefaultProducesPDFForMarkdown() async {
+        let item = await FileShareService.renderDefault(.markdown("# Hello World"))
+        guard case .pdf(let data, let filename) = item else {
+            Issue.record("Expected PDF, got \(item)")
+            return
+        }
+        #expect(data.count > 0)
+        #expect(filename == "document.pdf")
+    }
+
+    @Test func renderDefaultProducesPDFForHTML() async {
+        let item = await FileShareService.renderDefault(.html("<h1>Hello</h1>"))
+        guard case .pdf(let data, let filename) = item else {
+            Issue.record("Expected PDF, got \(item)")
+            return
+        }
+        #expect(data.count > 0)
+        #expect(filename == "page.pdf")
+    }
+
+    @Test func renderDefaultProducesSourceForPlainText() async {
+        let item = await FileShareService.renderDefault(.plainText("hello"))
+        guard case .file(let url) = item else {
+            Issue.record("Expected file, got \(item)")
+            return
+        }
+        #expect(url.lastPathComponent == "text.txt")
+        FileShareService.cleanupTempFiles()
+    }
+
+    // MARK: - PDF Rendering (additional types)
+
+    @Test func latexRendersToPDF() async {
+        let item = await FileShareService.render(.latex("E = mc^2"), as: .pdf)
+        guard case .pdf(let data, let filename) = item else {
+            Issue.record("Expected PDF, got \(item)")
+            return
+        }
+        #expect(data.count > 0)
+        #expect(filename == "formula.pdf")
+    }
+
+    @Test func codeRendersToPDF() async {
+        let item = await FileShareService.render(.code("let x = 1", language: "swift"), as: .pdf)
+        guard case .pdf(let data, let filename) = item else {
+            Issue.record("Expected PDF, got \(item)")
+            return
+        }
+        #expect(data.count > 0)
+        #expect(filename == "code.pdf")
+    }
+
+    // MARK: - Source File Extensions
+
+    @Test func sourceExportUsesCorrectExtensions() async {
+        let cases: [(FileShareService.ShareableContent, String)] = [
+            (.markdown("# test"), "document.md"),
+            (.orgMode("* test"), "document.org"),
+            (.html("<p>test</p>"), "page.html"),
+            (.json("{\"a\":1}"), "data.json"),
+            (.mermaid("graph TD"), "diagram.mmd"),
+            (.latex("x^2"), "formula.tex"),
+            (.code("fn main()", language: "rust"), "code.rs"),
+            (.plainText("hello"), "text.txt"),
+        ]
+
+        for (content, expectedFilename) in cases {
+            let item = await FileShareService.render(content, as: .source)
+            guard case .file(let url) = item else {
+                Issue.record("Expected file for \(expectedFilename), got \(item)")
+                continue
+            }
+            #expect(url.lastPathComponent == expectedFilename, "Expected \(expectedFilename), got \(url.lastPathComponent)")
+        }
+
+        FileShareService.cleanupTempFiles()
     }
 
     // MARK: - Activity Items
