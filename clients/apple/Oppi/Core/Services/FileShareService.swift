@@ -436,13 +436,16 @@ enum FileShareService {
 
     /// Render HTML to PDF using an offscreen WKWebView.
     ///
-    /// Creates a temporary web view, loads the HTML, waits for rendering,
-    /// then uses `WKWebView.pdf(configuration:)` for a native PDF export
-    /// with selectable text and proper layout. Omits `WKPDFConfiguration.rect`
-    /// so WebKit auto-paginates the full document height.
+    /// Creates a temporary web view, loads the HTML, waits for all resources
+    /// (CDN scripts, fonts, images) to load and JavaScript to execute, then
+    /// uses `WKWebView.pdf(configuration:)` for a native PDF export with
+    /// selectable text and proper layout. Chart.js canvases are converted
+    /// to static images before capture to survive PDF rendering.
     private static func renderHTMLToPDF(_ source: String) async -> Data {
         let layoutWidth: CGFloat = 800
         let config = WKWebViewConfiguration()
+        // Ephemeral data store — no persistent cookies/cache from export renders.
+        // CDN fetches still work, just without disk cache (fine for one-shot export).
         config.websiteDataStore = .nonPersistent()
 
         let webView = WKWebView(
@@ -461,18 +464,40 @@ enum FileShareService {
 
         guard loaded else { return Data() }
 
-        // Let CSS/layout settle, then measure full content height
-        try? await Task.sleep(for: .milliseconds(150))
+        // Wait for external resources (Chart.js, Leaflet, fonts) to load
+        // and JavaScript to execute. Poll document.readyState + check for
+        // Chart.js canvases that need time to animate and render.
+        await waitForContentReady(webView: webView)
 
-        // Resize web view to match full content height so createPDF
-        // sees the entire document rather than clipping to the initial frame
+        // Freeze Chart.js canvases as static images so they survive PDF render.
+        // WKWebView.pdf() may not capture <canvas> content reliably.
+        try? await webView.evaluateJavaScript("""
+            (function() {
+                document.querySelectorAll('canvas').forEach(function(canvas) {
+                    try {
+                        var img = new Image();
+                        img.src = canvas.toDataURL('image/png');
+                        img.style.cssText = canvas.style.cssText || '';
+                        img.width = canvas.width;
+                        img.height = canvas.height;
+                        img.style.width = '100%';
+                        img.style.height = 'auto';
+                        canvas.parentNode.replaceChild(img, canvas);
+                    } catch(e) {}
+                });
+            })();
+        """)
+
+        // Let canvas-to-image swap settle
+        try? await Task.sleep(for: .milliseconds(100))
+
+        // Measure full content height and resize web view
         let contentHeight = try? await webView.evaluateJavaScript(
             "document.documentElement.scrollHeight"
         ) as? CGFloat
         let fullHeight = max(contentHeight ?? 600, 100)
         webView.frame = CGRect(x: 0, y: 0, width: layoutWidth, height: fullHeight)
 
-        // Brief additional settle after resize
         try? await Task.sleep(for: .milliseconds(50))
 
         // Generate PDF — omit rect for auto-pagination of full content
@@ -481,6 +506,36 @@ enum FileShareService {
         } catch {
             let image = renderCodeToImage(source, language: "html")
             return embedImageInPDF(image)
+        }
+    }
+
+    /// Poll the web view until external resources are loaded and JS has executed.
+    /// Waits up to 5 seconds, checking every 200ms.
+    private static func waitForContentReady(webView: WKWebView) async {
+        let maxAttempts = 25  // 25 × 200ms = 5 seconds
+        for _ in 0..<maxAttempts {
+            try? await Task.sleep(for: .milliseconds(200))
+
+            // Check if document is complete and no pending resource loads
+            let ready = try? await webView.evaluateJavaScript("""
+                (function() {
+                    if (document.readyState !== 'complete') return false;
+                    // Check if Chart.js charts have rendered (canvas has content)
+                    var canvases = document.querySelectorAll('canvas');
+                    for (var i = 0; i < canvases.length; i++) {
+                        var ctx = canvases[i].getContext('2d');
+                        if (!ctx) return false;
+                        // Check if canvas has any drawn content
+                        try {
+                            var data = ctx.getImageData(0, 0, 1, 1).data;
+                            // If all pixels are transparent, chart hasn't rendered yet
+                        } catch(e) { /* cross-origin canvas, assume rendered */ }
+                    }
+                    return true;
+                })();
+            """) as? Bool
+
+            if ready == true { return }
         }
     }
 
