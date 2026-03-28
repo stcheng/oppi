@@ -28,6 +28,27 @@ enum FileShareService {
         case plainText(String)
         case imageData(Data, filename: String)
         case pdfData(Data, filename: String)
+
+        /// Build shareable content from raw text and a file path.
+        ///
+        /// Detects the file type from the path and maps to the appropriate
+        /// content case. Used by hosting views (file browser, touched-file
+        /// viewer, review detail) to create share content for the toolbar.
+        static func fromText(_ text: String, filePath: String?) -> ShareableContent {
+            let fileType = FileType.detect(from: filePath, content: text)
+            switch fileType {
+            case .markdown: return .markdown(text)
+            case .html: return .html(text)
+            case .json: return .json(text)
+            case .latex: return .latex(text)
+            case .orgMode: return .orgMode(text)
+            case .mermaid: return .mermaid(text)
+            case .graphviz: return .code(text, language: "dot")
+            case .code(let lang): return .code(text, language: lang.displayName)
+            case .plain: return .plainText(text)
+            default: return .plainText(text)
+            }
+        }
     }
 
     /// Output format for sharing.

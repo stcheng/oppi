@@ -46,7 +46,27 @@ struct SessionTouchedFileContentView: View {
         .background(Color.themeBgDark)
         .navigationTitle(fileName)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                if let shareable = shareableContent() {
+                    FileShareButton(content: shareable, style: .icon)
+                }
+            }
+        }
         .task { await loadContent() }
+    }
+
+    // MARK: - Share
+
+    private func shareableContent() -> FileShareService.ShareableContent? {
+        switch phase {
+        case .text(let text):
+            return .fromText(text, filePath: filePath)
+        case .image(let data):
+            return .imageData(data, filename: fileName)
+        default:
+            return nil
+        }
     }
 
     // MARK: - Image

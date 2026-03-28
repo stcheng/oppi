@@ -129,26 +129,21 @@ struct LaTeXFileView: View {
                 }
             }
 
-            // Floating toolbar
-            HStack(spacing: 8) {
-                FileShareButton(content: .latex(content), style: .capsule)
-                    .buttonStyle(.plain)
-
-                Button {
-                    withAnimation(.easeInOut(duration: 0.15)) { showRaw.toggle() }
-                } label: {
-                    Label(
-                        showRaw ? "Rendered" : "Source",
-                        systemImage: showRaw ? "function" : "curlybraces"
-                    )
-                    .font(.caption2.bold())
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background(.ultraThinMaterial)
-                    .clipShape(Capsule())
-                }
-                .buttonStyle(.plain)
+            // Floating source toggle
+            Button {
+                withAnimation(.easeInOut(duration: 0.15)) { showRaw.toggle() }
+            } label: {
+                Label(
+                    showRaw ? "Rendered" : "Source",
+                    systemImage: showRaw ? "function" : "curlybraces"
+                )
+                .font(.caption2.bold())
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(.ultraThinMaterial)
+                .clipShape(Capsule())
             }
+            .buttonStyle(.plain)
             .padding(.trailing, 12)
             .padding(.top, 8)
         }

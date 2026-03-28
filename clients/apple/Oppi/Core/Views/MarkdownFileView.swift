@@ -144,26 +144,21 @@ struct MarkdownFileView: View {
                 }
             }
 
-            // Floating toolbar
-            HStack(spacing: 8) {
-                FileShareButton(content: .markdown(content), style: .capsule)
-                    .buttonStyle(.plain)
-
-                Button {
-                    withAnimation(.easeInOut(duration: 0.15)) { showRaw.toggle() }
-                } label: {
-                    Label(
-                        showRaw ? "Reader" : "Source",
-                        systemImage: showRaw ? "doc.richtext" : "curlybraces"
-                    )
-                    .font(.caption2.bold())
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background(.ultraThinMaterial)
-                    .clipShape(Capsule())
-                }
-                .buttonStyle(.plain)
+            // Floating source toggle
+            Button {
+                withAnimation(.easeInOut(duration: 0.15)) { showRaw.toggle() }
+            } label: {
+                Label(
+                    showRaw ? "Reader" : "Source",
+                    systemImage: showRaw ? "doc.richtext" : "curlybraces"
+                )
+                .font(.caption2.bold())
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(.ultraThinMaterial)
+                .clipShape(Capsule())
             }
+            .buttonStyle(.plain)
             .padding(.trailing, 12)
             .padding(.top, 8)
         }

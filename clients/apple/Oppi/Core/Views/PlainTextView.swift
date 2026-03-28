@@ -28,21 +28,14 @@ struct PlainTextView: View {
                 )
             }
         } else {
-            ZStack(alignment: .topTrailing) {
-                NativeCodeBodyView(
-                    content: content,
-                    language: nil,
-                    startLine: startLine,
-                    selectedTextSourceContext: piRouter != nil
-                        ? fileContentSourceContext(filePath: filePath, surface: .fullScreenSource)
-                        : nil
-                )
-
-                FileShareButton(content: .plainText(content), style: .capsule)
-                    .buttonStyle(.plain)
-                    .padding(.trailing, 12)
-                    .padding(.top, 8)
-            }
+            NativeCodeBodyView(
+                content: content,
+                language: nil,
+                startLine: startLine,
+                selectedTextSourceContext: piRouter != nil
+                    ? fileContentSourceContext(filePath: filePath, surface: .fullScreenSource)
+                    : nil
+            )
         }
     }
 }

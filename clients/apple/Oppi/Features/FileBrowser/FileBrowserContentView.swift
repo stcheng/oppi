@@ -99,11 +99,8 @@ struct FileBrowserContentView: View {
         .navigationTitle(fileName)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            // Share for non-text content (images, PDFs) that don't have
-            // their own FileShareButton in document mode. Text-based views
-            // (markdown, code, etc.) provide their own floating share capsule.
             ToolbarItem(placement: .topBarTrailing) {
-                if let shareable = nonTextShareableContent() {
+                if let shareable = shareableContent() {
                     FileShareButton(content: shareable, style: .icon)
                 }
             }
@@ -231,14 +228,11 @@ struct FileBrowserContentView: View {
 
     // MARK: - Share
 
-    /// Shareable content for media types that lack an in-view share button.
-    ///
-    /// Text-based content (code, markdown, HTML, etc.) is handled by
-    /// ``FileShareButton`` inside each document-mode file view's floating
-    /// toolbar. This method only returns content for images and PDFs,
-    /// which render via simple UIKit views without their own share chrome.
-    private func nonTextShareableContent() -> FileShareService.ShareableContent? {
+    /// Build shareable content from the current loaded phase.
+    private func shareableContent() -> FileShareService.ShareableContent? {
         switch content {
+        case .text(let text):
+            return .fromText(text, filePath: filePath)
         case .image(let data):
             return .imageData(data, filename: fileName)
         case .pdf(let data):

@@ -40,21 +40,14 @@ struct JSONFileView: View {
                     )
                 }
             } else {
-                ZStack(alignment: .topTrailing) {
-                    NativeCodeBodyView(
-                        content: effectiveContent,
-                        language: "json",
-                        startLine: startLine,
-                        selectedTextSourceContext: piRouter != nil
-                            ? fileContentSourceContext(filePath: filePath, language: "json")
-                            : nil
-                    )
-
-                    FileShareButton(content: .json(content), style: .capsule)
-                        .buttonStyle(.plain)
-                        .padding(.trailing, 12)
-                        .padding(.top, 8)
-                }
+                NativeCodeBodyView(
+                    content: effectiveContent,
+                    language: "json",
+                    startLine: startLine,
+                    selectedTextSourceContext: piRouter != nil
+                        ? fileContentSourceContext(filePath: filePath, language: "json")
+                        : nil
+                )
             }
         }
         .id(prettyContent != nil ? 1 : 0)

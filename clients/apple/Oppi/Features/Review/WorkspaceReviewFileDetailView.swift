@@ -94,6 +94,11 @@ struct WorkspaceReviewFileDetailView: View {
             }
         }
         .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                if let diff, let shareable = shareableContentForReview(diff: diff) {
+                    FileShareButton(content: shareable, style: .icon)
+                }
+            }
             ToolbarItem(placement: .primaryAction) {
                 Menu {
                     Button(WorkspaceReviewSessionAction.review.fileMenuTitle) {
@@ -141,6 +146,14 @@ struct WorkspaceReviewFileDetailView: View {
     /// Whether the file was deleted — no current content to display.
     private var isDeletedFile: Bool {
         file.status.trimmingCharacters(in: .whitespaces) == "D"
+    }
+
+    /// Build shareable content from the current file content in the review.
+    private func shareableContentForReview(
+        diff: WorkspaceReviewDiffResponse
+    ) -> FileShareService.ShareableContent? {
+        guard !diff.currentText.isEmpty else { return nil }
+        return .fromText(diff.currentText, filePath: file.path)
     }
 
     private func content(diff: WorkspaceReviewDiffResponse) -> some View {
