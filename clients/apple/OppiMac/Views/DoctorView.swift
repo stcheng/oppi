@@ -88,13 +88,14 @@ struct DoctorView: View {
         rawOutput = nil
 
         Task.detached {
-            guard let nodePath = await MainActor.run(body: { ServerProcessManager.resolveNodePath() }) else {
+            guard let runtimePath = await MainActor.run(body: { ServerProcessManager.resolveRuntimePath() }) else {
                 await MainActor.run {
-                    error = "Node.js not found"
+                    error = "JS runtime not found (Bun or Node.js)"
                     isRunning = false
                 }
                 return
             }
+            let nodePath = runtimePath
             guard let cliPath = await MainActor.run(body: { ServerProcessManager.resolveServerCLIPath() }) else {
                 await MainActor.run {
                     error = "Server CLI not found"

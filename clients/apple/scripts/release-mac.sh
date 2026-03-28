@@ -57,6 +57,32 @@ npm ci --ignore-scripts
 npm run build
 echo "Server built."
 
+# ── Step 1b: Audit production dependencies ──
+
+echo "--- Step 1b: Auditing production dependencies ---"
+AUDIT_OUTPUT=$(npm audit --production --audit-level=high 2>&1) || true
+AUDIT_EXIT=$?
+
+# npm audit exits 1 if any vuln at or above audit-level is found
+if echo "$AUDIT_OUTPUT" | grep -q "found 0 vulnerabilities"; then
+    echo "Audit clean."
+elif echo "$AUDIT_OUTPUT" | grep -qi "high\|critical"; then
+    echo ""
+    echo "$AUDIT_OUTPUT"
+    echo ""
+    echo "ERROR: npm audit found high/critical vulnerabilities in production dependencies."
+    echo "Fix with 'npm audit fix' or update the offending package before releasing."
+    echo ""
+    echo "To bypass (NOT RECOMMENDED): set SKIP_AUDIT=1"
+    if [[ "${SKIP_AUDIT:-}" != "1" ]]; then
+        exit 1
+    fi
+    echo "WARNING: SKIP_AUDIT=1 set — proceeding despite vulnerabilities"
+else
+    echo "Audit: moderate/low issues only (acceptable)."
+    echo "$AUDIT_OUTPUT" | tail -5
+fi
+
 # ── Step 2: Generate Xcode project ──
 
 echo "--- Step 2: Generating Xcode project ---"

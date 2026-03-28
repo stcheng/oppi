@@ -483,7 +483,8 @@ struct WorkspaceDetailView: View {
             await refreshPolicyFallback()
         }
         .task {
-            await refreshLineage()
+            // NOTE: refreshLineage() removed — graph endpoint costs p95=2s and fork
+            // feature is non-functional. Re-enable when fork is fixed.
             await refreshLocalSessions()
             await refreshPolicyFallback()
             if let api = apiClient {
@@ -750,7 +751,6 @@ struct WorkspaceDetailView: View {
         do {
             let response = try await api.createWorkspaceSession(workspaceId: workspace.id)
             sessionStore.upsert(response.session)
-            await refreshLineage()
             isCreating = false
         } catch {
             self.error = error.localizedDescription
@@ -763,7 +763,6 @@ struct WorkspaceDetailView: View {
         do {
             let updated = try await api.stopWorkspaceSession(workspaceId: workspace.id, sessionId: session.id)
             sessionStore.upsert(updated)
-            await refreshLineage()
         } catch {
             self.error = "Stop failed: \(error.localizedDescription)"
         }
@@ -774,7 +773,6 @@ struct WorkspaceDetailView: View {
         do {
             let updated = try await api.resumeWorkspaceSession(workspaceId: workspace.id, sessionId: session.id)
             sessionStore.upsert(updated)
-            await refreshLineage()
         } catch {
             self.error = "Resume failed: \(error.localizedDescription)"
         }
@@ -793,7 +791,6 @@ struct WorkspaceDetailView: View {
         } catch {
             self.error = "Delete failed: \(error.localizedDescription)"
         }
-        await refreshLineage()
     }
 
     private func importAndResumeLocal(_ local: LocalSession) async {
@@ -826,7 +823,6 @@ struct WorkspaceDetailView: View {
             for session in sessions {
                 sessionStore.upsert(session)
             }
-            await refreshLineage()
         } catch {
             // Keep cached data
         }

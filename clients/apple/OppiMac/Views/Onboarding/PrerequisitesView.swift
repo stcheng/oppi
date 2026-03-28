@@ -31,7 +31,7 @@ struct PrerequisitesView: View {
             Spacer()
 
             VStack(alignment: .leading, spacing: 12) {
-                PrereqRow(label: "Node.js", status: nodeStatus)
+                PrereqRow(label: "JS Runtime", status: nodeStatus)
                 PrereqRow(label: "pi CLI", status: piStatus)
                 PrereqRow(label: "Port 7749", status: portStatus)
             }
@@ -84,13 +84,20 @@ struct PrerequisitesView: View {
     // MARK: - Checks
 
     private static func checkNode() async -> PrereqStatus {
-        guard let path = await ProcessRunner.which("node") else {
-            return .failed("Not found — install from nodejs.org")
+        // Prefer Bun, fall back to Node.js
+        if let bunPath = await ProcessRunner.which("bun") {
+            if let version = await ProcessRunner.version(bunPath) {
+                return .passed("Bun \(version)")
+            }
+            return .passed("Bun (at \(bunPath))")
         }
-        guard let version = await ProcessRunner.version(path) else {
-            return .failed("Found at \(path) but could not get version")
+        if let nodePath = await ProcessRunner.which("node") {
+            if let version = await ProcessRunner.version(nodePath) {
+                return .passed("Node \(version)")
+            }
+            return .passed("Node (at \(nodePath))")
         }
-        return .passed(version)
+        return .failed("Not found — install Bun (brew install oven-sh/bun/bun)")
     }
 
     private static func checkPi() async -> PrereqStatus {

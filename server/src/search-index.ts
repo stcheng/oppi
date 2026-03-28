@@ -11,7 +11,7 @@
  * - Shutdown: close db
  */
 
-import Database from "better-sqlite3";
+import { openDatabase, type SqliteDatabase, type SqliteStatement } from "./sqlite-compat.js";
 import { readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 
@@ -149,20 +149,20 @@ function sanitizeFtsQuery(raw: string): string {
 // ---------------------------------------------------------------------------
 
 export class SearchIndex {
-  private db: Database.Database;
+  private db: SqliteDatabase;
   private pendingReindex = new Set<string>();
   private reindexTimer: ReturnType<typeof setTimeout> | null = null;
   private static readonly REINDEX_DEBOUNCE_MS = 2000;
 
   // Prepared statements (lazy init after ensureSchema)
-  private stmtUpsert!: Database.Statement;
-  private stmtUpsertMeta!: Database.Statement;
-  private stmtSearch!: Database.Statement;
-  private stmtSearchWorkspace!: Database.Statement;
-  private stmtDelete!: Database.Statement;
-  private stmtDeleteMeta!: Database.Statement;
-  private stmtGetMeta!: Database.Statement;
-  private stmtCount!: Database.Statement;
+  private stmtUpsert!: SqliteStatement;
+  private stmtUpsertMeta!: SqliteStatement;
+  private stmtSearch!: SqliteStatement;
+  private stmtSearchWorkspace!: SqliteStatement;
+  private stmtDelete!: SqliteStatement;
+  private stmtDeleteMeta!: SqliteStatement;
+  private stmtGetMeta!: SqliteStatement;
+  private stmtCount!: SqliteStatement;
 
   private getSession: (id: string) => Session | undefined;
   private closed = false;
@@ -170,9 +170,11 @@ export class SearchIndex {
   constructor(dataDir: string, getSession: (id: string) => Session | undefined) {
     this.getSession = getSession;
     const dbPath = join(dataDir, "session-search.db");
-    this.db = new Database(dbPath);
-    this.db.pragma("journal_mode = WAL");
-    this.db.pragma("synchronous = NORMAL");
+    this.db = openDatabase(dbPath);
+    // Use exec() for pragmas — works in both better-sqlite3 and bun:sqlite
+    // (bun:sqlite lacks the .pragma() method)
+    this.db.exec("PRAGMA journal_mode = WAL");
+    this.db.exec("PRAGMA synchronous = NORMAL");
     this.ensureSchema();
     this.prepareStatements();
   }

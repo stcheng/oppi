@@ -141,9 +141,10 @@ struct ServerInitView: View {
     }
 
     private nonisolated func runServerInit() async throws {
-        guard let nodePath = await MainActor.run(body: { ServerProcessManager.resolveNodePath() }) else {
+        guard let runtimePath = await MainActor.run(body: { ServerProcessManager.resolveRuntimePath() }) else {
             throw InitError.nodeNotFound
         }
+        let nodePath = runtimePath
         guard let cliPath = await MainActor.run(body: { ServerProcessManager.resolveServerCLIPath() }) else {
             throw InitError.cliNotFound
         }

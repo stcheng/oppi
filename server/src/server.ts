@@ -615,10 +615,13 @@ export class Server {
 
     const cert = readFileSync(tls.certPath, "utf-8");
     const key = readFileSync(tls.keyPath, "utf-8");
-    const ca = tls.caPath && existsSync(tls.caPath) ? readFileSync(tls.caPath, "utf-8") : undefined;
 
+    // Note: `ca` is intentionally NOT passed to createHttpsServer.
+    // We don't use mutual TLS (client certificates) — auth is bearer tokens.
+    // Passing `ca` here causes Bun's node:https compat layer to demand client
+    // certs (oven-sh/bun#16254), breaking HTTPS for all clients.
     return {
-      server: createHttpsServer({ cert, key, ca }, handler),
+      server: createHttpsServer({ cert, key }, handler),
       scheme: "https",
       certPath: tls.certPath,
     };

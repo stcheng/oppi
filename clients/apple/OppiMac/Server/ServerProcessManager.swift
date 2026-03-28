@@ -101,7 +101,23 @@ final class ServerProcessManager {
         return candidates.first { FileManager.default.fileExists(atPath: $0) }
     }
 
-    /// Resolves the Node.js binary path.
+    /// Resolves the Bun runtime binary path.
+    ///
+    /// Search order: Homebrew, common install locations, fallback to Node.js.
+    static func resolveRuntimePath() -> String? {
+        let bunCandidates = [
+            "/opt/homebrew/bin/bun",
+            "/usr/local/bin/bun",
+            NSString("~/.bun/bin/bun").expandingTildeInPath,
+        ]
+        if let bun = bunCandidates.first(where: { FileManager.default.fileExists(atPath: $0) }) {
+            return bun
+        }
+        // Fallback to Node.js for backwards compat
+        return resolveNodePath()
+    }
+
+    /// Resolves the Node.js binary path (fallback only).
     static func resolveNodePath() -> String? {
         let candidates = [
             "/opt/homebrew/bin/node",
@@ -109,6 +125,12 @@ final class ServerProcessManager {
             "/usr/bin/node",
         ]
         return candidates.first { FileManager.default.fileExists(atPath: $0) }
+    }
+
+    /// True if the resolved runtime is Bun (vs Node.js fallback).
+    static var runtimeIsBun: Bool {
+        guard let path = resolveRuntimePath() else { return false }
+        return path.hasSuffix("/bun")
     }
 
     // MARK: - Lifecycle
@@ -173,9 +195,9 @@ final class ServerProcessManager {
 
     /// Start the server using default resolved paths.
     func startWithDefaults() {
-        guard let nodePath = Self.resolveNodePath() else {
-            state = .failed("Node.js not found")
-            logger.error("Node.js binary not found in well-known paths")
+        guard let runtimePath = Self.resolveRuntimePath() else {
+            state = .failed("Bun (or Node.js) not found")
+            logger.error("No JS runtime found — install Bun (brew install oven-sh/bun/bun) or Node.js")
             return
         }
         guard let cliPath = Self.resolveServerCLIPath() else {
@@ -185,7 +207,7 @@ final class ServerProcessManager {
         }
         let dataDir = NSString("~/.config/oppi").expandingTildeInPath
 
-        start(nodePath: nodePath, cliPath: cliPath, dataDir: dataDir)
+        start(nodePath: runtimePath, cliPath: cliPath, dataDir: dataDir)
     }
 
     /// Spawn the server process.
