@@ -476,12 +476,13 @@ export class SessionManager extends EventEmitter {
    * stays alive and ready for the next prompt.
    */
   async sendAbort(sessionId: string): Promise<void> {
-    // Cancel pending ask before aborting — resolve deferred selects as
-    // cancelled so the pi process unblocks from waiting for extension UI
-    // responses and can process the abort signal.
-    this.cancelPendingAsk(sessionId);
     const key = this.sessionKey(sessionId);
-    await this.stopFlowCoordinator.sendAbort(key, sessionId);
+    // cancelPendingAsk runs inside the session lock (via preAbort callback)
+    // to serialize with respondToUIRequest. This prevents the race where a
+    // stop message arriving before an ask answer silently discards the answer.
+    await this.stopFlowCoordinator.sendAbort(key, sessionId, () => {
+      this.cancelPendingAsk(sessionId);
+    });
   }
 
   /** Graceful abort budget before escalating. */
@@ -543,6 +544,10 @@ export class SessionManager extends EventEmitter {
   async stopSession(sessionId: string): Promise<void> {
     const key = this.sessionKey(sessionId);
     this.pendingPromptPreambles.delete(sessionId);
+    // Cancel pending ask so deferred selects unblock before the process is
+    // disposed. Without this, the pi process hangs waiting for extension UI
+    // responses during the grace period before force-terminate.
+    this.cancelPendingAsk(sessionId);
     await this.stopFlowCoordinator.stopSession(key, sessionId);
   }
 

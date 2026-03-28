@@ -22,8 +22,13 @@ export class SessionStopFlowCoordinator {
     private readonly stopSessionGraceMs: number,
   ) {}
 
-  async sendAbort(key: string, sessionId: string): Promise<void> {
+  async sendAbort(key: string, sessionId: string, preAbort?: () => void): Promise<void> {
     await this.deps.runtimeManager.withSessionLock(sessionId, async () => {
+      // Run pre-abort callback inside the lock so it serializes with
+      // WebSocket message handlers (e.g. respondToUIRequest). Without
+      // this, cancelPendingAsk could race with an ask answer — if the
+      // stop message arrives first, the answer is silently lost.
+      preAbort?.();
       const active = this.deps.getActiveSession(key);
       if (!active) {
         return;

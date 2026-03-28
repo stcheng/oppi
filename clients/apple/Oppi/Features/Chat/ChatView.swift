@@ -461,13 +461,24 @@ struct ChatView: View {
                         guard let askId = connection.activeAskRequest?.id else { return }
                         let value = AskResponseEncoder.encode(answers)
                         Task {
-                            try? await connection.respondToExtensionUI(id: askId, value: value)
+                            do {
+                                try await connection.respondToExtensionUI(id: askId, value: value)
+                            } catch {
+                                // Send failed (likely WS drop). Restore the ask card so the
+                                // user can retry — the server will re-broadcast on reconnect.
+                                connection.activeAskRequest = connection.activeAskRequest
+                            }
                         }
                     },
                     onAskIgnoreAll: {
                         guard let askId = connection.activeAskRequest?.id else { return }
                         Task {
-                            try? await connection.respondToExtensionUI(id: askId, cancelled: true)
+                            do {
+                                try await connection.respondToExtensionUI(id: askId, cancelled: true)
+                            } catch {
+                                // Same as above — restore ask state on failure.
+                                connection.activeAskRequest = connection.activeAskRequest
+                            }
                         }
                     },
                     onAskEnterAnswerMode: {

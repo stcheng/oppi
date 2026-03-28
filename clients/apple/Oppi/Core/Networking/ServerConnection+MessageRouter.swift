@@ -93,6 +93,8 @@ extension ServerConnection {
 
         case .sessionEnded:
             silenceWatchdog.stop()
+            activeAskRequest = nil
+            askAnswerMode = false
             messageQueueStore.clear(sessionId: sessionId)
 
         case .sessionDeleted(let deletedId):
@@ -100,6 +102,8 @@ extension ServerConnection {
 
         case .stopConfirmed:
             silenceWatchdog.stop()
+            activeAskRequest = nil
+            askAnswerMode = false
 
         default:
             break
