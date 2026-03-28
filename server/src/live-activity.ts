@@ -216,8 +216,7 @@ export class LiveActivityBridge {
   }
 
   private findSessionById(sessionId: string): Session | undefined {
-    const sessions = this.storage.listSessions();
-    return sessions.find((s) => s.id === sessionId);
+    return this.storage.getSession(sessionId);
   }
 
   private findPrimarySession(): Session | undefined {
