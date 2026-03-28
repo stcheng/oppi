@@ -6,7 +6,7 @@ Oppi monorepo — iOS/macOS app + self-hosted server for mobile-supervised [pi](
 
 ```
 clients/apple/ Apple clients (iOS + macOS, SwiftUI + UIKit, iOS 26+)
-server/        Server runtime (Node.js/TypeScript)
+server/        Server runtime (TypeScript, runs under Bun or Node.js)
 ```
 
 ## Commands
