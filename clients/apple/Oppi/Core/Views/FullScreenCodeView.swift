@@ -203,6 +203,27 @@ indirect enum FullScreenCodeContent {
     case orgMode(content: String, filePath: String?)
     case mermaid(content: String, filePath: String?)
     case graphviz(content: String, filePath: String?)
+
+    /// Build content from raw text and a file path by detecting the file type.
+    static func fromText(_ text: String, filePath: String?) -> FullScreenCodeContent {
+        let fileType = FileType.detect(from: filePath, content: text)
+        switch fileType {
+        case .markdown: return .markdown(content: text, filePath: filePath)
+        case .html: return .html(content: text, filePath: filePath)
+        case .latex: return .latex(content: text, filePath: filePath)
+        case .orgMode: return .orgMode(content: text, filePath: filePath)
+        case .mermaid: return .mermaid(content: text, filePath: filePath)
+        case .graphviz: return .graphviz(content: text, filePath: filePath)
+        case .json:
+            return .code(content: text, language: "json", filePath: filePath, startLine: 1)
+        case .code(let lang):
+            return .code(content: text, language: lang.displayName, filePath: filePath, startLine: 1)
+        case .plain:
+            return .plainText(content: text, filePath: filePath)
+        default:
+            return .plainText(content: text, filePath: filePath)
+        }
+    }
 }
 
 /// SwiftUI wrapper around ``FullScreenCodeViewController``.

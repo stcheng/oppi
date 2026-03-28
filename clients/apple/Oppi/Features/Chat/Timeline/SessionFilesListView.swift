@@ -16,6 +16,12 @@ struct SessionFilesListView: View {
     var searchText: String = ""
 
     @Environment(GitStatusStore.self) private var gitStatusStore
+    @Environment(\.apiClient) private var apiClient
+
+    /// Content to present in the full-screen sheet viewer.
+    @State private var sheetContent: FullScreenCodeContent?
+    @State private var showSheet = false
+    @State private var loadingFilePath: String?
 
     /// Files from git status, keyed by path for fast lookup.
     private var gitFilesByPath: [String: GitFileStatus] {
@@ -53,6 +59,13 @@ struct SessionFilesListView: View {
             }
             .listStyle(.plain)
             .background(Color.themeBgDark)
+            .sheet(isPresented: $showSheet) {
+                if let sheetContent {
+                    FullScreenCodeView(content: sheetContent)
+                        .presentationDetents([.large])
+                        .presentationDragIndicator(.visible)
+                }
+            }
         }
     }
 
@@ -67,9 +80,48 @@ struct SessionFilesListView: View {
         let gitFile = gitFilesByPath[path]
         let (filePositions, parentPositions) = Self.splitPositions(matchPositions, in: path)
 
-        NavigationLink {
-            destination(for: path, gitFile: gitFile)
-        } label: {
+        Group {
+            if let workspaceId, let gitFile {
+                // Git-changed file → push to diff/review detail (needs tabs + actions)
+                NavigationLink {
+                    WorkspaceReviewFileDetailView(
+                        workspaceId: workspaceId,
+                        selectedSessionId: sessionId,
+                        file: gitFile.toReviewFile()
+                    )
+                } label: {
+                    fileRowContent(
+                        icon: icon, fileName: fileName, parentPath: parentPath,
+                        fileType: fileType, gitFile: gitFile,
+                        filePositions: filePositions, parentPositions: parentPositions
+                    )
+                }
+            } else {
+                // Plain file → present as full-screen sheet
+                Button {
+                    Task { await loadAndPresent(path: path) }
+                } label: {
+                    fileRowContent(
+                        icon: icon, fileName: fileName, parentPath: parentPath,
+                        fileType: fileType, gitFile: gitFile,
+                        filePositions: filePositions, parentPositions: parentPositions
+                    )
+                }
+                .foregroundStyle(.primary)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func fileRowContent(
+        icon: FileIcon,
+        fileName: String,
+        parentPath: String?,
+        fileType: FileType,
+        gitFile: GitFileStatus?,
+        filePositions: [Int],
+        parentPositions: [Int]
+    ) -> some View {
             HStack(spacing: 10) {
                 // File icon
                 Image(systemName: icon.symbolName)
@@ -151,41 +203,38 @@ struct SessionFilesListView: View {
                 }
             }
             .padding(.vertical, 2)
-        }
     }
 
-    // MARK: - Navigation Destination
+    // MARK: - Sheet Presentation
 
-    @ViewBuilder
-    private func destination(for path: String, gitFile: GitFileStatus?) -> some View {
-        if let workspaceId, let gitFile {
-            // In-workspace file with git changes — show diff + current
-            WorkspaceReviewFileDetailView(
-                workspaceId: workspaceId,
-                selectedSessionId: sessionId,
-                file: gitFile.toReviewFile()
-            )
-        } else if let workspaceId, !isAbsolutePath(path) {
-            // In-workspace file without git changes — show current content via file browser
-            FileBrowserContentView(
-                workspaceId: workspaceId,
-                filePath: path,
-                fileName: path.lastPathComponentForDisplay
-            )
-        } else if let workspaceId {
-            // External file (absolute path) — load via session-touched-file API
-            SessionTouchedFileContentView(
-                workspaceId: workspaceId,
-                sessionId: sessionId,
-                filePath: path,
-                fileName: path.lastPathComponentForDisplay
-            )
-        } else {
-            ContentUnavailableView(
-                "Unavailable",
-                systemImage: "exclamationmark.triangle",
-                description: Text("No workspace context to load file.")
-            )
+    /// Load file content from the API and present in the full-screen viewer.
+    private func loadAndPresent(path: String) async {
+        guard let api = apiClient, let workspaceId else { return }
+        guard loadingFilePath == nil else { return }
+
+        loadingFilePath = path
+        defer { loadingFilePath = nil }
+
+        do {
+            let data: Data
+            if isAbsolutePath(path) {
+                data = try await api.browseSessionTouchedFile(
+                    workspaceId: workspaceId,
+                    sessionId: sessionId,
+                    path: path
+                )
+            } else {
+                data = try await api.browseWorkspaceFile(
+                    workspaceId: workspaceId,
+                    path: path
+                )
+            }
+
+            guard let text = String(data: data, encoding: .utf8) else { return }
+            sheetContent = .fromText(text, filePath: path)
+            showSheet = true
+        } catch {
+            // Silently fail — file may have been deleted
         }
     }
 
