@@ -3,63 +3,62 @@ import WebKit
 
 // MARK: - HTMLContentTracker
 
-/// Decides when a WKWebView should actually call `loadHTMLString`.
+/// Decides when a WKWebView should call `loadHTMLString`.
 ///
 /// Solves two problems:
-/// 1. **Deferred first load.** WKWebView silently renders blank when
-///    `loadHTMLString` is called before the view has a window. Content
-///    is queued until `attach()` signals the view is in a window.
+/// 1. **Deferred first load.** WKWebView renders blank when `loadHTMLString`
+///    is called before the view has a window with a non-zero frame. Content
+///    is queued until `markReady()` signals the view can render.
 /// 2. **Redundant reload suppression.** Same content is not reloaded
 ///    unless the web content process was terminated.
+///
+/// Usage from the view:
+/// - `setContent(_:)` whenever new HTML arrives (init, updateUIView).
+/// - `markReady()` from `didMoveToWindow` + `layoutSubviews` when
+///   `window != nil && bounds.width > 0`.
+/// - `markNotReady()` when the window goes away.
+/// - `markProcessTerminated()` from the WKNavigationDelegate.
+///
+/// Both `setContent` and `markReady` return the HTML to load (or nil).
+/// Whichever fires last with all conditions met triggers the load.
 final class HTMLContentTracker {
-    private var loadedContentHash: Int?
-    private var processTerminated = false
-    private var attached = false
-    private var pendingContent: String?
+    private var currentHTML: String?
+    private var loadedHash: Int?
+    private var forceReload = false
+    private(set) var isReady = false
 
-    /// Request a load. Returns the HTML to load now, or nil if deferred/unchanged.
-    ///
-    /// Before `attach()` is called, content is queued as pending.
-    /// After `attach()`, returns content only if it differs from last load
-    /// or the process was terminated.
-    func contentToLoad(for html: String) -> String? {
-        let hash = html.hashValue
-
-        guard attached else {
-            pendingContent = html
-            return nil
-        }
-
-        if processTerminated || hash != loadedContentHash {
-            loadedContentHash = hash
-            processTerminated = false
-            pendingContent = nil
-            return html
-        }
-
-        return nil
+    /// Set desired content. Returns HTML to load now, or nil if deferred/unchanged.
+    @discardableResult
+    func setContent(_ html: String) -> String? {
+        currentHTML = html
+        return evaluateLoad()
     }
 
-    /// Called when the view enters a window. Returns pending content to load, or nil.
-    func attach() -> String? {
-        attached = true
-        guard let content = pendingContent else { return nil }
-        let hash = content.hashValue
-        loadedContentHash = hash
-        processTerminated = false
-        pendingContent = nil
-        return content
+    /// Mark the view as render-ready (window + non-zero frame).
+    /// Returns pending content to load, or nil.
+    @discardableResult
+    func markReady() -> String? {
+        isReady = true
+        return evaluateLoad()
     }
 
-    /// Called when the view leaves its window.
-    func detach() {
-        attached = false
+    /// Mark the view as not ready (removed from window).
+    func markNotReady() {
+        isReady = false
     }
 
-    /// Call from `webViewWebContentProcessDidTerminate` to force
-    /// the next `contentToLoad` to return content — even for same hash.
+    /// Force the next evaluation to return content, even if hash matches.
     func markProcessTerminated() {
-        processTerminated = true
+        forceReload = true
+    }
+
+    private func evaluateLoad() -> String? {
+        guard isReady, let html = currentHTML else { return nil }
+        let hash = html.hashValue
+        guard forceReload || hash != loadedHash else { return nil }
+        loadedHash = hash
+        forceReload = false
+        return html
     }
 }
 
@@ -72,21 +71,14 @@ final class HTMLContentTracker {
 /// navigation blocking, popup blocking, and process termination recovery
 /// live here — no duplication.
 ///
-/// Security posture:
-/// - Ephemeral data store (no cookies/cache persisted)
-/// - No media auto-play
-/// - Navigation blocked (links open in Safari)
-/// - Popup windows blocked (open in Safari)
-/// - Content process crash recovery (automatic reload)
-/// - Inspector disabled
+/// Defers `loadHTMLString` until the view has a window AND a non-zero frame.
+/// Checks both `didMoveToWindow` and `layoutSubviews` — whichever fires last
+/// with all conditions met triggers the load.
 final class HTMLRenderView: UIView, WKNavigationDelegate {
     private let webView: PiWKWebView
     private let contentTracker = HTMLContentTracker()
-    private var currentHTML: String
 
     init(htmlString: String, piActionHandler: ((String, PiQuickAction) -> Void)? = nil) {
-        self.currentHTML = htmlString
-
         let config = WKWebViewConfiguration()
         config.websiteDataStore = .nonPersistent()
         config.mediaTypesRequiringUserActionForPlayback = .all
@@ -114,32 +106,34 @@ final class HTMLRenderView: UIView, WKNavigationDelegate {
             webView.bottomAnchor.constraint(equalTo: bottomAnchor),
         ])
 
-        // Queue initial content — will load when didMoveToWindow fires
-        _ = contentTracker.contentToLoad(for: htmlString)
+        // Queue for loading — will fire when view is ready
+        contentTracker.setContent(htmlString)
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { nil }
 
-    // MARK: - Window lifecycle
+    // MARK: - View lifecycle
 
     override func didMoveToWindow() {
         super.didMoveToWindow()
         if window != nil {
-            if let html = contentTracker.attach() {
-                webView.loadHTMLString(html, baseURL: nil)
-            }
+            flushIfReady()
         } else {
-            contentTracker.detach()
+            contentTracker.markNotReady()
         }
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        flushIfReady()
     }
 
     // MARK: - Content updates
 
-    /// Load new HTML content. Defers until the view has a window.
+    /// Load new HTML content. Loads immediately if ready, otherwise deferred.
     func load(_ htmlString: String) {
-        currentHTML = htmlString
-        if let html = contentTracker.contentToLoad(for: htmlString) {
+        if let html = contentTracker.setContent(htmlString) {
             webView.loadHTMLString(html, baseURL: nil)
         }
     }
@@ -149,9 +143,17 @@ final class HTMLRenderView: UIView, WKNavigationDelegate {
         webView.piActionHandler = handler
     }
 
+    // MARK: - Private
+
+    private func flushIfReady() {
+        guard window != nil, bounds.width > 0, bounds.height > 0 else { return }
+        if let html = contentTracker.markReady() {
+            webView.loadHTMLString(html, baseURL: nil)
+        }
+    }
+
     // MARK: - WKNavigationDelegate
 
-    /// Block all navigation except the initial load. External links open in Safari.
     func webView(
         _ webView: WKWebView,
         decidePolicyFor navigationAction: WKNavigationAction,
@@ -168,7 +170,6 @@ final class HTMLRenderView: UIView, WKNavigationDelegate {
         decisionHandler(.cancel)
     }
 
-    /// Block popup windows — open in Safari instead.
     func webView(
         _ webView: WKWebView,
         createWebViewWith configuration: WKWebViewConfiguration,
@@ -182,17 +183,15 @@ final class HTMLRenderView: UIView, WKNavigationDelegate {
         return nil
     }
 
-    /// Recover from navigation failures.
     // swiftlint:disable:next no_force_unwrap_production
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: any Error) {
         contentTracker.markProcessTerminated()
+        flushIfReady()
     }
 
-    /// Recover from content process crashes — reload immediately.
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
         contentTracker.markProcessTerminated()
-        // Reload with current content — the view is still in a window
-        webView.loadHTMLString(currentHTML, baseURL: nil)
+        flushIfReady()
     }
 }
 

@@ -3,103 +3,116 @@ import Testing
 
 @Suite("HTMLContentTracker")
 @MainActor
-struct HTMLWebViewReloadTests {
+struct HTMLContentTrackerTests {
 
-    // MARK: - Deferred loading (no window)
+    // MARK: - Deferred loading (not ready)
 
-    @Test func defersLoadBeforeAttach() {
+    @Test func defersLoadBeforeReady() {
         let tracker = HTMLContentTracker()
-        // Not attached to a window — should not load yet
-        #expect(tracker.contentToLoad(for: "<h1>Hello</h1>") == nil)
+        // Not ready (no window + no frame) — content is queued, not returned
+        #expect(tracker.setContent("<h1>Hello</h1>") == nil)
     }
 
-    @Test func loadsOnWindowAttach() {
+    @Test func loadsWhenMarkedReady() {
         let tracker = HTMLContentTracker()
-        _ = tracker.contentToLoad(for: "<h1>Hello</h1>")
-        // Attaching to window should flush the pending content
-        #expect(tracker.attach() == "<h1>Hello</h1>")
+        _ = tracker.setContent("<h1>Hello</h1>")
+        // View gets window + non-zero frame → flush pending
+        #expect(tracker.markReady() == "<h1>Hello</h1>")
     }
 
-    @Test func nothingPendingOnAttach() {
+    @Test func nothingPendingOnReady() {
         let tracker = HTMLContentTracker()
-        // Attach without any content request
-        #expect(tracker.attach() == nil)
+        #expect(tracker.markReady() == nil)
     }
 
-    @Test func lastContentWinsBeforeAttach() {
+    @Test func lastContentWinsBeforeReady() {
         let tracker = HTMLContentTracker()
-        _ = tracker.contentToLoad(for: "<h1>First</h1>")
-        _ = tracker.contentToLoad(for: "<h1>Second</h1>")
-        // Only the last content should be loaded on attach
-        #expect(tracker.attach() == "<h1>Second</h1>")
+        _ = tracker.setContent("<h1>First</h1>")
+        _ = tracker.setContent("<h1>Second</h1>")
+        #expect(tracker.markReady() == "<h1>Second</h1>")
     }
 
-    // MARK: - Immediate loading (window attached)
-
-    @Test func loadsImmediatelyWhenAttached() {
+    @Test func markReadyIdempotent() {
         let tracker = HTMLContentTracker()
-        _ = tracker.attach()
-        #expect(tracker.contentToLoad(for: "<h1>Hello</h1>") == "<h1>Hello</h1>")
+        _ = tracker.setContent("<h1>Hello</h1>")
+        _ = tracker.markReady()
+        // Second call — nothing pending
+        #expect(tracker.markReady() == nil)
+    }
+
+    // MARK: - Immediate loading (ready)
+
+    @Test func loadsImmediatelyWhenReady() {
+        let tracker = HTMLContentTracker()
+        _ = tracker.markReady()
+        #expect(tracker.setContent("<h1>Hello</h1>") == "<h1>Hello</h1>")
     }
 
     @Test func sameContentDoesNotReload() {
         let tracker = HTMLContentTracker()
-        _ = tracker.attach()
-        _ = tracker.contentToLoad(for: "<h1>Hello</h1>")
-        #expect(tracker.contentToLoad(for: "<h1>Hello</h1>") == nil)
+        _ = tracker.markReady()
+        _ = tracker.setContent("<h1>Hello</h1>")
+        #expect(tracker.setContent("<h1>Hello</h1>") == nil)
     }
 
     @Test func differentContentTriggersReload() {
         let tracker = HTMLContentTracker()
-        _ = tracker.attach()
-        _ = tracker.contentToLoad(for: "<h1>Hello</h1>")
-        #expect(tracker.contentToLoad(for: "<h1>World</h1>") == "<h1>World</h1>")
+        _ = tracker.markReady()
+        _ = tracker.setContent("<h1>Hello</h1>")
+        #expect(tracker.setContent("<h1>World</h1>") == "<h1>World</h1>")
     }
 
     // MARK: - Process termination recovery
 
     @Test func processTerminationForcesReload() {
         let tracker = HTMLContentTracker()
-        _ = tracker.attach()
-        _ = tracker.contentToLoad(for: "<h1>Hello</h1>")
+        _ = tracker.markReady()
+        _ = tracker.setContent("<h1>Hello</h1>")
 
         tracker.markProcessTerminated()
-        // Same content but process died — must reload
-        #expect(tracker.contentToLoad(for: "<h1>Hello</h1>") == "<h1>Hello</h1>")
+        #expect(tracker.setContent("<h1>Hello</h1>") == "<h1>Hello</h1>")
     }
 
     @Test func processTerminationClearsAfterReload() {
         let tracker = HTMLContentTracker()
-        _ = tracker.attach()
-        _ = tracker.contentToLoad(for: "<h1>Hello</h1>")
+        _ = tracker.markReady()
+        _ = tracker.setContent("<h1>Hello</h1>")
 
         tracker.markProcessTerminated()
-        _ = tracker.contentToLoad(for: "<h1>Hello</h1>")
-        // After reload, same content should not trigger again
-        #expect(tracker.contentToLoad(for: "<h1>Hello</h1>") == nil)
+        _ = tracker.setContent("<h1>Hello</h1>")
+        #expect(tracker.setContent("<h1>Hello</h1>") == nil)
+    }
+
+    @Test func processTerminationWhileNotReady() {
+        let tracker = HTMLContentTracker()
+        _ = tracker.markReady()
+        _ = tracker.setContent("<h1>Hello</h1>")
+
+        tracker.markNotReady()
+        tracker.markProcessTerminated()
+        // Reattach — should reload even though content hash matches
+        #expect(tracker.markReady() == "<h1>Hello</h1>")
     }
 
     // MARK: - Detach / reattach
 
-    @Test func detachThenReattachReloads() {
+    @Test func notReadyThenReadyWithNewContent() {
         let tracker = HTMLContentTracker()
-        _ = tracker.attach()
-        _ = tracker.contentToLoad(for: "<h1>Hello</h1>")
+        _ = tracker.markReady()
+        _ = tracker.setContent("<h1>Hello</h1>")
 
-        tracker.detach()
-        // After detach, new content goes pending
-        #expect(tracker.contentToLoad(for: "<h1>Hello</h1>") == nil)
-        // Reattach flushes pending
-        #expect(tracker.attach() == "<h1>Hello</h1>")
+        tracker.markNotReady()
+        #expect(tracker.setContent("<h1>New</h1>") == nil)
+        #expect(tracker.markReady() == "<h1>New</h1>")
     }
 
     // MARK: - Empty content
 
     @Test func emptyContentStillTracked() {
         let tracker = HTMLContentTracker()
-        _ = tracker.attach()
-        #expect(tracker.contentToLoad(for: "") == "")
-        #expect(tracker.contentToLoad(for: "") == nil)
-        #expect(tracker.contentToLoad(for: "<p>Content</p>") == "<p>Content</p>")
+        _ = tracker.markReady()
+        #expect(tracker.setContent("") == "")
+        #expect(tracker.setContent("") == nil)
+        #expect(tracker.setContent("<p>Content</p>") == "<p>Content</p>")
     }
 }
