@@ -72,23 +72,36 @@ final class ServerProcessManager {
 
     // MARK: - Path resolution
 
+    /// Mutable runtime directory — server code + node_modules live here.
+    /// Seeded from the app bundle on first launch (or version bump).
+    static let serverRuntimeDir: String = {
+        NSString("~/.config/oppi/server-runtime").expandingTildeInPath
+    }()
+
     /// Resolves the server CLI path.
     ///
     /// Search order:
     /// 1. `OPPI_SERVER_PATH` environment variable
-    /// 2. App bundle (release builds copy server runtime into Resources/)
-    /// 3. Homebrew npm global
+    /// 2. Mutable runtime dir (seeded from app bundle)
+    /// 3. App bundle seed directly (fallback during seeding)
+    /// 4. Homebrew npm global
     static func resolveServerCLIPath() -> String? {
         if let envPath = ProcessInfo.processInfo.environment["OPPI_SERVER_PATH"],
            FileManager.default.fileExists(atPath: envPath) {
             return envPath
         }
 
-        // App bundle — release builds embed the server runtime in Resources/
+        // Mutable runtime dir (normal path after seeding)
+        let runtimeCLI = (serverRuntimeDir as NSString).appendingPathComponent("dist/cli.js")
+        if FileManager.default.fileExists(atPath: runtimeCLI) {
+            return runtimeCLI
+        }
+
+        // App bundle seed (fallback — used before first seed completes)
         if let resourcePath = Bundle.main.resourcePath {
-            let bundledPath = (resourcePath as NSString).appendingPathComponent("server/dist/cli.js")
-            if FileManager.default.fileExists(atPath: bundledPath) {
-                return bundledPath
+            let seedPath = (resourcePath as NSString).appendingPathComponent("server-seed/dist/cli.js")
+            if FileManager.default.fileExists(atPath: seedPath) {
+                return seedPath
             }
         }
 
@@ -147,6 +160,84 @@ final class ServerProcessManager {
         return path.hasPrefix(resourcePath)
     }
 
+    /// True if the app bundle contains a server seed.
+    static var hasSeed: Bool {
+        guard let resourcePath = Bundle.main.resourcePath else { return false }
+        let seedVersion = (resourcePath as NSString).appendingPathComponent("server-seed/.seed-version")
+        return FileManager.default.fileExists(atPath: seedVersion)
+    }
+
+    // MARK: - Server runtime seeding
+
+    /// Seed the mutable server runtime from the app bundle if needed.
+    ///
+    /// Copies `Resources/server-seed/` → `~/.config/oppi/server-runtime/` when:
+    /// - The runtime dir doesn't exist (first launch)
+    /// - The seed version doesn't match (app was updated)
+    ///
+    /// Preserves user-modified node_modules when only dist/ changed.
+    static func seedServerRuntimeIfNeeded() {
+        guard let resourcePath = Bundle.main.resourcePath else { return }
+
+        let seedDir = (resourcePath as NSString).appendingPathComponent("server-seed")
+        let seedVersionFile = (seedDir as NSString).appendingPathComponent(".seed-version")
+
+        guard FileManager.default.fileExists(atPath: seedVersionFile),
+              let seedVersion = try? String(contentsOfFile: seedVersionFile, encoding: .utf8)
+                .trimmingCharacters(in: .whitespacesAndNewlines) else {
+            // No seed in bundle (dev build) — skip
+            return
+        }
+
+        let runtimeDir = serverRuntimeDir
+        let runtimeVersionFile = (runtimeDir as NSString).appendingPathComponent(".seed-version")
+        let currentVersion = (try? String(contentsOfFile: runtimeVersionFile, encoding: .utf8))?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if currentVersion == seedVersion {
+            logger.info("Server runtime up to date (v\(seedVersion))")
+            return
+        }
+
+        logger.info("Seeding server runtime: \(currentVersion ?? "none") -> \(seedVersion)")
+
+        let fm = FileManager.default
+        do {
+            // Create runtime dir if needed
+            try fm.createDirectory(atPath: runtimeDir, withIntermediateDirectories: true)
+
+            // Always replace dist/ and package.json (our code, changes with app version)
+            let seedDist = (seedDir as NSString).appendingPathComponent("dist")
+            let runtimeDist = (runtimeDir as NSString).appendingPathComponent("dist")
+            if fm.fileExists(atPath: runtimeDist) {
+                try fm.removeItem(atPath: runtimeDist)
+            }
+            try fm.copyItem(atPath: seedDist, toPath: runtimeDist)
+
+            let seedPkg = (seedDir as NSString).appendingPathComponent("package.json")
+            let runtimePkg = (runtimeDir as NSString).appendingPathComponent("package.json")
+            if fm.fileExists(atPath: runtimePkg) {
+                try fm.removeItem(atPath: runtimePkg)
+            }
+            try fm.copyItem(atPath: seedPkg, toPath: runtimePkg)
+
+            // Seed node_modules only if it doesn't exist yet (first launch).
+            // If it exists, the user may have updated deps — don't clobber.
+            let runtimeNM = (runtimeDir as NSString).appendingPathComponent("node_modules")
+            let seedNM = (seedDir as NSString).appendingPathComponent("node_modules")
+            if !fm.fileExists(atPath: runtimeNM), fm.fileExists(atPath: seedNM) {
+                logger.info("Copying seed node_modules (first launch)")
+                try fm.copyItem(atPath: seedNM, toPath: runtimeNM)
+            }
+
+            // Write version marker
+            try seedVersion.write(toFile: runtimeVersionFile, atomically: true, encoding: .utf8)
+            logger.info("Server runtime seeded (v\(seedVersion))")
+        } catch {
+            logger.error("Failed to seed server runtime: \(error.localizedDescription)")
+        }
+    }
+
     // MARK: - Lifecycle
 
     /// Kill any existing server process and stale Bonjour advertisements.
@@ -155,9 +246,8 @@ final class ServerProcessManager {
     /// processes from a prior app instance. This cleans them up so we can spawn
     /// a fresh server with full lifecycle control (termination handler, pipes, logs).
     static func killExistingServer() {
-        // Find server processes matching our CLI pattern.
-        // Use pgrep to avoid false positives from other node processes.
-        let serverPids = pidsMatching(pattern: "node.*cli\\.js.*serve")
+        // Find server processes matching our CLI pattern (Bun or Node.js).
+        let serverPids = pidsMatching(pattern: "(bun|node).*cli\\.js.*serve")
         for pid in serverPids {
             logger.info("Killing existing server process (pid \(pid))")
             kill(pid, SIGTERM)
@@ -208,7 +298,13 @@ final class ServerProcessManager {
     }
 
     /// Start the server using default resolved paths.
+    ///
+    /// Seeds the mutable runtime directory from the app bundle if needed
+    /// (first launch or app version bump), then starts the server from there.
     func startWithDefaults() {
+        // Seed runtime dir before resolving paths
+        Self.seedServerRuntimeIfNeeded()
+
         guard let runtimePath = Self.resolveRuntimePath() else {
             state = .failed("Bun (or Node.js) not found")
             logger.error("No JS runtime found — install Bun (brew install oven-sh/bun/bun) or Node.js")

@@ -43,7 +43,7 @@ final class MetricKitService: NSObject, MXMetricManagerSubscriber {
     func didReceive(_ payloads: [MXMetricPayload]) {
         guard !payloads.isEmpty else { return }
         let now = nowMs()
-        let items = payloads.compactMap { payload in
+        let items = payloads.map { payload in
             MetricKitPayloadSerializer.item(
                 from: payload,
                 kind: .metric,
@@ -57,7 +57,7 @@ final class MetricKitService: NSObject, MXMetricManagerSubscriber {
     func didReceive(_ payloads: [MXDiagnosticPayload]) {
         guard !payloads.isEmpty else { return }
         let now = nowMs()
-        let items = payloads.compactMap { payload in
+        let items = payloads.map { payload in
             MetricKitPayloadSerializer.item(
                 from: payload,
                 kind: .diagnostic,
@@ -190,36 +190,13 @@ private actor MetricKitUploadQueue {
     }
 }
 
-private enum MetricKitPayloadSerializer {
-    static func item(
-        from payload: MXMetricPayload,
-        kind: MetricKitPayloadItem.Kind,
-        windowStartMs: Int64,
-        windowEndMs: Int64
-    ) -> MetricKitPayloadItem? {
-        makeItem(
-            from: objectDictionary(payload),
-            kind: kind,
-            windowStartMs: windowStartMs,
-            windowEndMs: windowEndMs
-        )
-    }
+// MARK: - Payload item builder (internal for testing)
 
-    static func item(
-        from payload: MXDiagnosticPayload,
-        kind: MetricKitPayloadItem.Kind,
-        windowStartMs: Int64,
-        windowEndMs: Int64
-    ) -> MetricKitPayloadItem? {
-        makeItem(
-            from: objectDictionary(payload),
-            kind: kind,
-            windowStartMs: windowStartMs,
-            windowEndMs: windowEndMs
-        )
-    }
-
-    private static func makeItem(
+/// Converts a dictionary (from MX*.jsonRepresentation()) into a MetricKitPayloadItem.
+/// Internal visibility so tests can exercise the summary/raw pipeline directly
+/// without needing real MXMetricPayload instances (which only the system creates).
+enum MetricKitPayloadItemBuilder {
+    static func makeItem(
         from snapshot: [String: Any],
         kind: MetricKitPayloadItem.Kind,
         windowStartMs: Int64,
@@ -270,67 +247,6 @@ private enum MetricKitPayloadSerializer {
         return String(String(describing: value).prefix(140))
     }
 
-    private static func objectDictionary(_ payload: MXMetricPayload) -> [String: Any] {
-        let data = payload.jsonRepresentation()
-        if let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-            return dict
-        }
-        return ["type": "MXMetricPayload", "error": "json_parse_failed"]
-    }
-
-    private static func objectDictionary(_ payload: MXDiagnosticPayload) -> [String: Any] {
-        let data = payload.jsonRepresentation()
-        if let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-            return dict
-        }
-        return ["type": "MXDiagnosticPayload", "error": "json_parse_failed"]
-    }
-
-    private static func objectDictionary(_ value: Any) -> [String: Any] {
-        guard let object = value as? NSObject else {
-            return ["payload": summarizeValue(value)]
-        }
-
-        if let encoded = objectToDictionary(object) {
-            return encoded
-        }
-
-        return ["description": object.description]
-    }
-
-    private static func objectToDictionary(_ object: NSObject) -> [String: Any]? {
-        let mirror = Mirror(reflecting: object)
-        var result: [String: Any] = [
-            "type": String(describing: type(of: object))
-        ]
-
-        for child in mirror.children {
-            guard let key = child.label else { continue }
-            result[String(key)] = sanitize(value: child.value)
-        }
-
-        return result.isEmpty ? nil : result
-    }
-
-    private static func sanitize(value: Any?) -> Any {
-        guard let value else { return "" }
-
-        if let boolValue = value as? Bool { return boolValue }
-        if let number = value as? NSNumber { return number }
-        if let string = value as? String { return string.prefix(240) }
-        if let date = value as? Date { return date }
-
-        if let obj = value as? NSObject {
-            return objectToDictionary(obj) ?? obj.description
-        }
-
-        if let array = value as? [Any] {
-            return array.prefix(16).map(sanitize)
-        }
-
-        return String(describing: value)
-    }
-
     private static func jsonString(from value: Any) -> String {
         let jsonObject = convertForJSON(value)
         guard JSONSerialization.isValidJSONObject(jsonObject) else {
@@ -349,35 +265,72 @@ private enum MetricKitPayloadSerializer {
         if let value = value as? NSNumber {
             return value
         }
-
         if let value = value as? String {
             return value
         }
-
         if let value = value as? Bool {
             return value
         }
-
         if let value = value as? Date {
             return value.timeIntervalSince1970
         }
-
         if let value = value as? [String: Any] {
             return value.reduce(into: [String: Any]()) { partial, entry in
                 partial[String(entry.key)] = convertForJSON(entry.value)
             }
         }
-
         if let value = value as? [Any] {
             return value.map(convertForJSON)
         }
+        return String(describing: value)
+    }
+}
 
-        if let nsObject = value as? NSObject,
-           let dict = objectToDictionary(nsObject) {
+// MARK: - MX* payload → dictionary (private, thin layer over Apple's API)
+
+private enum MetricKitPayloadSerializer {
+    static func item(
+        from payload: MXMetricPayload,
+        kind: MetricKitPayloadItem.Kind,
+        windowStartMs: Int64,
+        windowEndMs: Int64
+    ) -> MetricKitPayloadItem {
+        MetricKitPayloadItemBuilder.makeItem(
+            from: dictionaryFrom(payload),
+            kind: kind,
+            windowStartMs: windowStartMs,
+            windowEndMs: windowEndMs
+        )
+    }
+
+    static func item(
+        from payload: MXDiagnosticPayload,
+        kind: MetricKitPayloadItem.Kind,
+        windowStartMs: Int64,
+        windowEndMs: Int64
+    ) -> MetricKitPayloadItem {
+        MetricKitPayloadItemBuilder.makeItem(
+            from: dictionaryFrom(payload),
+            kind: kind,
+            windowStartMs: windowStartMs,
+            windowEndMs: windowEndMs
+        )
+    }
+
+    private static func dictionaryFrom(_ payload: MXMetricPayload) -> [String: Any] {
+        let data = payload.jsonRepresentation()
+        if let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
             return dict
         }
+        return ["type": "MXMetricPayload", "error": "json_parse_failed"]
+    }
 
-        return String(describing: value)
+    private static func dictionaryFrom(_ payload: MXDiagnosticPayload) -> [String: Any] {
+        let data = payload.jsonRepresentation()
+        if let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            return dict
+        }
+        return ["type": "MXDiagnosticPayload", "error": "json_parse_failed"]
     }
 }
 

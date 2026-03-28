@@ -180,28 +180,39 @@ echo "Bun v$BUN_VERSION_PIN (arm64, $BUN_SIZE)"
 cp "$BUN_BIN" "$RESOURCES/bun"
 chmod +x "$RESOURCES/bun"
 
-# ── Step 6: Bundle server code + dependencies ──
+# ── Step 6: Bundle server seed ──
+#
+# The server runtime is DECOUPLED from the app binary:
+#   - Resources/server-seed/ = immutable seed (dist + deps, for first launch)
+#   - ~/.config/oppi/server-runtime/ = mutable copy (updated independently)
+#
+# On first launch (or app version bump), the app copies the seed to the runtime
+# dir. Dependencies can then be updated without rebuilding the DMG.
 
-echo "--- Step 6: Bundling server runtime ---"
-SERVER_BUNDLE="$RESOURCES/server"
-mkdir -p "$SERVER_BUNDLE"
+echo "--- Step 6: Bundling server seed ---"
+SERVER_SEED="$RESOURCES/server-seed"
+mkdir -p "$SERVER_SEED"
 
-# Copy server dist
-cp -R "$SERVER_DIR/dist" "$SERVER_BUNDLE/dist"
+# Copy compiled server code
+cp -R "$SERVER_DIR/dist" "$SERVER_SEED/dist"
 
-# Install production-only dependencies using the bundled Bun
-cp "$SERVER_DIR/package.json" "$SERVER_BUNDLE/"
-cp "$SERVER_DIR/package-lock.json" "$SERVER_BUNDLE/"
-cd "$SERVER_BUNDLE"
+# Copy dependency manifest (needed for bun install in runtime dir)
+cp "$SERVER_DIR/package.json" "$SERVER_SEED/"
+
+# Install production deps into seed
+cp "$SERVER_DIR/package-lock.json" "$SERVER_SEED/"
+cd "$SERVER_SEED"
 "$RESOURCES/bun" install --production --ignore-scripts 2>&1 | tail -3
-# Clean up package files (only node_modules needed at runtime)
-rm -f "$SERVER_BUNDLE/package.json" "$SERVER_BUNDLE/package-lock.json" "$SERVER_BUNDLE/bun.lock"
+rm -f "$SERVER_SEED/package-lock.json" "$SERVER_SEED/bun.lock"
 
-# ── Step 6b: Strip bloat from node_modules ──
+# Write seed version (app version + build number for change detection)
+echo "${VERSION}.${BUILD_NUMBER}" > "$SERVER_SEED/.seed-version"
+
+# ── Step 6b: Strip bloat from seed node_modules ──
 
 echo "--- Step 6b: Stripping bloat ---"
-NM="$SERVER_BUNDLE/node_modules"
-BEFORE_SIZE=$(du -sh "$SERVER_BUNDLE" | awk '{print $1}')
+NM="$SERVER_SEED/node_modules"
+BEFORE_SIZE=$(du -sh "$SERVER_SEED" | awk '{print $1}')
 
 # Remove entire packages that are dead code on macOS
 rm -rf "$NM/koffi"                                     # Windows-only FFI (86MB)
@@ -221,11 +232,11 @@ done
 find "$NM" \( -name "README*" -o -name "CHANGELOG*" -o -name "HISTORY*" \
     -o -name "*.map" \) -type f -delete 2>/dev/null || true
 
-AFTER_SIZE=$(du -sh "$SERVER_BUNDLE" | awk '{print $1}')
-echo "Server: $BEFORE_SIZE -> $AFTER_SIZE (after stripping)"
+AFTER_SIZE=$(du -sh "$SERVER_SEED" | awk '{print $1}')
+echo "Server seed: $BEFORE_SIZE -> $AFTER_SIZE (after stripping)"
 
 TOTAL_SIZE=$(du -sh "$RESOURCES" | awk '{print $1}')
-echo "Total Resources: $TOTAL_SIZE (Bun $BUN_SIZE + server $AFTER_SIZE)"
+echo "Total Resources: $TOTAL_SIZE (Bun $BUN_SIZE + seed $AFTER_SIZE)"
 
 # ── Step 7: Codesign (inside-out) ──
 #
@@ -247,7 +258,7 @@ codesign --force --options runtime \
 echo "  Signed: bun (JIT entitlements)"
 
 # 2. Sign native .node addons (clipboard, ssh2 crypto, cpu-features)
-find "$RESOURCES/server/node_modules" -name "*.node" -type f 2>/dev/null | while read -r addon; do
+find "$RESOURCES/server-seed/node_modules" -name "*.node" -type f 2>/dev/null | while read -r addon; do
     codesign --force --options runtime \
         --sign "$SIGNING_IDENTITY" \
         "$addon" 2>&1
