@@ -115,8 +115,9 @@ struct UserTimelineRowContentTests {
         #expect(doneButton.accessibilityIdentifier == "fullscreen-image.dismiss")
         #expect(color(doneButton.tintColor, approximatelyEquals: UIColor(palette.cyan)))
 
+        // Nav bar has no custom appearance — iOS 26 Liquid Glass handles chrome
         let navAppearance = navigation.navigationBar.standardAppearance
-        #expect(color(navAppearance.backgroundColor, approximatelyEquals: UIColor(palette.bgHighlight)))
+        #expect(navAppearance.backgroundColor == nil, "Liquid Glass nav bar should not set explicit backgroundColor")
 
         let toolbar = try #require(firstSubview(ofType: UIToolbar.self, in: viewController.view))
         #expect(color(toolbar.tintColor, approximatelyEquals: UIColor(palette.cyan)))
