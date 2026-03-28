@@ -346,6 +346,41 @@ private enum ANSIColorCache {
     static let bgBrightPurple = UIColor(Color.themePurple.opacity(0.55))
     static let bgBrightCyan = UIColor(Color.themeCyan.opacity(0.50))
     static let bgBrightWhite = UIColor(Color.themeFg.opacity(0.30))
+
+    static let color256Palette: [UIColor] = {
+        var colors = Array(repeating: fg, count: 256)
+        colors[0] = fgDim
+        colors[1] = red
+        colors[2] = green
+        colors[3] = yellow
+        colors[4] = blue
+        colors[5] = purple
+        colors[6] = cyan
+        colors[7] = fg
+        colors[8] = fgDim
+        colors[9] = red
+        colors[10] = green
+        colors[11] = yellow
+        colors[12] = blue
+        colors[13] = purple
+        colors[14] = cyan
+        colors[15] = fg
+
+        for n in 16..<232 {
+            let idx = n - 16
+            let r = CGFloat((idx / 36) % 6) / 5.0
+            let g = CGFloat((idx / 6) % 6) / 5.0
+            let b = CGFloat(idx % 6) / 5.0
+            colors[n] = UIColor(red: r, green: g, blue: b, alpha: 1)
+        }
+
+        for n in 232..<256 {
+            let gray = CGFloat(n - 232) / 23.0
+            colors[n] = UIColor(white: gray, alpha: 1)
+        }
+
+        return colors
+    }()
 }
 
 // MARK: - SGR State
@@ -507,25 +542,9 @@ private struct SGRState {
     }
 
     private func color256(_ n: Int) -> UIColor {
-        switch n {
-        case 0: return ANSIColorCache.fgDim
-        case 1: return ANSIColorCache.red
-        case 2: return ANSIColorCache.green
-        case 3: return ANSIColorCache.yellow
-        case 4: return ANSIColorCache.blue
-        case 5: return ANSIColorCache.purple
-        case 6: return ANSIColorCache.cyan
-        case 7: return ANSIColorCache.fg
-        case 8...15: return color256(n - 8)
-        case 232...255:
-            let gray = CGFloat(n - 232) / 23.0
-            return UIColor(white: gray, alpha: 1)
-        default:
-            let idx = n - 16
-            let r = CGFloat((idx / 36) % 6) / 5.0
-            let g = CGFloat((idx / 6) % 6) / 5.0
-            let b = CGFloat(idx % 6) / 5.0
-            return UIColor(red: r, green: g, blue: b, alpha: 1)
+        if n >= 0 && n < ANSIColorCache.color256Palette.count {
+            return ANSIColorCache.color256Palette[n]
         }
+        return ANSIColorCache.fg
     }
 }
