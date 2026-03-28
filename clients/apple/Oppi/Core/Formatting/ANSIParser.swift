@@ -410,6 +410,9 @@ private struct SGRState {
         if applyDirectExtendedColorFastPath(buf, from: start, to: end) {
             return
         }
+        if applyDirectSingleCodeFastPath(buf, from: start, to: end) {
+            return
+        }
 
         // Fast path: single-code sequences (most common).
         // Check if the sequence contains no semicolons.
@@ -486,6 +489,35 @@ private struct SGRState {
     }
 
     // MARK: - Fast Paths
+
+    private mutating func applyDirectSingleCodeFastPath(
+        _ buf: UnsafeBufferPointer<UInt8>,
+        from start: Int,
+        to end: Int
+    ) -> Bool {
+        let length = end - start
+        switch length {
+        case 1:
+            let b0 = buf[start]
+            switch b0 {
+            case 0x30: applySingleCode(0); return true
+            case 0x31: applySingleCode(1); return true
+            case 0x32: applySingleCode(2); return true
+            case 0x33: applySingleCode(3); return true
+            case 0x34: applySingleCode(4); return true
+            default: return false
+            }
+        case 2:
+            let b0 = buf[start]
+            let b1 = buf[start + 1]
+            guard b0 >= 0x30, b0 <= 0x39, b1 >= 0x30, b1 <= 0x39 else { return false }
+            let value = Int(b0 - 0x30) * 10 + Int(b1 - 0x30)
+            applySingleCode(value)
+            return true
+        default:
+            return false
+        }
+    }
 
     private mutating func applyDirectExtendedColorFastPath(
         _ buf: UnsafeBufferPointer<UInt8>,
