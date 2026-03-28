@@ -248,15 +248,13 @@ final class FullScreenCodeViewController: UIViewController {
                 )
             )
         case .html(let text, let filePath):
-            return NativeFullScreenHTMLBody(
-                htmlString: text,
-                palette: palette,
-                selectedTextPiRouter: selectedTextPiRouter,
-                selectedTextSourceContext: makeSourceContext(
-                    surface: .fullScreenSource,
-                    filePath: filePath
-                )
+            let piHandler = makePiWebViewHandler(
+                router: selectedTextPiRouter,
+                sourceContext: makeSourceContext(surface: .fullScreenSource, filePath: filePath)
             )
+            let view = HTMLRenderView(htmlString: text, piActionHandler: piHandler)
+            view.backgroundColor = UIColor(palette.bgDark)
+            return view
         case .thinking(let text, let stream):
             return NativeFullScreenMarkdownBody(
                 content: text,
@@ -497,6 +495,21 @@ final class FullScreenCodeViewController: UIViewController {
             filePath: filePath,
             languageHint: languageHint
         )
+    }
+
+    /// Bridge a pi router + source context into a closure for HTMLRenderView.
+    private func makePiWebViewHandler(
+        router: SelectedTextPiActionRouter?,
+        sourceContext: SelectedTextSourceContext?
+    ) -> ((String, PiQuickAction) -> Void)? {
+        guard let router, let sourceContext else { return nil }
+        return { text, quickAction in
+            router.dispatch(SelectedTextPiRequest(
+                action: quickAction,
+                selectedText: text,
+                source: sourceContext
+            ))
+        }
     }
 
     // MARK: - Share
