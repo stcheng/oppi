@@ -433,10 +433,68 @@ private struct SGRState {
             return
         }
 
-        // Multi-code sequence — parse all codes
-        var codes = InlineSGRCodes()
+        // Multi-code sequence — parse and apply in one pass to avoid the
+        // intermediate InlineSGRCodes buffer.
         var current = 0
         var hasDigit = false
+        var pendingColorTarget = 0 // 38 or 48
+        var pendingColorMode = 0 // 5 or 2
+        var rgb0 = 0
+        var rgb1 = 0
+        var rgbComponent = 0
+
+        func applyPendingColor(_ color: UIColor) {
+            if pendingColorTarget == 38 {
+                foregroundUIColor = color
+            } else if pendingColorTarget == 48 {
+                backgroundUIColor = color
+            }
+            pendingColorTarget = 0
+            pendingColorMode = 0
+            rgbComponent = 0
+        }
+
+        func applyCode(_ code: Int) {
+            if pendingColorMode == 5 {
+                applyPendingColor(color256(code))
+                return
+            }
+
+            if pendingColorMode == 2 {
+                switch rgbComponent {
+                case 0:
+                    rgb0 = code
+                    rgbComponent = 1
+                case 1:
+                    rgb1 = code
+                    rgbComponent = 2
+                default:
+                    applyPendingColor(UIColor(
+                        red: CGFloat(rgb0) / 255,
+                        green: CGFloat(rgb1) / 255,
+                        blue: CGFloat(code) / 255,
+                        alpha: 1
+                    ))
+                }
+                return
+            }
+
+            if pendingColorTarget != 0 {
+                if code == 5 || code == 2 {
+                    pendingColorMode = code
+                    rgbComponent = 0
+                    return
+                }
+                pendingColorTarget = 0
+            }
+
+            if code == 38 || code == 48 {
+                pendingColorTarget = code
+                return
+            }
+
+            applySingleCode(code)
+        }
 
         for i in start..<end {
             let b = buf[i]
@@ -444,48 +502,12 @@ private struct SGRState {
                 current = current &* 10 &+ Int(b &- 0x30)
                 hasDigit = true
             } else if b == 0x3B {
-                codes.append(hasDigit ? current : 0)
+                applyCode(hasDigit ? current : 0)
                 current = 0
                 hasDigit = false
             }
         }
-        codes.append(hasDigit ? current : 0)
-
-        // Apply codes with lookahead for extended colors
-        var i = 0
-        while i < codes.count {
-            let code = codes[i]
-
-            if code == 38, i + 2 < codes.count, codes[i + 1] == 5 {
-                foregroundUIColor = color256(codes[i + 2])
-                i += 3; continue
-            }
-            if code == 38, i + 4 < codes.count, codes[i + 1] == 2 {
-                foregroundUIColor = UIColor(
-                    red: CGFloat(codes[i + 2]) / 255,
-                    green: CGFloat(codes[i + 3]) / 255,
-                    blue: CGFloat(codes[i + 4]) / 255,
-                    alpha: 1
-                )
-                i += 5; continue
-            }
-            if code == 48, i + 2 < codes.count, codes[i + 1] == 5 {
-                backgroundUIColor = color256(codes[i + 2])
-                i += 3; continue
-            }
-            if code == 48, i + 4 < codes.count, codes[i + 1] == 2 {
-                backgroundUIColor = UIColor(
-                    red: CGFloat(codes[i + 2]) / 255,
-                    green: CGFloat(codes[i + 3]) / 255,
-                    blue: CGFloat(codes[i + 4]) / 255,
-                    alpha: 1
-                )
-                i += 5; continue
-            }
-
-            applySingleCode(code)
-            i += 1
-        }
+        applyCode(hasDigit ? current : 0)
     }
 
     // MARK: - Fast Paths
