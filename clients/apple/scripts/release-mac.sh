@@ -11,7 +11,8 @@
 #   - Xcode with Developer ID signing (team AZAQMY4SPZ)
 #   - XcodeGen installed (brew install xcodegen)
 #   - gh CLI authenticated (gh auth login)
-#   - Node.js installed (for server build)
+#   - Node.js installed (for server build — tsc compilation)
+#   - Internet access (downloads pinned Bun binary from GitHub)
 #
 set -euo pipefail
 
@@ -20,6 +21,9 @@ APPLE_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 REPO_ROOT="$(cd "$APPLE_DIR/../.." && pwd)"
 SERVER_DIR="$REPO_ROOT/server"
 PROJECT_YML="$APPLE_DIR/project.yml"
+
+# Pinned Bun version — update deliberately, not accidentally
+BUN_VERSION_PIN="1.3.11"
 
 # Read version from project.yml (OppiMac target)
 VERSION=$(grep -A20 'OppiMac:' "$PROJECT_YML" | grep 'MARKETING_VERSION:' | head -1 | awk -F'"' '{print $2}')
@@ -127,40 +131,51 @@ if [[ ! -d "$APP_PATH" ]]; then
 fi
 echo "Exported to $APP_PATH"
 
-# ── Step 5: Bundle Bun runtime ──
+# ── Step 5: Bundle Bun runtime (pinned version) ──
 
-echo "--- Step 5: Bundling Bun runtime ---"
+echo "--- Step 5: Bundling Bun v$BUN_VERSION_PIN ---"
 RESOURCES="$APP_PATH/Contents/Resources"
 
-# Resolve the Bun binary — prefer local install, fall back to Homebrew
-BUN_BIN=""
-for candidate in \
-    "$HOME/.bun/bin/bun" \
-    "/opt/homebrew/bin/bun" \
-    "/usr/local/bin/bun"; do
-    resolved="$(readlink -f "$candidate" 2>/dev/null || true)"
-    if [[ -n "$resolved" && -x "$resolved" ]]; then
-        BUN_BIN="$resolved"
-        break
-    fi
-done
+BUN_CACHE_DIR="$BUILD_DIR/bun-cache"
+BUN_ZIP="$BUN_CACHE_DIR/bun-darwin-aarch64-v${BUN_VERSION_PIN}.zip"
+BUN_URL="https://github.com/oven-sh/bun/releases/download/bun-v${BUN_VERSION_PIN}/bun-darwin-aarch64.zip"
 
-if [[ -z "$BUN_BIN" ]]; then
-    echo "Error: Bun not found — install with: brew install oven-sh/bun/bun"
+# Download if not cached from a previous build
+if [[ ! -f "$BUN_ZIP" ]]; then
+    mkdir -p "$BUN_CACHE_DIR"
+    echo "Downloading Bun v$BUN_VERSION_PIN from GitHub..."
+    curl -fsSL "$BUN_URL" -o "$BUN_ZIP"
+else
+    echo "Using cached Bun download."
+fi
+
+# Extract — zip contains bun-darwin-aarch64/bun
+BUN_EXTRACT="$BUN_CACHE_DIR/extract"
+rm -rf "$BUN_EXTRACT"
+unzip -qo "$BUN_ZIP" -d "$BUN_EXTRACT"
+BUN_BIN="$BUN_EXTRACT/bun-darwin-aarch64/bun"
+
+if [[ ! -x "$BUN_BIN" ]]; then
+    echo "Error: Bun binary not found in downloaded archive"
     exit 1
 fi
 
-BUN_VERSION=$("$BUN_BIN" --version 2>/dev/null || echo "unknown")
-BUN_SIZE=$(du -sh "$BUN_BIN" | awk '{print $1}')
-echo "Bun: $BUN_BIN (v$BUN_VERSION, $BUN_SIZE)"
+# Verify version matches pin
+ACTUAL_VERSION=$("$BUN_BIN" --version 2>/dev/null || echo "unknown")
+if [[ "$ACTUAL_VERSION" != "$BUN_VERSION_PIN" ]]; then
+    echo "Error: Downloaded Bun is v$ACTUAL_VERSION, expected v$BUN_VERSION_PIN"
+    exit 1
+fi
 
-# Verify architecture — must be arm64 for Apple Silicon
+# Verify architecture
 BUN_ARCH=$(file "$BUN_BIN" | grep -o 'arm64\|x86_64')
 if [[ "$BUN_ARCH" != "arm64" ]]; then
     echo "Error: Bun binary is $BUN_ARCH, expected arm64"
-    echo "Install the arm64 version: brew install oven-sh/bun/bun"
     exit 1
 fi
+
+BUN_SIZE=$(du -sh "$BUN_BIN" | awk '{print $1}')
+echo "Bun v$BUN_VERSION_PIN (arm64, $BUN_SIZE)"
 
 cp "$BUN_BIN" "$RESOURCES/bun"
 chmod +x "$RESOURCES/bun"
@@ -212,48 +227,61 @@ echo "Server: $BEFORE_SIZE -> $AFTER_SIZE (after stripping)"
 TOTAL_SIZE=$(du -sh "$RESOURCES" | awk '{print $1}')
 echo "Total Resources: $TOTAL_SIZE (Bun $BUN_SIZE + server $AFTER_SIZE)"
 
-# ── Step 7: Re-sign (bundle was modified after initial signing) ──
+# ── Step 7: Codesign (inside-out) ──
+#
+# macOS codesigning requires inside-out: sign leaf Mach-O binaries first with
+# their specific entitlements, then sign the outer .app which seals everything
+# by hash. Using --deep on the outer app would clobber inner entitlements.
 
-echo "--- Step 7: Re-signing app ---"
-
-# Sign the bundled Bun binary FIRST with its required JIT entitlements.
-# Bun's JavaScriptCore JIT needs allow-jit, allow-unsigned-executable-memory,
-# disable-executable-page-protection, and disable-library-validation.
-# Without these, Bun crashes on hardened runtime (codesign --options runtime).
+echo "--- Step 7: Signing (inside-out) ---"
 BUN_ENTITLEMENTS="$APPLE_DIR/BunRuntime.entitlements"
+
+# 1. Sign the bundled Bun binary with JIT entitlements.
+#    Bun's JavaScriptCore JIT requires: allow-jit, allow-unsigned-executable-memory,
+#    disable-executable-page-protection, disable-library-validation.
 codesign --force --options runtime \
     --sign "$SIGNING_IDENTITY" \
     --entitlements "$BUN_ENTITLEMENTS" \
     "$RESOURCES/bun" \
     2>&1
-echo "Bun binary signed with JIT entitlements."
+echo "  Signed: bun (JIT entitlements)"
 
-# Sign native .node addons (clipboard, ssh2 crypto, cpu-features)
+# 2. Sign native .node addons (clipboard, ssh2 crypto, cpu-features)
 find "$RESOURCES/server/node_modules" -name "*.node" -type f 2>/dev/null | while read -r addon; do
     codesign --force --options runtime \
         --sign "$SIGNING_IDENTITY" \
         "$addon" 2>&1
+    echo "  Signed: $(basename "$addon")"
 done
 
-# Re-sign the outer app (covers everything else)
-codesign --deep --force --options runtime \
+# 3. Sign any other Mach-O binaries in Frameworks/ or Helpers/
+find "$APP_PATH/Contents/Frameworks" "$APP_PATH/Contents/Helpers" \
+    -type f -perm +111 2>/dev/null | while read -r binary; do
+    # Skip non-Mach-O files
+    file "$binary" | grep -q "Mach-O" || continue
+    codesign --force --options runtime \
+        --sign "$SIGNING_IDENTITY" \
+        "$binary" 2>&1
+    echo "  Signed: $(basename "$binary")"
+done
+
+# 4. Sign the outer .app (NO --deep — inner binaries already signed)
+codesign --force --options runtime \
     --sign "$SIGNING_IDENTITY" \
     "$APP_PATH" \
     2>&1
+echo "  Signed: Oppi.app"
 
-# Verify signature
+# Verify entire bundle
 codesign --verify --deep --strict "$APP_PATH" 2>&1
 echo "Signature verified."
 
-# Verify Bun kept its entitlements after outer re-sign
-BUN_JIT=$(codesign -d --entitlements :- "$RESOURCES/bun" 2>&1 | grep -c "allow-jit")
-if [[ "$BUN_JIT" -eq 0 ]]; then
-    echo "WARNING: Bun lost JIT entitlements after re-sign! Re-signing bun..."
-    codesign --force --options runtime \
-        --sign "$SIGNING_IDENTITY" \
-        --entitlements "$BUN_ENTITLEMENTS" \
-        "$RESOURCES/bun" 2>&1
+# Verify Bun's JIT entitlements survived
+if ! codesign -d --entitlements :- "$RESOURCES/bun" 2>&1 | grep -q "allow-jit"; then
+    echo "ERROR: Bun lost JIT entitlements! Build is broken."
+    exit 1
 fi
+echo "Bun JIT entitlements confirmed."
 
 # ── Step 8: Create DMG ──
 
