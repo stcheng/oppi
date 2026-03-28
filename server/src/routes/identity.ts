@@ -147,10 +147,10 @@ export function createIdentityRoutes(ctx: RouteContext, helpers: RouteHelpers): 
     helpers.json(res, { ok: result.ok, result, status });
 
     // Auto-restart after successful update so the new runtime loads.
-    // launchd (KeepAlive) will bring the server back up immediately.
+    // ServerProcessManager detects the exit and auto-restarts.
     if (result.ok) {
       setTimeout(() => {
-        console.log("[runtime-update] Update installed, exiting for launchd restart...");
+        console.log("[runtime-update] Update installed, exiting for restart...");
         process.exit(0);
       }, 1_000);
     }
@@ -252,6 +252,12 @@ export function createIdentityRoutes(ctx: RouteContext, helpers: RouteHelpers): 
     }
     if (path === "/server/stats" && method === "GET") {
       handleGetServerStats(url, res);
+      return true;
+    }
+    if (path === "/server/runtime/status" && method === "GET") {
+      const force = url.searchParams.get("force") === "true";
+      const status = await ctx.getRuntimeUpdateStatus({ force });
+      helpers.json(res, status);
       return true;
     }
     if (path === "/server/runtime/update" && method === "POST") {

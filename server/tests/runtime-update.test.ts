@@ -60,7 +60,7 @@ describe("RuntimeUpdateManager", () => {
     expect(commands).toContain("install @mariozechner/pi-coding-agent@latest");
   });
 
-  it("disables updates when npm is unavailable", async () => {
+  it("disables updates when package manager is unavailable", async () => {
     const manager = new RuntimeUpdateManager({
       packageName: "@mariozechner/pi-coding-agent",
       currentVersion: "0.56.0",
@@ -78,6 +78,6 @@ describe("RuntimeUpdateManager", () => {
     expect(status.canUpdate).toBe(false);
     expect(status.updateAvailable).toBe(false);
     expect(result.ok).toBe(false);
-    expect(result.error).toContain("npm");
+    expect(result.error).toContain("bun");
   });
 });

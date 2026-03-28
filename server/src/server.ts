@@ -309,11 +309,15 @@ export class Server {
       this.storage,
       storage.getConfig().modelAllowlist,
     );
+    // Decoupled runtime: deps live in ~/.config/oppi/server-runtime/ (mutable),
+    // separate from the immutable app bundle. Updates happen via bun install there.
+    const runtimeDir = process.env.OPPI_RUNTIME_DIR || join(storage.getDataDir(), "server-runtime");
+    const runtimeExecutable = process.env.OPPI_RUNTIME_BIN || process.argv[0] || "bun";
     this.runtimeUpdates = new RuntimeUpdateManager({
       packageName: process.env.OPPI_RUNTIME_PACKAGE || "@mariozechner/pi-coding-agent",
       currentVersion: Server.detectPiAgentVersion(),
-      npmExecutable: process.env.OPPI_RUNTIME_NPM_BIN || "npm",
-      cwd: join(dirname(fileURLToPath(import.meta.url)), ".."),
+      executable: runtimeExecutable,
+      cwd: runtimeDir,
     });
 
     const dataDir = storage.getDataDir();

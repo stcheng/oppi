@@ -17,6 +17,8 @@ export interface RuntimeUpdateStatus {
   checkError?: string;
   lastUpdatedAt?: number;
   lastUpdateError?: string;
+  /** The runtime directory where node_modules live. */
+  runtimeDir?: string;
 }
 
 export interface RuntimeUpdateResult {
@@ -33,8 +35,9 @@ type CommandRunner = (file: string, args: string[], timeoutMs: number) => Promis
 interface RuntimeUpdateManagerOptions {
   packageName?: string;
   currentVersion: string;
-  npmExecutable?: string;
-  /** Working directory for npm install (local dependency update). */
+  /** Path to bun or npm binary. Default: "bun", falls back to "npm". */
+  executable?: string;
+  /** Working directory for install (the decoupled runtime dir). */
   cwd?: string;
   checkIntervalMs?: number;
   checkTimeoutMs?: number;
@@ -95,15 +98,20 @@ function errorMessage(err: unknown): string {
 /**
  * Manages update checks + apply flow for the server runtime package.
  *
+ * The server runtime is decoupled from the app binary:
+ * - App bundle ships a seed (dist + node_modules) in Resources/server-seed/
+ * - On first launch, the Mac app copies the seed to ~/.config/oppi/server-runtime/
+ * - This manager runs `bun install` (or npm) in that writable runtime dir to update deps
+ *
  * Strategy:
- * - check latest version via `npm view <package> version`
- * - apply update via `npm install -g <package>@latest`
+ * - check latest version via `npm view <package> version` (works with both bun and npm)
+ * - apply update via `<executable> install <package>@latest` in the runtime dir
  * - mark restartRequired after successful install
  */
 export class RuntimeUpdateManager {
   private readonly packageName: string;
   private readonly currentVersion: string;
-  private readonly npmExecutable: string;
+  private readonly executable: string;
   private readonly cwd: string | undefined;
   private readonly checkIntervalMs: number;
   private readonly checkTimeoutMs: number;
@@ -111,14 +119,14 @@ export class RuntimeUpdateManager {
   private readonly commandRunner: CommandRunner;
   private readonly now: () => number;
 
-  private npmAvailable: boolean | undefined;
+  private executableAvailable: boolean | undefined;
 
   private status: RuntimeUpdateStatus;
 
   constructor(options: RuntimeUpdateManagerOptions) {
     this.packageName = options.packageName || "@mariozechner/pi-coding-agent";
     this.currentVersion = options.currentVersion;
-    this.npmExecutable = options.npmExecutable || "npm";
+    this.executable = options.executable || "bun";
     this.cwd = options.cwd;
     this.checkIntervalMs = options.checkIntervalMs ?? 6 * 60 * 60 * 1000;
     this.checkTimeoutMs = options.checkTimeoutMs ?? 4_000;
@@ -134,6 +142,7 @@ export class RuntimeUpdateManager {
       checking: false,
       updateInProgress: false,
       restartRequired: false,
+      runtimeDir: this.cwd,
     };
   }
 
@@ -152,26 +161,26 @@ export class RuntimeUpdateManager {
     return { ...this.status };
   }
 
-  private async ensureNpmAvailability(): Promise<void> {
-    if (this.npmAvailable !== undefined) {
-      this.status.canUpdate = this.npmAvailable;
+  private async ensureExecutableAvailability(): Promise<void> {
+    if (this.executableAvailable !== undefined) {
+      this.status.canUpdate = this.executableAvailable;
       return;
     }
 
     try {
-      await this.commandRunner(this.npmExecutable, ["--version"], this.checkTimeoutMs);
-      this.npmAvailable = true;
+      await this.commandRunner(this.executable, ["--version"], this.checkTimeoutMs);
+      this.executableAvailable = true;
       this.status.canUpdate = true;
       this.status.checkError = undefined;
     } catch {
-      this.npmAvailable = false;
+      this.executableAvailable = false;
       this.status.canUpdate = false;
-      this.status.checkError = `npm executable "${this.npmExecutable}" is unavailable`;
+      this.status.checkError = `Package manager "${this.executable}" is unavailable`;
     }
   }
 
   async getStatus(options?: { force?: boolean }): Promise<RuntimeUpdateStatus> {
-    await this.ensureNpmAvailability();
+    await this.ensureExecutableAvailability();
 
     const force = options?.force === true;
     const now = this.now();
@@ -193,8 +202,10 @@ export class RuntimeUpdateManager {
         return this.snapshot();
       }
 
+      // Use npm view for version check (works with both bun and npm as executables)
+      const viewExecutable = this.executable.endsWith("bun") ? this.executable : "npm";
       const output = await this.commandRunner(
-        this.npmExecutable,
+        viewExecutable,
         ["view", this.packageName, "version"],
         this.checkTimeoutMs,
       );
@@ -203,7 +214,7 @@ export class RuntimeUpdateManager {
       if (!latest) {
         this.status.latestVersion = undefined;
         this.status.updateAvailable = false;
-        this.status.checkError = `Unable to parse version from npm registry response for ${this.packageName}`;
+        this.status.checkError = `Unable to parse version from registry response for ${this.packageName}`;
         return this.snapshot();
       }
 
@@ -224,10 +235,10 @@ export class RuntimeUpdateManager {
   }
 
   async updateRuntime(): Promise<RuntimeUpdateResult> {
-    await this.ensureNpmAvailability();
+    await this.ensureExecutableAvailability();
 
     if (!this.status.canUpdate) {
-      const message = `Runtime updates require npm on the host (${this.npmExecutable} not found)`;
+      const message = `Runtime updates require a package manager (${this.executable} not found)`;
       this.status.lastUpdateError = message;
       return {
         ok: false,
@@ -253,8 +264,9 @@ export class RuntimeUpdateManager {
       const checked = await this.getStatus({ force: true });
       const expectedVersion = checked.latestVersion;
 
+      // Install in the decoupled runtime directory
       await this.commandRunner(
-        this.npmExecutable,
+        this.executable,
         ["install", `${this.packageName}@latest`],
         this.updateTimeoutMs,
       );
