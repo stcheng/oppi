@@ -822,40 +822,56 @@ final class NativeFullScreenRenderedDocumentBody: UIView {
         super.init(frame: .zero)
         backgroundColor = UIColor(palette.bgDark)
 
-        scrollView.translatesAutoresizingMaskIntoConstraints = false
-        scrollView.alwaysBounceVertical = true
-        scrollView.showsVerticalScrollIndicator = true
-        scrollView.showsHorizontalScrollIndicator = true
-        scrollView.backgroundColor = UIColor(palette.bgDark)
-        addSubview(scrollView)
-
-        let contentView: UIView
         switch content {
-        case .orgMode(let text):
-            contentView = makeOrgView(text: text)
-        case .latex(let text):
-            contentView = makeLatexView(text: text)
         case .mermaid(let text):
-            contentView = makeZoomableGraphicalView(
+            // ZoomableGraphicalView has its own scroll + zoom — embed directly
+            let zoomable = makeZoomableGraphicalView(
                 parser: MermaidParser(), renderer: MermaidFlowchartRenderer(),
                 text: text, fontSize: 14
             )
+            zoomable.translatesAutoresizingMaskIntoConstraints = false
+            addSubview(zoomable)
+            NSLayoutConstraint.activate([
+                zoomable.leadingAnchor.constraint(equalTo: leadingAnchor),
+                zoomable.trailingAnchor.constraint(equalTo: trailingAnchor),
+                zoomable.topAnchor.constraint(equalTo: topAnchor),
+                zoomable.bottomAnchor.constraint(equalTo: bottomAnchor),
+            ])
+
+        default:
+            // Org/LaTeX use the outer scroll view
+            scrollView.translatesAutoresizingMaskIntoConstraints = false
+            scrollView.alwaysBounceVertical = true
+            scrollView.showsVerticalScrollIndicator = true
+            scrollView.showsHorizontalScrollIndicator = true
+            scrollView.backgroundColor = UIColor(palette.bgDark)
+            addSubview(scrollView)
+
+            let contentView: UIView
+            switch content {
+            case .orgMode(let text):
+                contentView = makeOrgView(text: text)
+            case .latex(let text):
+                contentView = makeLatexView(text: text)
+            case .mermaid:
+                fatalError("Handled above")
+            }
+
+            contentView.translatesAutoresizingMaskIntoConstraints = false
+            scrollView.addSubview(contentView)
+
+            NSLayoutConstraint.activate([
+                scrollView.leadingAnchor.constraint(equalTo: leadingAnchor),
+                scrollView.trailingAnchor.constraint(equalTo: trailingAnchor),
+                scrollView.topAnchor.constraint(equalTo: topAnchor),
+                scrollView.bottomAnchor.constraint(equalTo: bottomAnchor),
+
+                contentView.leadingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.leadingAnchor, constant: 14),
+                contentView.trailingAnchor.constraint(lessThanOrEqualTo: scrollView.contentLayoutGuide.trailingAnchor, constant: -14),
+                contentView.topAnchor.constraint(equalTo: scrollView.contentLayoutGuide.topAnchor, constant: 12),
+                contentView.bottomAnchor.constraint(equalTo: scrollView.contentLayoutGuide.bottomAnchor, constant: -12),
+            ])
         }
-
-        contentView.translatesAutoresizingMaskIntoConstraints = false
-        scrollView.addSubview(contentView)
-
-        NSLayoutConstraint.activate([
-            scrollView.leadingAnchor.constraint(equalTo: leadingAnchor),
-            scrollView.trailingAnchor.constraint(equalTo: trailingAnchor),
-            scrollView.topAnchor.constraint(equalTo: topAnchor),
-            scrollView.bottomAnchor.constraint(equalTo: bottomAnchor),
-
-            contentView.leadingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.leadingAnchor, constant: 14),
-            contentView.trailingAnchor.constraint(lessThanOrEqualTo: scrollView.contentLayoutGuide.trailingAnchor, constant: -14),
-            contentView.topAnchor.constraint(equalTo: scrollView.contentLayoutGuide.topAnchor, constant: 12),
-            contentView.bottomAnchor.constraint(equalTo: scrollView.contentLayoutGuide.bottomAnchor, constant: -12),
-        ])
     }
 
     @available(*, unavailable)

@@ -342,7 +342,7 @@ enum FileShareService {
     ///
     /// Samples a few pixels to detect all-black or all-white snapshots
     /// from failed WKWebView GPU compositing.
-    private static func isBlankImage(_ image: UIImage) -> Bool {
+    static func isBlankImage(_ image: UIImage) -> Bool {
         guard let cgImage = image.cgImage,
               cgImage.width > 10, cgImage.height > 10 else {
             return true
