@@ -41,25 +41,42 @@ enum SessionTreeHelper {
         }
     }
 
+    // MARK: - Pre-built child index
+
+    /// Pre-built parent→children lookup for O(1) descendant queries.
+    ///
+    /// Build once per viewData computation instead of rebuilding
+    /// Dictionary(grouping:) per root session (was O(n*m) → now O(n)).
+    struct ChildIndex {
+        private let childrenByParent: [String: [Session]]
+
+        init(sessions: [Session]) {
+            childrenByParent = Dictionary(grouping: sessions.filter { $0.parentSessionId != nil }) {
+                $0.parentSessionId ?? ""
+            }
+        }
+
+        func allDescendants(of parentId: String) -> [Session] {
+            var result: [Session] = []
+            var visited = Set<String>([parentId])
+            var queue = childrenByParent[parentId] ?? []
+            while !queue.isEmpty {
+                let current = queue.removeFirst()
+                guard !visited.contains(current.id) else { continue }
+                visited.insert(current.id)
+                result.append(current)
+                queue.append(contentsOf: childrenByParent[current.id] ?? [])
+            }
+            return result
+        }
+    }
+
     // MARK: - Descendants
 
     /// All descendants (children, grandchildren, etc.) of a session.
     /// Guards against circular references via a visited set.
     static func allDescendants(of parentId: String, in sessions: [Session]) -> [Session] {
-        let childrenByParent = Dictionary(grouping: sessions.filter { $0.parentSessionId != nil }) {
-            $0.parentSessionId ?? ""
-        }
-        var result: [Session] = []
-        var visited = Set<String>([parentId])
-        var queue = childrenByParent[parentId] ?? []
-        while !queue.isEmpty {
-            let current = queue.removeFirst()
-            guard !visited.contains(current.id) else { continue }
-            visited.insert(current.id)
-            result.append(current)
-            queue.append(contentsOf: childrenByParent[current.id] ?? [])
-        }
-        return result
+        ChildIndex(sessions: sessions).allDescendants(of: parentId)
     }
 
     /// Count of all descendants.

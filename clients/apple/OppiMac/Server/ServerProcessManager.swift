@@ -77,8 +77,7 @@ final class ServerProcessManager {
     /// Search order:
     /// 1. `OPPI_SERVER_PATH` environment variable
     /// 2. App bundle (release builds copy server runtime into Resources/)
-    /// 3. Well-known dev paths (repo-local workspaces)
-    /// 4. Homebrew npm global
+    /// 3. Homebrew npm global
     static func resolveServerCLIPath() -> String? {
         if let envPath = ProcessInfo.processInfo.environment["OPPI_SERVER_PATH"],
            FileManager.default.fileExists(atPath: envPath) {
@@ -93,12 +92,8 @@ final class ServerProcessManager {
             }
         }
 
-        // Well-known locations for dogfood development
+        // Homebrew npm global
         let candidates = [
-            // Repo-local (running from within workspace)
-            NSString("~/workspace/oppi/server/dist/cli.js").expandingTildeInPath,
-            NSString("~/workspace/pios/server/dist/cli.js").expandingTildeInPath,
-            // Homebrew npm global
             "/opt/homebrew/lib/node_modules/@anthropic-ai/oppi/dist/cli.js",
             "/usr/local/lib/node_modules/@anthropic-ai/oppi/dist/cli.js",
         ]

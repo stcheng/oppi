@@ -96,9 +96,12 @@ struct WorkspaceDetailView: View {
     }
 
     /// Whether a root session or any of its descendants match the current search query.
-    private func rootOrDescendantMatchesSearch(_ session: Session, in allSessions: [Session]) -> Bool {
+    private func rootOrDescendantMatchesSearch(
+        _ session: Session,
+        using childIndex: SessionTreeHelper.ChildIndex
+    ) -> Bool {
         if matchesSessionSearch(session) { return true }
-        return SessionTreeHelper.allDescendants(of: session.id, in: allSessions)
+        return childIndex.allDescendants(of: session.id)
             .contains { matchesSessionSearch($0) }
     }
 
@@ -153,6 +156,8 @@ struct WorkspaceDetailView: View {
         let stoppedRoots: [Session]
         let localFiltered: [LocalSession]
         let wsEmpty: Bool
+        /// Pre-built child index for O(1) descendant lookups in row rendering.
+        let childIndex: SessionTreeHelper.ChildIndex
     }
 
     /// Classify a root session into Your Turn / Working / Stopped.
@@ -170,7 +175,10 @@ struct WorkspaceDetailView: View {
         case stopped
     }
 
-    private func classifySession(_ session: Session) -> SessionSection {
+    private func classifySession(
+        _ session: Session,
+        using childIndex: SessionTreeHelper.ChildIndex
+    ) -> SessionSection {
         if session.status == .stopped { return .stopped }
 
         let pendingCount = SessionTreeHelper.aggregatePendingCount(
@@ -180,10 +188,14 @@ struct WorkspaceDetailView: View {
         if pendingCount > 0 { return .yourTurn }
 
         // Parent is idle but has working children → tree is still working.
-        let childStatuses = SessionTreeHelper.descendantStatusCounts(
-            of: session.id, in: activeSessions
-        )
-        if childStatuses.working > 0 { return .working }
+        let descendants = childIndex.allDescendants(of: session.id)
+        let workingCount = descendants.filter {
+            switch $0.status {
+            case .starting, .busy, .stopping: return true
+            default: return false
+            }
+        }.count
+        if workingCount > 0 { return .working }
 
         switch session.status {
         case .error, .ready:
@@ -200,6 +212,11 @@ struct WorkspaceDetailView: View {
 
         let allWorkspaceIds = Set(workspaceSessions.map(\.id))
 
+        // Build child index ONCE for all descendant lookups in this computation.
+        // Previously allDescendants() rebuilt Dictionary(grouping:) per call — O(n*m).
+        let activeChildIndex = SessionTreeHelper.ChildIndex(sessions: activeSessions)
+        let allChildIndex = SessionTreeHelper.ChildIndex(sessions: workspaceSessions)
+
         // Filter to roots: children accessible through parent's chat view.
         // Searching for a child name surfaces its parent root.
         let allRoots = workspaceSessions.filter { session in
@@ -213,7 +230,7 @@ struct WorkspaceDetailView: View {
         var stoppedUnfiltered: [Session] = []
 
         for root in allRoots {
-            switch classifySession(root) {
+            switch classifySession(root, using: activeChildIndex) {
             case .yourTurn: yourTurnUnfiltered.append(root)
             case .working: workingUnfiltered.append(root)
             case .stopped: stoppedUnfiltered.append(root)
@@ -223,7 +240,7 @@ struct WorkspaceDetailView: View {
         // Your Turn: apply search, sort by pending-first then oldest turnEndedDate (FIFO)
         let yourTurnRoots: [Session] = {
             let filtered = hasSessionSearchQuery
-                ? yourTurnUnfiltered.filter { rootOrDescendantMatchesSearch($0, in: activeSessions) }
+                ? yourTurnUnfiltered.filter { rootOrDescendantMatchesSearch($0, using: activeChildIndex) }
                 : yourTurnUnfiltered
             return filtered.sorted { lhs, rhs in
                 let lhsPending = SessionTreeHelper.aggregatePendingCount(
@@ -246,20 +263,21 @@ struct WorkspaceDetailView: View {
         // Working: apply search, sort newest first
         let workingRoots: [Session] = {
             let filtered = hasSessionSearchQuery
-                ? workingUnfiltered.filter { rootOrDescendantMatchesSearch($0, in: activeSessions) }
+                ? workingUnfiltered.filter { rootOrDescendantMatchesSearch($0, using: activeChildIndex) }
                 : workingUnfiltered
             return filtered.sorted { $0.createdAt > $1.createdAt }
         }()
 
         // Stopped: filter to true roots, apply search, most recently stopped first
         let stoppedSessions = workspaceSessions.filter { $0.status == .stopped }
+        let stoppedChildIndex = SessionTreeHelper.ChildIndex(sessions: stoppedSessions)
         let stoppedRoots: [Session] = {
             let roots = stoppedSessions.filter { session in
                 guard let parentId = session.parentSessionId else { return true }
                 return !allWorkspaceIds.contains(parentId)
             }
             let filtered = hasSessionSearchQuery
-                ? roots.filter { rootOrDescendantMatchesSearch($0, in: stoppedSessions) }
+                ? roots.filter { rootOrDescendantMatchesSearch($0, using: stoppedChildIndex) }
                 : roots
             return filtered.sorted { $0.lastActivity > $1.lastActivity }
         }()
@@ -277,7 +295,8 @@ struct WorkspaceDetailView: View {
             workingRoots: workingRoots,
             stoppedRoots: stoppedRoots,
             localFiltered: filteredLocalSessions,
-            wsEmpty: workspaceSessions.isEmpty
+            wsEmpty: workspaceSessions.isEmpty,
+            childIndex: allChildIndex
         )
     }
 
@@ -289,7 +308,7 @@ struct WorkspaceDetailView: View {
                 Section("Your Turn") {
                     ForEach(data.yourTurnRoots) { session in
                         NavigationLink(value: session.id) {
-                            sessionRow(for: session)
+                            sessionRow(for: session, using: data.childIndex)
                         }
                         .buttonStyle(.plain)
                         .listRowBackground(Color.themeBg)
@@ -309,7 +328,7 @@ struct WorkspaceDetailView: View {
                 Section("Working") {
                     ForEach(data.workingRoots) { session in
                         NavigationLink(value: session.id) {
-                            sessionRow(for: session)
+                            sessionRow(for: session, using: data.childIndex)
                         }
                         .buttonStyle(.plain)
                         .listRowBackground(Color.themeBg)
@@ -332,10 +351,7 @@ struct WorkspaceDetailView: View {
                 isImportingLocal: isImportingLocal,
                 lineageHint: { session in lineageHint(for: session) },
                 childSummary: { session in
-                    childSummary(
-                        for: session.id,
-                        in: workspaceSessions.filter { $0.status == .stopped }
-                    )
+                    childSummary(for: session.id, using: data.childIndex)
                 },
                 onResumeSession: { session in
                     Task { await resumeSession(session) }
@@ -520,7 +536,7 @@ struct WorkspaceDetailView: View {
 
     /// Build a SessionRow with computed activity summary for the given session.
     @ViewBuilder
-    private func sessionRow(for session: Session) -> some View {
+    private func sessionRow(for session: Session, using childIndex: SessionTreeHelper.ChildIndex) -> some View {
         let rowStartNs = SessionListPerf.timestampNs()
         let pending = SessionTreeHelper.aggregatePendingCount(
             of: session.id, in: activeSessions,
@@ -532,7 +548,7 @@ struct WorkspaceDetailView: View {
             pendingPermissions: permissionStore.pending(for: session.id),
             activity: activityStore.lastActivity(for: session.id)
         )
-        let children = childSummary(for: session.id, in: workspaceSessions)
+        let children = childSummary(for: session.id, using: childIndex)
         let rowMs = Int((SessionListPerf.timestampNs() &- rowStartNs) / 1_000_000)
         let _ = SessionListPerf.recordRowCompute(
             durationMs: rowMs,
@@ -548,13 +564,16 @@ struct WorkspaceDetailView: View {
         )
     }
 
-    /// Compute child summary for a root session (single-pass over descendants).
-    private func childSummary(for sessionId: String, in sessions: [Session]) -> SessionRow.ChildSummary? {
-        let descendants = SessionTreeHelper.allDescendants(of: sessionId, in: sessions)
+    /// Compute child summary for a root session using pre-built child index.
+    private func childSummary(
+        for sessionId: String,
+        using childIndex: SessionTreeHelper.ChildIndex
+    ) -> SessionRow.ChildSummary? {
+        let descendants = childIndex.allDescendants(of: sessionId)
         guard !descendants.isEmpty else { return nil }
 
         var counts = SessionTreeHelper.StatusCounts()
-        var totalCost = sessions.first { $0.id == sessionId }?.cost ?? 0
+        var totalCost = workspaceSessions.first { $0.id == sessionId }?.cost ?? 0
         for desc in descendants {
             counts.total += 1
             switch desc.status {
