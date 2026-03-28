@@ -135,34 +135,11 @@ struct FileShareButton: View {
     }
 
     private func formatLabel(_ format: FileShareService.ExportFormat) -> String {
-        switch format {
-        case .image: return "Image"
-        case .pdf: return "PDF"
-        case .source: return sourceLabel()
-        }
+        FileShareService.formatDisplayInfo(format, for: content).label
     }
 
     private func formatIcon(_ format: FileShareService.ExportFormat) -> String {
-        switch format {
-        case .image: return "photo"
-        case .pdf: return "doc.richtext"
-        case .source: return "doc.text"
-        }
-    }
-
-    private func sourceLabel() -> String {
-        switch content {
-        case .markdown: return "Markdown File"
-        case .orgMode: return "Org File"
-        case .mermaid: return "Mermaid Source"
-        case .latex: return "LaTeX Source"
-        case .html: return "HTML Source"
-        case .json: return "JSON File"
-        case .code: return "Source File"
-        case .plainText: return "Text File"
-        case .imageData: return "Image File"
-        case .pdfData: return "PDF File"
-        }
+        FileShareService.formatDisplayInfo(format, for: content).icon
     }
 }
 

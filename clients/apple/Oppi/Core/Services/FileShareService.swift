@@ -75,6 +75,42 @@ enum FileShareService {
         }
     }
 
+    /// Display info for an export format in the context of specific content.
+    ///
+    /// Returns a user-facing label and SF Symbol name. Used by both
+    /// ``FileShareButton`` (SwiftUI) and ``FullScreenCodeViewController`` (UIKit)
+    /// so format picker labels stay consistent across surfaces.
+    static func formatDisplayInfo(
+        _ format: ExportFormat,
+        for content: ShareableContent?
+    ) -> (label: String, icon: String) {
+        switch format {
+        case .image:
+            return ("Image", "photo")
+        case .pdf:
+            return ("PDF", "doc.richtext")
+        case .source:
+            return (sourceFormatLabel(for: content), "doc.text")
+        }
+    }
+
+    /// Content-aware label for the source export option.
+    private static func sourceFormatLabel(for content: ShareableContent?) -> String {
+        guard let content else { return "Source File" }
+        switch content {
+        case .markdown: return "Markdown File"
+        case .orgMode: return "Org File"
+        case .mermaid: return "Mermaid Source"
+        case .latex: return "LaTeX Source"
+        case .html: return "HTML Source"
+        case .json: return "JSON File"
+        case .code: return "Source File"
+        case .plainText: return "Text File"
+        case .imageData: return "Image File"
+        case .pdfData: return "PDF File"
+        }
+    }
+
     /// Available export formats for a content type.
     static func availableFormats(for content: ShareableContent) -> [ExportFormat] {
         switch content {
