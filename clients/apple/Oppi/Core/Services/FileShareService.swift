@@ -61,9 +61,10 @@ enum FileShareService {
     static func defaultFormat(for content: ShareableContent) -> ExportFormat {
         switch content {
         case .html:
-            // HTML uses image (full-page screenshot) because offscreen WKWebView
-            // can't GPU-render <canvas> elements for PDF. Image captures everything.
-            return .image
+            // HTML uses PDF via WKWebView.pdf(configuration:) — the native API
+            // produces selectable text and proper layout. Canvas elements are
+            // converted to static images before capture (see renderHTMLToPDF).
+            return .pdf
         case .mermaid, .latex, .markdown, .orgMode, .code, .json:
             return .pdf
         case .plainText:
@@ -303,9 +304,76 @@ enum FileShareService {
         snapshotConfig.rect = CGRect(x: 0, y: 0, width: layoutWidth, height: clampedHeight)
 
         do {
-            return try await webView.takeSnapshot(configuration: snapshotConfig)
+            let snapshot = try await webView.takeSnapshot(configuration: snapshotConfig)
+            // Verify the snapshot isn't blank (all-black or all-white).
+            // Offscreen WKWebView on iOS 26 can produce empty snapshots
+            // when GPU compositing doesn't activate in time.
+            if isBlankImage(snapshot) {
+                return await rasterizeHTMLViaPDF(source)
+            }
+            return snapshot
         } catch {
+            return await rasterizeHTMLViaPDF(source)
+        }
+    }
+
+    /// Check if an image is effectively blank (solid color).
+    ///
+    /// Samples a few pixels to detect all-black or all-white snapshots
+    /// from failed WKWebView GPU compositing.
+    private static func isBlankImage(_ image: UIImage) -> Bool {
+        guard let cgImage = image.cgImage,
+              cgImage.width > 10, cgImage.height > 10 else {
+            return true
+        }
+
+        // Sample center pixel via a 1x1 bitmap context
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        var pixel: [UInt8] = [0, 0, 0, 0]
+        guard let ctx = CGContext(
+            data: &pixel,
+            width: 1, height: 1,
+            bitsPerComponent: 8,
+            bytesPerRow: 4,
+            space: colorSpace,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return true }
+
+        let cx = cgImage.width / 2
+        let cy = cgImage.height / 2
+        ctx.draw(cgImage, in: CGRect(x: -cx, y: -cy, width: cgImage.width, height: cgImage.height))
+
+        let r = pixel[0], g = pixel[1], b = pixel[2], a = pixel[3]
+        // Blank if transparent or near-black or near-white
+        if a < 10 { return true }
+        if r < 5 && g < 5 && b < 5 { return true }
+        if r > 250 && g > 250 && b > 250 { return true }
+        return false
+    }
+
+    /// Fallback: render HTML to PDF first, then rasterize the first page.
+    private static func rasterizeHTMLViaPDF(_ source: String) async -> UIImage {
+        let pdfData = await renderHTMLToPDF(source)
+        guard !pdfData.isEmpty,
+              let provider = CGDataProvider(data: pdfData as CFData),
+              let pdfDoc = CGPDFDocument(provider),
+              let page = pdfDoc.page(at: 1) else {
             return placeholderImage()
+        }
+
+        let pageRect = page.getBoxRect(.mediaBox)
+        let scale: CGFloat = 2.0
+        let size = CGSize(width: pageRect.width * scale, height: pageRect.height * scale)
+
+        let renderer = UIGraphicsImageRenderer(size: size)
+        return renderer.image { ctx in
+            UIColor.white.setFill()
+            ctx.fill(CGRect(origin: .zero, size: size))
+
+            let cgCtx = ctx.cgContext
+            cgCtx.translateBy(x: 0, y: size.height)
+            cgCtx.scaleBy(x: scale, y: -scale)
+            cgCtx.drawPDFPage(page)
         }
     }
 

@@ -99,8 +99,11 @@ struct FileBrowserContentView: View {
         .navigationTitle(fileName)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            // Share for non-text content (images, PDFs) that don't have
+            // their own FileShareButton in document mode. Text-based views
+            // (markdown, code, etc.) provide their own floating share capsule.
             ToolbarItem(placement: .topBarTrailing) {
-                if let shareable = shareableContentForBrowser() {
+                if let shareable = nonTextShareableContent() {
                     FileShareButton(content: shareable, style: .icon)
                 }
             }
@@ -228,23 +231,14 @@ struct FileBrowserContentView: View {
 
     // MARK: - Share
 
-    /// Build a shareable content descriptor from the current loaded content.
-    private func shareableContentForBrowser() -> FileShareService.ShareableContent? {
+    /// Shareable content for media types that lack an in-view share button.
+    ///
+    /// Text-based content (code, markdown, HTML, etc.) is handled by
+    /// ``FileShareButton`` inside each document-mode file view's floating
+    /// toolbar. This method only returns content for images and PDFs,
+    /// which render via simple UIKit views without their own share chrome.
+    private func nonTextShareableContent() -> FileShareService.ShareableContent? {
         switch content {
-        case .text(let text):
-            let fileType = FileType.detect(from: filePath, content: text)
-            switch fileType {
-            case .markdown: return .markdown(text)
-            case .html: return .html(text)
-            case .json: return .json(text)
-            case .latex: return .latex(text)
-            case .orgMode: return .orgMode(text)
-            case .mermaid: return .mermaid(text)
-            case .code(let lang): return .code(text, language: lang.displayName)
-            case .graphviz: return .code(text, language: "dot")
-            case .plain: return .plainText(text)
-            default: return .plainText(text)
-            }
         case .image(let data):
             return .imageData(data, filename: fileName)
         case .pdf(let data):
