@@ -3,37 +3,61 @@ import WebKit
 
 // MARK: - HTMLContentTracker
 
-/// Tracks whether an HTML web view needs to reload its content.
+/// Decides when a WKWebView should actually call `loadHTMLString`.
 ///
-/// Detects two reload scenarios:
-/// 1. Content changed (hash mismatch)
-/// 2. WKWebView content process was terminated (blank screen recovery)
+/// Solves two problems:
+/// 1. **Deferred first load.** WKWebView silently renders blank when
+///    `loadHTMLString` is called before the view has a window. Content
+///    is queued until `attach()` signals the view is in a window.
+/// 2. **Redundant reload suppression.** Same content is not reloaded
+///    unless the web content process was terminated.
 final class HTMLContentTracker {
     private var loadedContentHash: Int?
     private var processTerminated = false
+    private var attached = false
+    private var pendingContent: String?
 
-    /// Returns true if the web view should reload for the given content.
-    /// Call before `loadHTMLString`.
-    func needsReload(for content: String) -> Bool {
-        let hash = content.hashValue
-        if processTerminated {
-            loadedContentHash = hash
-            return true
+    /// Request a load. Returns the HTML to load now, or nil if deferred/unchanged.
+    ///
+    /// Before `attach()` is called, content is queued as pending.
+    /// After `attach()`, returns content only if it differs from last load
+    /// or the process was terminated.
+    func contentToLoad(for html: String) -> String? {
+        let hash = html.hashValue
+
+        guard attached else {
+            pendingContent = html
+            return nil
         }
-        if hash != loadedContentHash {
+
+        if processTerminated || hash != loadedContentHash {
             loadedContentHash = hash
-            return true
+            processTerminated = false
+            pendingContent = nil
+            return html
         }
-        return false
+
+        return nil
     }
 
-    /// Call after a successful `loadHTMLString` to clear the reload flag.
-    func markLoaded() {
+    /// Called when the view enters a window. Returns pending content to load, or nil.
+    func attach() -> String? {
+        attached = true
+        guard let content = pendingContent else { return nil }
+        let hash = content.hashValue
+        loadedContentHash = hash
         processTerminated = false
+        pendingContent = nil
+        return content
+    }
+
+    /// Called when the view leaves its window.
+    func detach() {
+        attached = false
     }
 
     /// Call from `webViewWebContentProcessDidTerminate` to force
-    /// the next `needsReload` to return true — even for same content.
+    /// the next `contentToLoad` to return content — even for same hash.
     func markProcessTerminated() {
         processTerminated = true
     }
@@ -58,8 +82,11 @@ final class HTMLContentTracker {
 final class HTMLRenderView: UIView, WKNavigationDelegate {
     private let webView: PiWKWebView
     private let contentTracker = HTMLContentTracker()
+    private var currentHTML: String
 
     init(htmlString: String, piActionHandler: ((String, PiQuickAction) -> Void)? = nil) {
+        self.currentHTML = htmlString
+
         let config = WKWebViewConfiguration()
         config.websiteDataStore = .nonPersistent()
         config.mediaTypesRequiringUserActionForPlayback = .all
@@ -87,19 +114,33 @@ final class HTMLRenderView: UIView, WKNavigationDelegate {
             webView.bottomAnchor.constraint(equalTo: bottomAnchor),
         ])
 
-        load(htmlString)
+        // Queue initial content — will load when didMoveToWindow fires
+        _ = contentTracker.contentToLoad(for: htmlString)
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { nil }
 
+    // MARK: - Window lifecycle
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        if window != nil {
+            if let html = contentTracker.attach() {
+                webView.loadHTMLString(html, baseURL: nil)
+            }
+        } else {
+            contentTracker.detach()
+        }
+    }
+
     // MARK: - Content updates
 
-    /// Load new HTML content if it differs from what's currently loaded.
+    /// Load new HTML content. Defers until the view has a window.
     func load(_ htmlString: String) {
-        if contentTracker.needsReload(for: htmlString) {
-            webView.loadHTMLString(htmlString, baseURL: nil)
-            contentTracker.markLoaded()
+        currentHTML = htmlString
+        if let html = contentTracker.contentToLoad(for: htmlString) {
+            webView.loadHTMLString(html, baseURL: nil)
         }
     }
 
@@ -150,9 +191,8 @@ final class HTMLRenderView: UIView, WKNavigationDelegate {
     /// Recover from content process crashes — reload immediately.
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
         contentTracker.markProcessTerminated()
-        // Force tracker to reload on next load() call.
-        // WKWebView is blank at this point — trigger SwiftUI update cycle.
-        webView.loadHTMLString("", baseURL: nil)
+        // Reload with current content — the view is still in a window
+        webView.loadHTMLString(currentHTML, baseURL: nil)
     }
 }
 
