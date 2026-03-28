@@ -1,6 +1,33 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, openSync, readSync, closeSync, readFileSync } from "node:fs";
 import { basename } from "node:path";
 import type { Session } from "./types.js";
+
+/**
+ * Cache for JSONL session file headers.
+ *
+ * Session file headers (first line) are immutable after creation —
+ * they contain the pi session UUID, timestamp, and parent link.
+ * Cache them permanently to avoid re-reading 1,000+ files on every
+ * graph request.
+ */
+export class SessionHeaderCache {
+  private readonly cache = new Map<string, SessionHeader | null>();
+
+  get(path: string): SessionHeader | null {
+    const cached = this.cache.get(path);
+    if (cached !== undefined) {
+      return cached;
+    }
+    const header = readSessionHeaderFromDisk(path);
+    this.cache.set(path, header);
+    return header;
+  }
+
+  /** Number of cached entries (for diagnostics). */
+  get size(): number {
+    return this.cache.size;
+  }
+}
 
 export interface WorkspaceGraphNode {
   id: string;
@@ -67,6 +94,8 @@ export interface BuildWorkspaceGraphOptions {
   includeEntryGraph?: boolean;
   entrySessionId?: string;
   includePaths?: boolean;
+  /** Shared header cache — avoids re-reading JSONL files across requests. */
+  headerCache?: SessionHeaderCache;
 }
 
 interface SessionHeader {
@@ -99,6 +128,10 @@ export function buildWorkspaceGraph(options: BuildWorkspaceGraphOptions): Worksp
     (session) => session.workspaceId === options.workspaceId,
   );
   const activeSessionIds = options.activeSessionIds ?? new Set<string>();
+  const headerCache = options.headerCache;
+  const getHeader = headerCache
+    ? (path: string) => headerCache.get(path)
+    : readSessionHeaderFromDisk;
 
   const candidateFiles = new Set<string>();
   for (const session of sessions) {
@@ -125,7 +158,7 @@ export function buildWorkspaceGraph(options: BuildWorkspaceGraphOptions): Worksp
 
     visitedFiles.add(file);
 
-    const header = readSessionHeader(file);
+    const header = getHeader(file);
     if (!header) {
       continue;
     }
@@ -316,20 +349,37 @@ function shouldPreferSessionFile(candidate: string, current: string): boolean {
   return candidate.localeCompare(current) < 0;
 }
 
-function readSessionHeader(path: string): SessionHeader | null {
+/** Max bytes to read for a session header (first JSON line). */
+const HEADER_READ_BYTES = 4096;
+
+/**
+ * Read only the first line of a JSONL session file (up to 4KB).
+ *
+ * The old implementation did `readFileSync(path, "utf8")` which read
+ * entire multi-MB files just to extract the first line. This version
+ * reads a fixed 4KB buffer — enough for any session header.
+ */
+function readSessionHeaderFromDisk(path: string): SessionHeader | null {
   if (!existsSync(path)) {
     return null;
   }
 
-  let content: string;
+  let firstLine: string;
   try {
-    content = readFileSync(path, "utf8");
+    const fd = openSync(path, "r");
+    try {
+      const buf = Buffer.alloc(HEADER_READ_BYTES);
+      const bytesRead = readSync(fd, buf, 0, HEADER_READ_BYTES, 0);
+      const chunk = buf.toString("utf8", 0, bytesRead);
+      const newline = chunk.indexOf("\n");
+      firstLine = (newline >= 0 ? chunk.slice(0, newline) : chunk).trim();
+    } finally {
+      closeSync(fd);
+    }
   } catch {
     return null;
   }
 
-  const newline = content.indexOf("\n");
-  const firstLine = (newline >= 0 ? content.slice(0, newline) : content).trim();
   if (!firstLine) {
     return null;
   }

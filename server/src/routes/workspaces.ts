@@ -11,7 +11,7 @@ import {
   getCommitFileDiff,
   getCommitLog,
 } from "../git-commits.js";
-import { buildWorkspaceGraph } from "../graph.js";
+import { buildWorkspaceGraph, SessionHeaderCache } from "../graph.js";
 import { getGitStatus } from "../git-status.js";
 import { discoverLocalSessions } from "../local-sessions.js";
 import { resolveSdkSessionCwd } from "../sdk-backend.js";
@@ -32,6 +32,9 @@ import {
 import type { RouteContext, RouteDispatcher, RouteHelpers } from "./types.js";
 
 export function createWorkspaceRoutes(ctx: RouteContext, helpers: RouteHelpers): RouteDispatcher {
+  /** Shared cache for JSONL session headers — immutable, cached permanently. */
+  const sessionHeaderCache = new SessionHeaderCache();
+
   function removeUnknownSkills(workspace: Workspace): Workspace {
     const knownSkills = workspace.skills.filter((name) => ctx.skillRegistry.get(name));
     if (knownSkills.length === workspace.skills.length) {
@@ -572,6 +575,7 @@ export function createWorkspaceRoutes(ctx: RouteContext, helpers: RouteHelpers):
       includeEntryGraph,
       entrySessionId,
       includePaths,
+      headerCache: sessionHeaderCache,
     });
 
     helpers.json(res, { ...graph });
