@@ -56,6 +56,18 @@ actor SentryService {
             options.sendDefaultPii = false
             options.enableAppHangTracking = true
             options.enableAutoPerformanceTracing = true
+
+            // Filter out ui.lifecycle breadcrumbs — Sentry's automatic
+            // UIViewController tracking serializes the SwiftUI view
+            // hierarchy which can contain circular references, causing
+            // stack overflow in _writeJSONObject (APPLE-IOS-2B).
+            options.beforeBreadcrumb = { breadcrumb in
+                if breadcrumb.category == "ui.lifecycle" {
+                    return nil
+                }
+                return breadcrumb
+            }
+
 #if DEBUG
             options.debug = true
             options.tracesSampleRate = 1.0
