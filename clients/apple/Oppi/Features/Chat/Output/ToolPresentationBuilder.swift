@@ -660,13 +660,9 @@ enum ToolPresentationBuilder {
     }
 
     /// Convert org mode source text to markdown for the `.markdown` render pipeline.
-    /// Uses the same OrgParser → OrgToMarkdownConverter → MarkdownBlockSerializer
-    /// chain as OrgModeFileView.
+    /// Uses the shared DocumentRenderPipeline conversion.
     private static func orgToMarkdown(_ orgText: String) -> String {
-        let parser = OrgParser()
-        let orgBlocks = parser.parse(orgText)
-        let mdBlocks = OrgToMarkdownConverter.convert(orgBlocks)
-        return MarkdownBlockSerializer.serialize(mdBlocks)
+        DocumentRenderPipeline.orgToMarkdown(orgText)
     }
 
     // periphery:ignore - used by ToolPresentationBuilderTests via @testable import

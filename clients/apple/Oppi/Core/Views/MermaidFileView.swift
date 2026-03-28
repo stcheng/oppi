@@ -158,22 +158,14 @@ struct MermaidFileView: View {
 private struct MermaidRenderedView: View {
     let content: String
 
-    private var renderResult: (CGSize, (CGContext, CGPoint) -> Void) {
-        let parser = MermaidParser()
-        let renderer = MermaidFlowchartRenderer()
-        let diagram = parser.parse(content)
-        let config = RenderConfiguration.default(maxWidth: 600)
-        let layoutResult = renderer.layout(diagram, configuration: config)
-        let size = renderer.boundingBox(layoutResult)
-        let draw: (CGContext, CGPoint) -> Void = { ctx, origin in
-            renderer.draw(layoutResult, in: ctx, at: origin)
-        }
-        return (size, draw)
-    }
-
     var body: some View {
         let startNs = ChatTimelinePerf.timestampNs()
-        let (size, draw) = renderResult
+        let layout = DocumentRenderPipeline.layoutGraphical(
+            parser: MermaidParser(),
+            renderer: MermaidFlowchartRenderer(),
+            text: content,
+            config: .default(maxWidth: 600)
+        )
         let durationMs = ChatTimelinePerf.elapsedMs(since: startNs)
         let _ = {
             if durationMs >= 1 {
@@ -184,7 +176,7 @@ private struct MermaidRenderedView: View {
                 )
             }
         }()
-        ZoomableGraphicalSwiftUIView(size: size, drawBlock: draw)
-            .frame(maxWidth: .infinity, minHeight: min(size.height, 400), maxHeight: max(size.height, 400))
+        ZoomableGraphicalSwiftUIView(size: layout.size, drawBlock: layout.draw)
+            .frame(maxWidth: .infinity, minHeight: min(layout.size.height, 400), maxHeight: max(layout.size.height, 400))
     }
 }

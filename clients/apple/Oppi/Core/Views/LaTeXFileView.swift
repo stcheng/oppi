@@ -160,53 +160,25 @@ struct LaTeXFileView: View {
 private struct LaTeXRenderedView: View {
     let content: String
 
-    /// Split input by blank lines and render each as a separate expression.
-    private var expressions: [String] {
-        content
-            .components(separatedBy: "\n\n")
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            ForEach(Array(expressions.enumerated()), id: \.offset) { _, expr in
-                LaTeXExpressionView(expression: expr)
-            }
-        }
-    }
-}
-
-private struct LaTeXExpressionView: View {
-    let expression: String
-
-    private var renderResult: (CGSize, (CGContext, CGPoint) -> Void) {
-        let parser = TeXMathParser()
-        let renderer = MathCoreGraphicsRenderer()
-        let nodes = parser.parse(expression)
-        let config = RenderConfiguration(fontSize: 20, maxWidth: 600, theme: .fallback, displayMode: .document)
-        let layoutResult = renderer.layout(nodes, configuration: config)
-        let size = renderer.boundingBox(layoutResult)
-        let draw: (CGContext, CGPoint) -> Void = { ctx, origin in
-            renderer.draw(layoutResult, in: ctx, at: origin)
-        }
-        return (size, draw)
-    }
-
     var body: some View {
         let startNs = ChatTimelinePerf.timestampNs()
-        let (size, draw) = renderResult
+        let config = RenderConfiguration(fontSize: 20, maxWidth: 600, theme: .fallback, displayMode: .document)
+        let multiLayout = DocumentRenderPipeline.layoutLatexExpressions(text: content, config: config)
         let durationMs = ChatTimelinePerf.elapsedMs(since: startNs)
         let _ = {
             if durationMs >= 1 {
                 ChatTimelinePerf.recordRenderStrategy(
                     mode: "latex_fullscreen",
                     durationMs: durationMs,
-                    inputBytes: expression.utf8.count
+                    inputBytes: content.utf8.count
                 )
             }
         }()
-        ZoomableGraphicalSwiftUIView(size: size, drawBlock: draw)
-            .frame(maxWidth: .infinity, minHeight: max(size.height, 30))
+        VStack(alignment: .leading, spacing: multiLayout.spacing) {
+            ForEach(Array(multiLayout.expressions.enumerated()), id: \.offset) { _, expr in
+                ZoomableGraphicalSwiftUIView(size: expr.size, drawBlock: expr.draw)
+                    .frame(maxWidth: .infinity, minHeight: max(expr.size.height, 30))
+            }
+        }
     }
 }

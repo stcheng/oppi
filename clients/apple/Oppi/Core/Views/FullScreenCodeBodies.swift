@@ -862,32 +862,20 @@ final class NativeFullScreenRenderedDocumentBody: UIView {
     required init?(coder: NSCoder) { nil }
 
     private func makeLatexView(text: String) -> UIView {
-        let expressions = text
-            .components(separatedBy: "\n\n")
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
+        let config = RenderConfiguration(fontSize: 20, maxWidth: 800, theme: .fallback, displayMode: .document)
+        let multiLayout = DocumentRenderPipeline.layoutLatexExpressions(text: text, config: config)
 
         let stack = UIStackView()
         stack.axis = .vertical
-        stack.spacing = 16
+        stack.spacing = multiLayout.spacing
         stack.alignment = .leading
 
-        let parser = TeXMathParser()
-        let renderer = MathCoreGraphicsRenderer()
-        let config = RenderConfiguration(fontSize: 20, maxWidth: 800, theme: .fallback, displayMode: .document)
-
-        for expr in expressions {
-            let nodes = parser.parse(expr)
-            let layoutResult = renderer.layout(nodes, configuration: config)
-            let size = renderer.boundingBox(layoutResult)
-
+        for expr in multiLayout.expressions {
             let drawView = GraphicalRendererUIView()
-            drawView.configure(size: size) { ctx, origin in
-                renderer.draw(layoutResult, in: ctx, at: origin)
-            }
+            drawView.configure(size: expr.size, draw: expr.draw)
             drawView.translatesAutoresizingMaskIntoConstraints = false
-            drawView.widthAnchor.constraint(equalToConstant: max(size.width, 1)).isActive = true
-            drawView.heightAnchor.constraint(equalToConstant: max(size.height, 1)).isActive = true
+            drawView.widthAnchor.constraint(equalToConstant: max(expr.size.width, 1)).isActive = true
+            drawView.heightAnchor.constraint(equalToConstant: max(expr.size.height, 1)).isActive = true
             stack.addArrangedSubview(drawView)
         }
 
@@ -895,12 +883,7 @@ final class NativeFullScreenRenderedDocumentBody: UIView {
     }
 
     private func makeOrgView(text: String) -> UIView {
-        // Convert org → markdown AST → markdown text, then render via the
-        // same AssistantMarkdownContentView used for .md files.
-        let parser = OrgParser()
-        let orgBlocks = parser.parse(text)
-        let mdBlocks = OrgToMarkdownConverter.convert(orgBlocks)
-        let markdownText = MarkdownBlockSerializer.serialize(mdBlocks)
+        let markdownText = DocumentRenderPipeline.orgToMarkdown(text)
 
         let mdView = AssistantMarkdownContentView()
         mdView.backgroundColor = .clear
@@ -917,13 +900,10 @@ final class NativeFullScreenRenderedDocumentBody: UIView {
     private func makeZoomableGraphicalView<P: DocumentParser, R: GraphicalDocumentRenderer>(
         parser: P, renderer: R, text: String, fontSize: CGFloat
     ) -> UIView where P.Document == R.Document {
-        let document = parser.parse(text)
         let config = RenderConfiguration(fontSize: fontSize, maxWidth: 800, theme: .fallback, displayMode: .document)
-        let layoutResult = renderer.layout(document, configuration: config)
-        let size = renderer.boundingBox(layoutResult)
-
-        return ZoomableGraphicalView(size: size) { ctx, origin in
-            renderer.draw(layoutResult, in: ctx, at: origin)
-        }
+        let layout = DocumentRenderPipeline.layoutGraphical(
+            parser: parser, renderer: renderer, text: text, config: config
+        )
+        return ZoomableGraphicalView(size: layout.size, draw: layout.draw)
     }
 }

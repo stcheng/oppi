@@ -164,83 +164,26 @@ enum FileShareService {
     // MARK: - CGContext Renderers (Mermaid, LaTeX)
 
     private static func renderMermaidToImage(_ source: String) -> UIImage {
-        let parser = MermaidParser()
-        let renderer = MermaidFlowchartRenderer()
-        let diagram = parser.parse(source)
-        let config = RenderConfiguration(
-            fontSize: 20,
-            maxWidth: 800,
-            theme: currentRenderTheme,
-            displayMode: .document
+        let layout = DocumentRenderPipeline.layoutGraphical(
+            parser: MermaidParser(),
+            renderer: MermaidFlowchartRenderer(),
+            text: source,
+            config: exportConfig
         )
-        let layout = renderer.layout(diagram, configuration: config)
-        let contentSize = renderer.boundingBox(layout)
-
-        let padding: CGFloat = 40
-        let imageSize = CGSize(
-            width: max(contentSize.width + padding * 2, 100),
-            height: max(contentSize.height + padding * 2, 100)
+        return DocumentRenderPipeline.renderGraphicalToImage(
+            size: layout.size,
+            draw: layout.draw,
+            backgroundColor: currentBackgroundColor
         )
-
-        let imageRenderer = UIGraphicsImageRenderer(size: imageSize)
-        return imageRenderer.image { ctx in
-            currentBackgroundColor.setFill()
-            ctx.fill(CGRect(origin: .zero, size: imageSize))
-            renderer.draw(layout, in: ctx.cgContext, at: CGPoint(x: padding, y: padding))
-        }
     }
 
     private static func renderLatexToImage(_ source: String) -> UIImage {
-        let expressions = source
-            .components(separatedBy: "\n\n")
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-
-        guard !expressions.isEmpty else { return placeholderImage() }
-
-        let parser = TeXMathParser()
-        let renderer = MathCoreGraphicsRenderer()
-        let config = RenderConfiguration(
-            fontSize: 20,
-            maxWidth: 800,
-            theme: currentRenderTheme,
-            displayMode: .document
+        let layout = DocumentRenderPipeline.layoutLatexExpressions(
+            text: source, config: exportConfig
         )
-
-        // Layout all expressions
-        var layouts: [(MathCoreGraphicsRenderer.LayoutResult, CGSize)] = []
-        var totalHeight: CGFloat = 0
-        var maxWidth: CGFloat = 0
-        let spacing: CGFloat = 16
-
-        for expr in expressions {
-            let nodes = parser.parse(expr)
-            let layout = renderer.layout(nodes, configuration: config)
-            let size = renderer.boundingBox(layout)
-            layouts.append((layout, size))
-            totalHeight += size.height
-            maxWidth = max(maxWidth, size.width)
-        }
-
-        totalHeight += spacing * CGFloat(max(0, layouts.count - 1))
-
-        let padding: CGFloat = 40
-        let imageSize = CGSize(
-            width: max(maxWidth + padding * 2, 100),
-            height: max(totalHeight + padding * 2, 100)
+        return DocumentRenderPipeline.renderLatexExpressionsToImage(
+            layout: layout, backgroundColor: currentBackgroundColor
         )
-
-        let imageRenderer = UIGraphicsImageRenderer(size: imageSize)
-        return imageRenderer.image { ctx in
-            currentBackgroundColor.setFill()
-            ctx.fill(CGRect(origin: .zero, size: imageSize))
-
-            var yOffset = padding
-            for (layout, size) in layouts {
-                renderer.draw(layout, in: ctx.cgContext, at: CGPoint(x: padding, y: yOffset))
-                yOffset += size.height + spacing
-            }
-        }
     }
 
     // MARK: - Text View Snapshots (Markdown, Org, Code)
@@ -259,12 +202,7 @@ enum FileShareService {
     }
 
     private static func renderOrgModeToImage(_ source: String) -> UIImage {
-        // Convert org → markdown, then render as markdown
-        let parser = OrgParser()
-        let orgBlocks = parser.parse(source)
-        let mdBlocks = OrgToMarkdownConverter.convert(orgBlocks)
-        let markdownText = MarkdownBlockSerializer.serialize(mdBlocks)
-        return renderMarkdownToImage(markdownText)
+        renderMarkdownToImage(DocumentRenderPipeline.orgToMarkdown(source))
     }
 
     /// Render HTML to a full-page screenshot using WKWebView.
@@ -427,84 +365,26 @@ enum FileShareService {
     }
 
     private static func renderMermaidToPDF(_ source: String) -> Data {
-        let parser = MermaidParser()
-        let renderer = MermaidFlowchartRenderer()
-        let diagram = parser.parse(source)
-        let config = RenderConfiguration(
-            fontSize: 20,
-            maxWidth: 800,
-            theme: currentRenderTheme,
-            displayMode: .document
+        let layout = DocumentRenderPipeline.layoutGraphical(
+            parser: MermaidParser(),
+            renderer: MermaidFlowchartRenderer(),
+            text: source,
+            config: exportConfig
         )
-        let layout = renderer.layout(diagram, configuration: config)
-        let contentSize = renderer.boundingBox(layout)
-
-        let padding: CGFloat = 40
-        let pageSize = CGSize(
-            width: max(contentSize.width + padding * 2, 100),
-            height: max(contentSize.height + padding * 2, 100)
+        return DocumentRenderPipeline.renderGraphicalToPDF(
+            size: layout.size,
+            draw: layout.draw,
+            backgroundColor: currentBackgroundColor
         )
-
-        let pdfRenderer = UIGraphicsPDFRenderer(bounds: CGRect(origin: .zero, size: pageSize))
-        return pdfRenderer.pdfData { ctx in
-            ctx.beginPage()
-            currentBackgroundColor.setFill()
-            UIRectFill(CGRect(origin: .zero, size: pageSize))
-            renderer.draw(layout, in: ctx.cgContext, at: CGPoint(x: padding, y: padding))
-        }
     }
 
     private static func renderLatexToPDF(_ source: String) -> Data {
-        let expressions = source
-            .components(separatedBy: "\n\n")
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-
-        guard !expressions.isEmpty else { return Data() }
-
-        let parser = TeXMathParser()
-        let renderer = MathCoreGraphicsRenderer()
-        let config = RenderConfiguration(
-            fontSize: 20,
-            maxWidth: 800,
-            theme: currentRenderTheme,
-            displayMode: .document
+        let layout = DocumentRenderPipeline.layoutLatexExpressions(
+            text: source, config: exportConfig
         )
-
-        var layouts: [(MathCoreGraphicsRenderer.LayoutResult, CGSize)] = []
-        var totalHeight: CGFloat = 0
-        var maxWidth: CGFloat = 0
-        let spacing: CGFloat = 16
-
-        for expr in expressions {
-            let nodes = parser.parse(expr)
-            let layout = renderer.layout(nodes, configuration: config)
-            let size = renderer.boundingBox(layout)
-            layouts.append((layout, size))
-            totalHeight += size.height
-            maxWidth = max(maxWidth, size.width)
-        }
-
-        totalHeight += spacing * CGFloat(max(0, layouts.count - 1))
-
-        let padding: CGFloat = 40
-        let pageSize = CGSize(
-            width: max(maxWidth + padding * 2, 100),
-            height: max(totalHeight + padding * 2, 100)
+        return DocumentRenderPipeline.renderLatexExpressionsToPDF(
+            layout: layout, backgroundColor: currentBackgroundColor
         )
-
-        let pdfRenderer = UIGraphicsPDFRenderer(bounds: CGRect(origin: .zero, size: pageSize))
-        return pdfRenderer.pdfData { ctx in
-            ctx.beginPage()
-            currentBackgroundColor.setFill()
-            UIRectFill(CGRect(origin: .zero, size: pageSize))
-
-            var yOffset = padding
-            for (layout, size) in layouts {
-                renderer.draw(layout, in: ctx.cgContext, at: CGPoint(x: padding, y: yOffset))
-                yOffset += size.height + spacing
-            }
-        }
     }
 
     /// Render HTML to PDF using an offscreen WKWebView.
@@ -777,6 +657,16 @@ enum FileShareService {
         }
     }
 
+    /// Render config for export: uses current theme, document-quality sizing.
+    private static var exportConfig: RenderConfiguration {
+        RenderConfiguration(
+            fontSize: 20,
+            maxWidth: 800,
+            theme: currentRenderTheme,
+            displayMode: .document
+        )
+    }
+
     /// Current theme's RenderTheme for CGContext renderers.
     /// Maps the app's ThemeID color scheme to the matching RenderTheme.
     private static var currentRenderTheme: RenderTheme {
@@ -790,12 +680,7 @@ enum FileShareService {
     }
 
     private static func placeholderImage() -> UIImage {
-        let size = CGSize(width: 200, height: 100)
-        let renderer = UIGraphicsImageRenderer(size: size)
-        return renderer.image { ctx in
-            UIColor(white: 0.96, alpha: 1).setFill()
-            ctx.fill(CGRect(origin: .zero, size: size))
-        }
+        DocumentRenderPipeline.placeholderImage()
     }
 }
 

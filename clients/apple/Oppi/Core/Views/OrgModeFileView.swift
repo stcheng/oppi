@@ -38,10 +38,7 @@ struct OrgModeFileView: View {
 
     /// Convert org content to markdown text for the markdown pipeline.
     private var markdownContent: String {
-        let parser = OrgParser()
-        let orgBlocks = parser.parse(content)
-        let mdBlocks = OrgToMarkdownConverter.convert(orgBlocks)
-        return MarkdownBlockSerializer.serialize(mdBlocks)
+        DocumentRenderPipeline.orgToMarkdown(content)
     }
 
     var body: some View {
