@@ -899,18 +899,71 @@ struct NativeMermaidBlockViewTests {
         return view
     }
 
-    @Test func tapGestureOnSelfNotScrollView() async throws {
+    private func allViews(in root: UIView) -> [UIView] {
+        [root] + root.subviews.flatMap(allViews)
+    }
+
+    private func isEffectivelyVisible(_ view: UIView) -> Bool {
+        var current: UIView? = view
+        while let visibleView = current {
+            if visibleView.isHidden || visibleView.alpha <= 0.01 {
+                return false
+            }
+            current = visibleView.superview
+        }
+        return true
+    }
+
+    private func firstRenderedDiagramImageView(in root: UIView) -> UIImageView? {
+        for scrollView in allViews(in: root).compactMap({ $0 as? UIScrollView }) where isEffectivelyVisible(scrollView) {
+            if let imageView = allViews(in: scrollView)
+                .compactMap({ $0 as? UIImageView })
+                .first(where: { imageView in
+                    isEffectivelyVisible(imageView) && imageView.image != nil
+                }) {
+                return imageView
+            }
+        }
+
+        return nil
+    }
+
+    @Test func diagramTapGestureReceivesTouchesInDiagramArea() async throws {
         let view = makeDiagramView()
         let palette = ThemeRuntimeState.currentPalette()
         view.applyAsDiagram(code: "graph TD\n    A-->B", palette: palette)
-        try await Task.sleep(for: .milliseconds(500))
 
-        // The tap gesture must be on the NativeMermaidBlockView itself —
-        // UIScrollView swallows single taps when it has zoom enabled.
-        let selfTaps = (view.gestureRecognizers ?? [])
+        var diagramImageView: UIImageView?
+        for _ in 0..<500 {
+            view.layoutIfNeeded()
+            if let imageView = firstRenderedDiagramImageView(in: view) {
+                diagramImageView = imageView
+                break
+            }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+
+        guard let diagramImageView else {
+            Issue.record("Expected rendered mermaid diagram image view")
+            return
+        }
+
+        let diagramCenter = CGPoint(x: diagramImageView.bounds.midX, y: diagramImageView.bounds.midY)
+        let diagramCenterInRoot = view.convert(diagramCenter, from: diagramImageView)
+        guard let hitView = view.hitTest(diagramCenterInRoot, with: nil) else {
+            Issue.record("Expected a hit-test target in the rendered diagram area")
+            return
+        }
+
+        let imageViewTaps = (diagramImageView.gestureRecognizers ?? [])
             .compactMap { $0 as? UITapGestureRecognizer }
             .filter { $0.numberOfTapsRequired == 1 }
-        #expect(!selfTaps.isEmpty, "NativeMermaidBlockView must have a single-tap gesture on itself")
+
+        #expect(!imageViewTaps.isEmpty, "Expected the diagram image view to own the single-tap gesture")
+        #expect(
+            hitView === diagramImageView,
+            "Expected taps in the diagram area to hit the diagram image view. Hit view: \(type(of: hitView))"
+        )
     }
 
     @Test func mermaidExportRendersNonBlankImage() async {

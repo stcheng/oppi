@@ -38,6 +38,7 @@ final class NativeMermaidBlockView: UIView {
         let iv = UIImageView()
         iv.contentMode = .scaleAspectFit
         iv.clipsToBounds = true
+        iv.isUserInteractionEnabled = true
         iv.translatesAutoresizingMaskIntoConstraints = false
         return iv
     }()
@@ -106,12 +107,13 @@ final class NativeMermaidBlockView: UIView {
         centerX.priority = .defaultHigh
         imageCenterXConstraint = centerX
 
-        // Tap to open fullscreen — placed on self, NOT the scroll view.
-        // UIScrollView with zoom enabled swallows single taps internally.
+        // Tap to open fullscreen from the rendered diagram itself.
+        // Attaching to the image view avoids the scroll view swallowing
+        // single taps while still letting the scroll view handle zoom/pan.
         let tapGesture = UITapGestureRecognizer(target: self, action: #selector(handleTap))
         tapGesture.numberOfTapsRequired = 1
         tapGesture.cancelsTouchesInView = false
-        addGestureRecognizer(tapGesture)
+        diagramImageView.addGestureRecognizer(tapGesture)
 
         NSLayoutConstraint.activate([
             // Code block fills self
