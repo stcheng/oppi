@@ -899,48 +899,36 @@ struct NativeMermaidBlockViewTests {
         return view
     }
 
-    private func allViews(in root: UIView) -> [UIView] {
-        [root] + root.subviews.flatMap(allViews)
-    }
-
-    private func isEffectivelyVisible(_ view: UIView) -> Bool {
-        var current: UIView? = view
-        while let visibleView = current {
-            if visibleView.isHidden || visibleView.alpha <= 0.01 {
-                return false
+    /// Find the diagram image view: a visible UIImageView with a tap gesture
+    /// and user interaction enabled. Skips button images and other incidental
+    /// image views in the hierarchy.
+    private func firstTappableImageView(in root: UIView) -> UIImageView? {
+        for sub in root.subviews {
+            if let iv = sub as? UIImageView,
+               !iv.isHidden,
+               iv.isUserInteractionEnabled,
+               iv.image != nil,
+               (iv.gestureRecognizers ?? []).contains(where: { $0 is UITapGestureRecognizer }) {
+                return iv
             }
-            current = visibleView.superview
-        }
-        return true
-    }
-
-    private func firstRenderedDiagramImageView(in root: UIView) -> UIImageView? {
-        for scrollView in allViews(in: root).compactMap({ $0 as? UIScrollView }) where isEffectivelyVisible(scrollView) {
-            if let imageView = allViews(in: scrollView)
-                .compactMap({ $0 as? UIImageView })
-                .first(where: { imageView in
-                    isEffectivelyVisible(imageView) && imageView.image != nil
-                }) {
-                return imageView
+            if let found = firstTappableImageView(in: sub) {
+                return found
             }
         }
-
         return nil
     }
 
-    /// The tap overlay must win hit-testing over the scroll view when the
-    /// diagram is rendered, ensuring taps reach the overlay's gesture
-    /// recognizer instead of being swallowed by UIScrollView's zoom handling.
-    @Test func tapOverlayWinsHitTestOverScrollView() async throws {
+    /// Tap on diagram image view must work inside a real collection view
+    /// hierarchy with a dismiss-keyboard gesture — same setup as on device.
+    @Test func tapWorksInCollectionViewHierarchy() async throws {
         let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 393, height: 852))
 
-        // Simulate real hierarchy: collectionView > cell > stack > mermaidView
         let layout = UICollectionViewFlowLayout()
         layout.estimatedItemSize = UICollectionViewFlowLayout.automaticSize
         let collectionView = UICollectionView(frame: window.bounds, collectionViewLayout: layout)
         collectionView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
 
-        // Add the same "dismiss keyboard" tap as ChatTimelineCollectionView
+        // Same dismiss-keyboard tap as ChatTimelineCollectionView
         let dismissTap = UITapGestureRecognizer()
         dismissTap.cancelsTouchesInView = false
         collectionView.addGestureRecognizer(dismissTap)
@@ -964,43 +952,46 @@ struct NativeMermaidBlockViewTests {
         mermaidView.applyAsDiagram(code: "graph TD\n    A-->B", palette: palette)
 
         // Wait for async render
-        var rendered = false
+        var imageView: UIImageView?
         for _ in 0..<500 {
             window.layoutIfNeeded()
-            if firstRenderedDiagramImageView(in: mermaidView) != nil {
-                rendered = true
+            if let iv = firstTappableImageView(in: mermaidView) {
+                imageView = iv
                 break
             }
             try await Task.sleep(for: .milliseconds(20))
         }
-        #expect(rendered, "Diagram must render before testing tap")
 
-        // Hit-test from the window at the mermaid view's center
-        let center = mermaidView.convert(
-            CGPoint(x: mermaidView.bounds.midX, y: mermaidView.bounds.midY),
-            to: window
-        )
-        guard let hitView = window.hitTest(center, with: nil) else {
-            Issue.record("hitTest returned nil at \(center)")
+        guard let imageView else {
+            Issue.record("Diagram never rendered")
             return
         }
 
-        // The hit view must NOT be the scroll view or its subviews —
-        // it must be the tap overlay (which sits above the scroll view).
-        #expect(
-            !(hitView is UIScrollView),
-            "Hit view should be the tap overlay, not UIScrollView"
-        )
-        #expect(
-            !(hitView is UIImageView),
-            "Hit view should be the tap overlay, not UIImageView inside scroll view"
-        )
+        // 1. Image view must be directly tappable (no scroll view wrapper)
+        #expect(!(imageView.superview is UIScrollView),
+                "Image view must NOT be inside a UIScrollView")
 
-        // The hit view (overlay) must have a single-tap gesture
-        let taps = (hitView.gestureRecognizers ?? [])
+        // 2. Image view must have a tap gesture
+        let taps = (imageView.gestureRecognizers ?? [])
             .compactMap { $0 as? UITapGestureRecognizer }
-            .filter { $0.numberOfTapsRequired == 1 }
-        #expect(!taps.isEmpty, "Hit view must own a single-tap gesture. Hit: \(type(of: hitView))")
+        #expect(!taps.isEmpty, "Image view must own a tap gesture")
+
+        // 3. Image view must be the hit-test target
+        let center = imageView.convert(
+            CGPoint(x: imageView.bounds.midX, y: imageView.bounds.midY),
+            to: window
+        )
+        let hitView = window.hitTest(center, with: nil)
+        #expect(hitView === imageView,
+                "hitTest must return imageView, got \(type(of: hitView as Any))")
+
+        // 4. isUserInteractionEnabled all the way up
+        var v: UIView? = imageView
+        while let current = v, current !== window {
+            #expect(current.isUserInteractionEnabled,
+                    "\(type(of: current)) blocks interaction")
+            v = current.superview
+        }
 
         window.resignKey()
     }
