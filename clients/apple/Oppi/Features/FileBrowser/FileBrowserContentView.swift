@@ -101,7 +101,7 @@ struct FileBrowserContentView: View {
                 )
             }
         }
-        .background(Color.themeBgDark)
+        .background(Color.themeBg)
         .navigationTitle(isUsingFileViewer ? "" : fileName)
         .navigationBarTitleDisplayMode(.inline)
         .toolbarVisibility(isUsingFileViewer ? .hidden : .automatic, for: .navigationBar)

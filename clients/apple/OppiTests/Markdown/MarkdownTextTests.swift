@@ -733,3 +733,75 @@ struct TableCellInlineContentTests {
         #expect(hasLink, "FlatSegment.table should preserve link inlines")
     }
 }
+
+// MARK: - End-to-end online image parsing
+
+@Suite("Online image end-to-end")
+struct OnlineImageEndToEndTests {
+
+    @Test func httpsImageURLParsedFromRawMarkdown() {
+        let md = "![GitHub avatar](https://avatars.githubusercontent.com/u/1?v=4)"
+        let blocks = parseCommonMark(md)
+        #expect(blocks.count == 1)
+        if case .paragraph(let inlines) = blocks[0] {
+            #expect(inlines.count == 1)
+            if case .image(let alt, let source) = inlines[0] {
+                #expect(alt == "GitHub avatar")
+                #expect(source == "https://avatars.githubusercontent.com/u/1?v=4")
+            } else {
+                Issue.record("Expected .image inline, got \(inlines[0])")
+            }
+        } else {
+            Issue.record("Expected .paragraph, got \(blocks[0])")
+        }
+    }
+
+    @Test func httpsImageURLProducesImageSegment() {
+        let md = "![GitHub avatar](https://avatars.githubusercontent.com/u/1?v=4)"
+        let blocks = parseCommonMark(md)
+        let segments = FlatSegment.build(from: blocks, themeID: .dark)
+        #expect(segments.count == 1)
+        if case .image(let alt, let url) = segments[0] {
+            #expect(alt == "GitHub avatar")
+            #expect(url.absoluteString == "https://avatars.githubusercontent.com/u/1?v=4")
+        } else {
+            Issue.record("Expected .image segment, got \(segments[0])")
+        }
+    }
+
+    @Test func httpsImageWithWorkspaceContextStillWorks() {
+        let md = "![test](https://example.com/photo.jpg)"
+        let blocks = parseCommonMark(md)
+        let segments = FlatSegment.build(
+            from: blocks,
+            themeID: .dark,
+            workspaceID: "ws-123",
+            serverBaseURL: URL(string: "https://server.local")!
+        )
+        #expect(segments.count == 1)
+        if case .image(let alt, let url) = segments[0] {
+            #expect(alt == "test")
+            #expect(url.absoluteString == "https://example.com/photo.jpg")
+        } else {
+            Issue.record("Expected .image segment, got \(segments[0])")
+        }
+    }
+
+    @Test func multipleImagesInMarkdown() {
+        let md = """
+        # Title
+
+        ![img1](https://example.com/a.png)
+
+        Some text
+
+        ![img2](https://example.com/b.png)
+        """
+        let blocks = parseCommonMark(md)
+        let segments = FlatSegment.build(from: blocks, themeID: .dark)
+        let imageSegments = segments.filter {
+            if case .image = $0 { return true } else { return false }
+        }
+        #expect(imageSegments.count == 2, "Expected 2 image segments, got \(imageSegments.count). All segments: \(segments)")
+    }
+}

@@ -91,7 +91,6 @@ struct FileBrowserView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
-        .background(Color.themeBgDark)
         .navigationTitle(isRoot ? "Files" : lastPathComponent)
         .navigationBarTitleDisplayMode(.inline)
         .searchable(text: $searchText, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search files")
@@ -167,6 +166,7 @@ struct FileBrowserView: View {
                 }
             }
             .listStyle(.plain)
+            .themedListSurface()
         }
     }
 
@@ -225,6 +225,7 @@ struct FileBrowserView: View {
                 }
             }
             .listStyle(.plain)
+            .themedListSurface()
         }
     }
 
@@ -246,11 +247,9 @@ struct FileBrowserView: View {
                 return FileBrowserNavTarget(workspaceId: workspaceId, path: dirPath)
             }()) {
                 Label {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(showFullPath ? (entry.path ?? entry.name) : entry.name)
-                            .font(.body)
-                            .lineLimit(1)
-                    }
+                    Text(showFullPath ? (entry.path ?? entry.name) : entry.name)
+                        .font(.body)
+                        .lineLimit(1)
                 } icon: {
                     Image(systemName: "folder.fill")
                         .foregroundStyle(.themeBlue)
@@ -267,13 +266,19 @@ struct FileBrowserView: View {
                 )
             } label: {
                 Label {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(showFullPath ? (entry.path ?? entry.name) : entry.name)
-                            .font(.body)
-                            .lineLimit(1)
-                        Text(entry.formattedSize)
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(showFullPath ? (entry.path ?? entry.name) : entry.name)
+                                .font(.body)
+                                .lineLimit(1)
+                            Text(entry.formattedSize)
+                                .font(.caption2)
+                                .foregroundStyle(.themeComment)
+                        }
+                        Spacer()
+                        Text(entry.relativeModifiedTime)
                             .font(.caption2)
-                            .foregroundStyle(.themeComment)
+                            .foregroundStyle(entry.isRecentlyModified ? .themeGreen : .themeComment)
                     }
                 } icon: {
                     let icon = FileIcon.forPath(entry.name)
