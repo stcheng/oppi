@@ -1,5 +1,20 @@
 # Inline Rendering — Remaining Ideas
 
+## Export Pipeline Consistency Audit
+The `synchronousRendering` flag fixes mermaid but three other async paths are inconsistent:
+
+| Component | Live Mode | Export Mode | Status |
+|---|---|---|---|
+| Mermaid diagrams | async Task.detached | sync via applyAsDiagramSync | FIXED |
+| Syntax highlighting | async Task.detached (scheduleHighlight) | still async — exports unhighlighted | TODO |
+| Online images (URL) | async URLSession | still async — exports as spinner | TODO |
+| Workspace images | async fetchWorkspaceFile | no fetch closure passed — broken | TODO |
+
+### Fix plan
+- **Syntax highlighting**: when `synchronousRendering`, call `SyntaxHighlighter.highlight()` inline on the current thread in the applier instead of `scheduleHighlight()`
+- **Images**: make `renderMarkdownToImage` async. Before snapshotting, await all image load tasks. Or: pre-download images before creating the view.
+- **Workspace images**: pass `fetchWorkspaceFile` closure to the export config
+
 ## Table Export (needs research)
 - Research agent investigating Google Docs, Word, Pages, Notion, Obsidian, GitHub
 - Key question: wrap text, scale down, clip, or landscape?
