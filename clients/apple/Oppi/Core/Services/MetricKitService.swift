@@ -42,13 +42,12 @@ final class MetricKitService: NSObject, MXMetricManagerSubscriber {
 
     func didReceive(_ payloads: [MXMetricPayload]) {
         guard !payloads.isEmpty else { return }
-        let now = Date.nowMs()
         let items = payloads.map { payload in
             MetricKitPayloadSerializer.item(
                 from: payload,
                 kind: .metric,
-                windowStartMs: now,
-                windowEndMs: now
+                windowStartMs: payload.timeStampBegin.toMs(),
+                windowEndMs: payload.timeStampEnd.toMs()
             )
         }
         upload(items)
@@ -56,13 +55,12 @@ final class MetricKitService: NSObject, MXMetricManagerSubscriber {
 
     func didReceive(_ payloads: [MXDiagnosticPayload]) {
         guard !payloads.isEmpty else { return }
-        let now = Date.nowMs()
         let items = payloads.map { payload in
             MetricKitPayloadSerializer.item(
                 from: payload,
                 kind: .diagnostic,
-                windowStartMs: now,
-                windowEndMs: now
+                windowStartMs: payload.timeStampBegin.toMs(),
+                windowEndMs: payload.timeStampEnd.toMs()
             )
         }
         upload(items)
