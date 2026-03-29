@@ -10,6 +10,11 @@ import SwiftUI
 ///
 /// The dismiss (back) button calls SwiftUI's `dismiss()` to pop the navigation.
 ///
+/// Pi quick-action routing: reads from `\.selectedTextPiActionRouter` in the
+/// SwiftUI environment when no explicit router is provided. This means new
+/// callers get pi actions for free as long as the environment is set by an
+/// ancestor (which `ContentView` does at the root level).
+///
 /// Usage:
 /// ```swift
 /// NavigationLink {
@@ -27,13 +32,19 @@ struct EmbeddedFileViewerView: UIViewControllerRepresentable {
     var selectedTextSourceLabel: String?
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.selectedTextPiActionRouter) private var environmentPiRouter
+
+    /// Effective router: explicit parameter wins, falls back to environment.
+    private var effectivePiRouter: SelectedTextPiActionRouter? {
+        selectedTextPiRouter ?? environmentPiRouter
+    }
 
     func makeUIViewController(context: Context) -> FullScreenCodeViewController {
         let dismissAction = dismiss
         return FullScreenCodeViewController(
             content: content,
             presentationMode: .embedded(onDismiss: { dismissAction() }),
-            selectedTextPiRouter: selectedTextPiRouter,
+            selectedTextPiRouter: effectivePiRouter,
             selectedTextSessionId: selectedTextSessionId,
             selectedTextSourceLabel: selectedTextSourceLabel
         )

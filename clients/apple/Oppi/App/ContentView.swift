@@ -31,6 +31,19 @@ struct ContentView: View {
         crossSessionPending.first
     }
 
+    /// Default pi quick-action router for non-chat surfaces.
+    ///
+    /// Injected at the root of the view hierarchy so every text-selection
+    /// surface gets a working "pi" menu automatically. Chat views override
+    /// this with a session-specific router that sends to the active composer.
+    private var defaultPiRouter: SelectedTextPiActionRouter {
+        let nav = navigation
+        return SelectedTextPiActionRouter { request in
+            nav.pendingQuickSessionDraft = SelectedTextPiPromptFormatter.composeDraftAddition(for: request)
+            nav.showQuickSession = true
+        }
+    }
+
     var body: some View {
         @Bindable var nav = navigation
         @Bindable var liveConnection = connection
@@ -70,6 +83,7 @@ struct ContentView: View {
                 }
             }
         }
+        .environment(\.selectedTextPiActionRouter, defaultPiRouter)
         .safeAreaInset(edge: .top, spacing: 0) {
             if !navigation.showOnboarding,
                let request = crossSessionPrimary {

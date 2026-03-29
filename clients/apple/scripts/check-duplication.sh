@@ -27,7 +27,7 @@ if [ -n "$HITS" ]; then
 fi
 
 # 3. No direct FullScreenCodeViewController creation outside allowed files
-ALLOWED='FullScreenCodeView\.swift\|EmbeddedFileViewerView\.swift\|ToolTimelineRowHelpers\.swift'
+ALLOWED='FullScreenCodeView\.swift\|FullScreenCodeViewController\.swift\|EmbeddedFileViewerView\.swift\|ToolTimelineRowHelpers\.swift'
 HITS=$(rg -l 'FullScreenCodeViewController\(' --type swift Oppi/ \
   | grep -v "$ALLOWED" || true)
 if [ -n "$HITS" ]; then
@@ -99,6 +99,21 @@ if [ "$HITS" -gt 2 ]; then
   err "nowMs() duplicated in $HITS files" \
       "Use a single shared static func"
 fi
+
+# 12. No plain WKWebView instantiation — use PiWKWebView for pi quick actions
+# Matches " WKWebView(" but not "PiWKWebView(" via negative lookbehind.
+ALLOWED_WK='PiWKWebView\.swift\|HTMLContentTracker\|PDFFileView\.swift'
+HITS=$(rg --pcre2 -l '(?<!Pi)WKWebView\(frame:' --type swift Oppi/ \
+  | grep -v "$ALLOWED_WK" || true)
+if [ -n "$HITS" ]; then
+  err "Plain WKWebView instantiation in: $HITS" \
+      "Use PiWKWebView so pi quick actions appear on text selection"
+fi
+
+# 13. EmbeddedFileViewerView callers should not need explicit piRouter
+#     (environment fallback handles it) — warn if new callers add custom
+#     routers identical to the default quick-session pattern.
+#     This is informational; not blocking.
 
 if [ $ERRORS -gt 0 ]; then
   echo "=== $ERRORS duplication violation(s) found ==="
