@@ -54,6 +54,52 @@ for VIEW in MarkdownFileView LaTeXFileView MermaidFileView OrgModeFileView HTMLF
   fi
 done
 
+# 6. ChatInputBar / ExpandedComposerView must not share >5 private func names
+SHARED=$(comm -12 \
+  <(rg 'private func (\w+)' -o Oppi/Features/Chat/Composer/ChatInputBar.swift 2>/dev/null | sed 's/private func //' | sort -u) \
+  <(rg 'private func (\w+)' -o Oppi/Features/Chat/Composer/ExpandedComposerView.swift 2>/dev/null | sed 's/private func //' | sort -u) | wc -l | tr -d ' ')
+if [ "$SHARED" -gt 5 ]; then
+  err "ChatInputBar and ExpandedComposerView share $SHARED private funcs" \
+      "Extract shared logic to a ComposerShared module"
+fi
+
+# 7. AskCard / AskCardExpanded must not share >3 private func names
+SHARED=$(comm -12 \
+  <(rg 'private func (\w+)' -o Oppi/Features/Chat/Composer/AskCard.swift 2>/dev/null | sed 's/private func //' | sort -u) \
+  <(rg 'private func (\w+)' -o Oppi/Features/Chat/Composer/AskCardExpanded.swift 2>/dev/null | sed 's/private func //' | sort -u) | wc -l | tr -d ' ')
+if [ "$SHARED" -gt 3 ]; then
+  err "AskCard and AskCardExpanded share $SHARED private funcs" \
+      "Extract shared AskQuestion logic to AskCardShared"
+fi
+
+# 8. elapsedMs(ContinuousClock) must exist in at most 1 file
+HITS=$(rg -l 'elapsed\.components\.attoseconds' --type swift Oppi/ 2>/dev/null | wc -l | tr -d ' ')
+if [ "$HITS" -gt 1 ]; then
+  err "elapsedMs(ContinuousClock) duplicated in $HITS files" \
+      "Extract to a shared ContinuousClock extension"
+fi
+
+# 9. formatTokens must exist in at most 1 file
+HITS=$(rg -l 'private func formatTokens' --type swift Oppi/ 2>/dev/null | wc -l | tr -d ' ')
+if [ "$HITS" -gt 1 ]; then
+  err "formatTokens duplicated in $HITS files" \
+      "Extract to a shared formatting extension"
+fi
+
+# 10. Git statusColor mapping must exist in at most 1 file
+HITS=$(rg -l 'private var statusColor: Color' --type swift Oppi/Features/Review/ 2>/dev/null | wc -l | tr -d ' ')
+if [ "$HITS" -gt 1 ]; then
+  err "Git statusColor duplicated in $HITS Review files" \
+      "Extract to GitStatusColor.color(for:)"
+fi
+
+# 11. nowMs must exist in at most 2 files
+HITS=$(rg -l 'func nowMs' --type swift Oppi/ 2>/dev/null | wc -l | tr -d ' ')
+if [ "$HITS" -gt 2 ]; then
+  err "nowMs() duplicated in $HITS files" \
+      "Use a single shared static func"
+fi
+
 if [ $ERRORS -gt 0 ]; then
   echo "=== $ERRORS duplication violation(s) found ==="
   exit 1
