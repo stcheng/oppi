@@ -183,11 +183,15 @@ struct ChatInputBar<ActionRow: View>: View {
             }
 
             if !slashSuggestions.isEmpty {
-                SlashCommandSuggestionList(suggestions: slashSuggestions, onSelect: insertSlashCommand)
+                SlashCommandSuggestionList(suggestions: slashSuggestions) { command in
+                    ComposerShared.insertSlashCommand(command, into: $text)
+                }
             }
 
             if !fileSuggestions.isEmpty, case .atFile = autocompleteContext {
-                FileSuggestionList(suggestions: fileSuggestions, onSelect: insertFileSuggestion)
+                FileSuggestionList(suggestions: fileSuggestions) { suggestion in
+                    ComposerShared.insertFileSuggestion(suggestion, text: $text, pendingFiles: $pendingFiles)
+                }
             }
 
             if let sendProgressText {
@@ -214,10 +218,15 @@ struct ChatInputBar<ActionRow: View>: View {
             if newValue.isEmpty {
                 inlineVisualLineCount = 1
             }
-            notifyFileSuggestionContext(for: newValue)
+            ComposerShared.notifyFileSuggestionContext(
+                for: newValue,
+                isBusy: isBusy,
+                onFileSuggestionQuery: onFileSuggestionQuery
+            )
         }
         .onChange(of: photoSelection) { _, items in
-            loadSelectedPhotos(items)
+            ComposerShared.loadSelectedPhotos(items, into: $pendingImages)
+            photoSelection = []
         }
         .onChange(of: externalFocusRequestID) { _, _ in
             suppressKeyboard = false
@@ -237,18 +246,7 @@ struct ChatInputBar<ActionRow: View>: View {
                 )
             }
         }
-        .fullScreenCover(isPresented: $showCamera) {
-            CameraPicker(
-                onCapture: { image in
-                    addCapturedImage(image)
-                    showCamera = false
-                },
-                onCancel: {
-                    showCamera = false
-                }
-            )
-            .ignoresSafeArea()
-        }
+        .composerCameraCover(isPresented: $showCamera, pendingImages: $pendingImages)
     }
 
     // MARK: - Subviews
@@ -319,7 +317,7 @@ struct ChatInputBar<ActionRow: View>: View {
                         tintColor: UIColor(isBusy ? Color.themePurple : accentColor),
                         maxLines: effectiveMaxLines,
                         autocorrectionEnabled: composerAutocorrectionEnabled,
-                        onPasteImages: handlePastedImages,
+                        onPasteImages: { ComposerShared.handlePastedImages($0, into: $pendingImages) },
                         onCommandEnter: handleSend,
                         onAlternateEnter: handleAlternateSend,
                         onOverflowChange: nil,
@@ -331,7 +329,13 @@ struct ChatInputBar<ActionRow: View>: View {
                         dictationRequestID: 0,
                         suppressKeyboard: suppressKeyboard,
                         allowKeyboardRestoreOnTap: allowKeyboardRestoreOnTap,
-                        onKeyboardRestoreRequest: handleKeyboardRestore,
+                        onKeyboardRestoreRequest: {
+                            ComposerShared.handleKeyboardRestore(
+                                suppressKeyboard: $suppressKeyboard,
+                                textBeforeRecording: $textBeforeRecording,
+                                voiceInputManager: voiceInputManager
+                            )
+                        },
                         accessibilityIdentifier: "chat.input",
                         keyboardLanguage: $keyboardLanguage
                     )
@@ -501,7 +505,7 @@ struct ChatInputBar<ActionRow: View>: View {
                             )
 
                         Button {
-                            removeImage(pending.id)
+                            ComposerShared.removeImage(pending.id, from: $pendingImages)
                         } label: {
                             Image(systemName: "xmark.circle.fill")
                                 .font(.caption)
@@ -519,41 +523,12 @@ struct ChatInputBar<ActionRow: View>: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 6) {
                 ForEach(pendingFiles) { file in
-                    filePillView(file)
+                    ComposerFilePill(file: file) {
+                        ComposerShared.removeFile(file.id, from: $pendingFiles)
+                    }
                 }
             }
         }
-    }
-
-    private func filePillView(_ file: PendingFileReference) -> some View {
-        let icon = file.isDirectory
-            ? FileIcon(symbolName: "folder.fill", color: .themeYellow)
-            : FileIcon.forPath(file.path)
-
-        return HStack(spacing: 4) {
-            Image(systemName: icon.symbolName)
-                .font(.appTag)
-                .foregroundStyle(icon.color)
-
-            Text(file.displayName)
-                .font(.caption2.monospaced())
-                .foregroundStyle(.themeFg)
-                .lineLimit(1)
-                .fixedSize()
-
-            Button {
-                removeFile(file.id)
-            } label: {
-                Image(systemName: "xmark")
-                    .font(.appBadge)
-                    .foregroundStyle(.themeComment)
-            }
-            .buttonStyle(.plain)
-        }
-        .padding(.leading, 6)
-        .padding(.trailing, 4)
-        .padding(.vertical, 4)
-        .background(.themeComment.opacity(0.1), in: Capsule())
     }
 
     private var expandButton: some View {
@@ -609,7 +584,7 @@ struct ChatInputBar<ActionRow: View>: View {
         let isRecording = manager.isRecording
         let isPreparing = manager.isPreparing
         let isProcessing = manager.isProcessing
-        let engineBadge = micEngineBadge(for: manager)
+        let engineBadge = ComposerShared.micEngineBadge(for: manager)
 
         return Button {
             Task {
@@ -661,8 +636,8 @@ struct ChatInputBar<ActionRow: View>: View {
         .buttonStyle(.plain)
         .disabled(isProcessing)
         .accessibilityIdentifier("chat.voiceInput")
-        .accessibilityLabel(accessibilityLabel(isRecording: isRecording, isPreparing: isPreparing))
-        .accessibilityValue(voiceRouteAccessibilityValue(for: manager))
+        .accessibilityLabel(ComposerShared.accessibilityLabel(isRecording: isRecording, isPreparing: isPreparing))
+        .accessibilityValue(ComposerShared.voiceRouteAccessibilityValue(for: manager))
     }
 
     private var stopActionButton: some View {
@@ -718,31 +693,6 @@ struct ChatInputBar<ActionRow: View>: View {
         isInputFocused = isFocused
     }
 
-    private func micEngineBadge(for manager: VoiceInputManager) -> MicButtonLabel.EngineBadge {
-        switch manager.routeIndicator {
-        case .auto:
-            return .auto
-        case .onDevice:
-            return .onDevice
-        case .remote:
-            return .remote
-        }
-    }
-
-    private func voiceRouteAccessibilityValue(for manager: VoiceInputManager) -> String {
-        manager.routeIndicator.accessibilityLabel
-    }
-
-    private func accessibilityLabel(isRecording: Bool, isPreparing: Bool) -> String {
-        if isRecording {
-            return "Stop recording"
-        }
-        if isPreparing {
-            return "Cancel voice input"
-        }
-        return "Start voice input"
-    }
-
     static func allowKeyboardRestoreOnTap(voiceState _: VoiceInputManager.State) -> Bool {
         true
     }
@@ -790,95 +740,6 @@ struct ChatInputBar<ActionRow: View>: View {
         }
 
         handleSend()
-    }
-
-    /// User tapped the text field while keyboard was suppressed — stop any
-    /// active recording and restore the keyboard so they can type.
-    private func handleKeyboardRestore() {
-        suppressKeyboard = false
-        textBeforeRecording = nil
-        if let manager = voiceInputManager, manager.isRecording || manager.isPreparing {
-            Task {
-                if manager.isRecording {
-                    await manager.stopRecording()
-                } else {
-                    await manager.cancelRecording()
-                }
-            }
-        }
-    }
-
-    private func insertSlashCommand(_ command: SlashCommand) {
-        text = ComposerAutocomplete.insertSlashCommand(command, into: text)
-    }
-
-    private func insertFileSuggestion(_ suggestion: FileSuggestion) {
-        // Add as pill instead of inline text. Remove the @query token from text.
-        if let tokenRange = ComposerAutocomplete.activeAtTokenRange(in: text) {
-            text.replaceSubrange(tokenRange, with: "")
-        }
-
-        let ref = PendingFileReference(path: suggestion.path, isDirectory: suggestion.isDirectory)
-        if !pendingFiles.contains(where: { $0.path == ref.path }) {
-            pendingFiles.append(ref)
-        }
-
-        // If it's a directory, re-trigger autocomplete for its contents
-        if suggestion.isDirectory {
-            text += "@\(suggestion.path)"
-        }
-    }
-
-    private func removeFile(_ id: String) {
-        pendingFiles.removeAll { $0.id == id }
-    }
-
-    private func notifyFileSuggestionContext(for newText: String) {
-        let ctx = ComposerAutocomplete.context(for: newText)
-        if case .atFile(let query) = ctx, !isBusy {
-            onFileSuggestionQuery?(query)
-        } else {
-            onFileSuggestionQuery?(nil)
-        }
-    }
-
-    private func handlePastedImages(_ images: [UIImage]) {
-        for image in images {
-            DispatchQueue.global(qos: .userInitiated).async {
-                let pending = PendingImage.from(image)
-                DispatchQueue.main.async {
-                    pendingImages.append(pending)
-                }
-            }
-        }
-    }
-
-    private func loadSelectedPhotos(_ items: [PhotosPickerItem]) {
-        for item in items {
-            Task {
-                guard let data = try? await item.loadTransferable(type: Data.self) else { return }
-                guard let uiImage = UIImage(data: data) else { return }
-                let pending = PendingImage.from(uiImage)
-                await MainActor.run {
-                    pendingImages.append(pending)
-                }
-            }
-        }
-        // Reset selection so the same photo can be picked again
-        photoSelection = []
-    }
-
-    private func addCapturedImage(_ image: UIImage) {
-        DispatchQueue.global(qos: .userInitiated).async {
-            let pending = PendingImage.from(image)
-            DispatchQueue.main.async {
-                pendingImages.append(pending)
-            }
-        }
-    }
-
-    private func removeImage(_ id: String) {
-        pendingImages.removeAll { $0.id == id }
     }
 }
 

@@ -147,7 +147,7 @@ struct AskCardExpanded: View {
                 }
             }
 
-            if question.multiSelect, let count = multiSelectCount(for: question), count > 0 {
+            if question.multiSelect, let count = AskCardShared.multiSelectCount(for: question, answers: answers), count > 0 {
                 Button {
                     confirmMultiSelect()
                 } label: {
@@ -169,10 +169,16 @@ struct AskCardExpanded: View {
     }
 
     private func expandedOptionCard(_ option: AskOption, question: AskQuestion) -> some View {
-        let isSelected = isOptionSelected(option, in: question)
+        let isSelected = AskCardShared.isOptionSelected(option, in: question, answers: answers)
 
         return Button {
-            handleOptionTap(option, question: question)
+            customTexts[question.id] = ""
+            AskCardShared.handleOptionTap(option, question: question, answers: $answers) {
+                if isSingleQuestionSingleSelect {
+                    isExpanded = false
+                    onSubmit(answers)
+                }
+            }
         } label: {
             HStack(alignment: .center, spacing: 12) {
                 if question.multiSelect {
@@ -276,7 +282,7 @@ struct AskCardExpanded: View {
                                 .foregroundStyle(.themeFg)
                                 .fixedSize(horizontal: false, vertical: true)
 
-                            Text(answerDisplayText(entry.answer))
+                            Text(AskCardShared.answerDisplayText(entry.answer))
                                 .font(.subheadline)
                                 .foregroundStyle(entry.answer != nil ? .themeFg : .themeComment)
                                 .fixedSize(horizontal: false, vertical: true)
@@ -405,51 +411,6 @@ struct AskCardExpanded: View {
 
     // MARK: - Selection Logic
 
-    private func isOptionSelected(_ option: AskOption, in question: AskQuestion) -> Bool {
-        guard let answer = answers[question.id] else { return false }
-        switch answer {
-        case .single(let value):
-            return value == option.value
-        case .multi(let values):
-            return values.contains(option.value)
-        case .custom:
-            return false
-        }
-    }
-
-    private func multiSelectCount(for question: AskQuestion) -> Int? {
-        guard case .multi(let values) = answers[question.id] else { return nil }
-        return values.count
-    }
-
-    private func handleOptionTap(_ option: AskOption, question: AskQuestion) {
-        UIImpactFeedbackGenerator(style: .light).impactOccurred()
-        customTexts[question.id] = ""
-
-        if question.multiSelect {
-            var current: Set<String>
-            if case .multi(let existing) = answers[question.id] {
-                current = existing
-            } else {
-                current = []
-            }
-
-            if current.contains(option.value) {
-                current.remove(option.value)
-            } else {
-                current.insert(option.value)
-            }
-            answers[question.id] = current.isEmpty ? nil : .multi(current)
-        } else {
-            answers[question.id] = .single(option.value)
-
-            if isSingleQuestionSingleSelect {
-                isExpanded = false
-                onSubmit(answers)
-            }
-        }
-    }
-
     private func confirmMultiSelect() {
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
         navigateForward()
@@ -513,17 +474,4 @@ struct AskCardExpanded: View {
         }
     }
 
-    // MARK: - Display Helpers
-
-    private func answerDisplayText(_ answer: AskAnswer?) -> String {
-        guard let answer else { return "(not answered)" }
-        switch answer {
-        case .single(let value):
-            return value
-        case .multi(let values):
-            return Array(values).sorted().joined(separator: ", ")
-        case .custom(let text):
-            return "\"\(text)\""
-        }
-    }
 }

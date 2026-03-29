@@ -8,6 +8,7 @@ import UIKit
 /// Eliminates duplicated private functions for image handling, input manipulation,
 /// voice UI helpers, and keyboard management. Both composers delegate to these
 /// static functions instead of maintaining their own copies.
+@MainActor
 enum ComposerShared {
 
     // MARK: - Voice UI Helpers

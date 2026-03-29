@@ -1,7 +1,7 @@
 #!/bin/bash
 # Mechanical enforcement of shared component usage.
 # Run as part of build verification. Fails with clear fix instructions.
-set -euo pipefail
+set -uo pipefail
 
 cd "$(dirname "$0")/.."
 ERRORS=0

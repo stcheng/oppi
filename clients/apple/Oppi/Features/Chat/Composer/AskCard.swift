@@ -187,7 +187,7 @@ struct AskCard: View {
             optionStrip(for: question)
 
             // Multi-select done button
-            if question.multiSelect, let selected = multiSelectCount(for: question), selected > 0 {
+            if question.multiSelect, let selected = AskCardShared.multiSelectCount(for: question, answers: answers), selected > 0 {
                 Button {
                     confirmMultiSelect(for: question)
                 } label: {
@@ -219,10 +219,21 @@ struct AskCard: View {
     }
 
     private func optionCard(_ option: AskOption, question: AskQuestion) -> some View {
-        let isSelected = isOptionSelected(option, in: question)
+        let isSelected = AskCardShared.isOptionSelected(option, in: question, answers: answers)
 
         return Button {
-            handleOptionTap(option, question: question)
+            AskCardShared.handleOptionTap(option, question: question, answers: $answers) {
+                if isSingleQuestionSingleSelect {
+                    onSubmit(answers)
+                } else {
+                    Task {
+                        try? await Task.sleep(for: autoAdvanceDelay)
+                        withAnimation(.easeInOut(duration: 0.25)) {
+                            advanceToNextPage()
+                        }
+                    }
+                }
+            }
         } label: {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(alignment: .top, spacing: 4) {
@@ -322,7 +333,7 @@ struct AskCard: View {
                             .font(.caption.weight(.medium))
                             .foregroundStyle(.themeFg)
 
-                        Text(answerDisplayText(entry.answer))
+                        Text(AskCardShared.answerDisplayText(entry.answer))
                             .font(.caption2)
                             .foregroundStyle(entry.answer != nil ? .themeFg : .themeComment)
                     }
@@ -386,60 +397,6 @@ struct AskCard: View {
 
     // MARK: - Selection Logic
 
-    private func isOptionSelected(_ option: AskOption, in question: AskQuestion) -> Bool {
-        guard let answer = answers[question.id] else { return false }
-        switch answer {
-        case .single(let value):
-            return value == option.value
-        case .multi(let values):
-            return values.contains(option.value)
-        case .custom:
-            return false
-        }
-    }
-
-    private func multiSelectCount(for question: AskQuestion) -> Int? {
-        guard case .multi(let values) = answers[question.id] else { return nil }
-        return values.count
-    }
-
-    private func handleOptionTap(_ option: AskOption, question: AskQuestion) {
-        UIImpactFeedbackGenerator(style: .light).impactOccurred()
-
-        if question.multiSelect {
-            // Toggle in multi-select set
-            var current: Set<String>
-            if case .multi(let existing) = answers[question.id] {
-                current = existing
-            } else {
-                current = []
-            }
-
-            if current.contains(option.value) {
-                current.remove(option.value)
-            } else {
-                current.insert(option.value)
-            }
-            answers[question.id] = current.isEmpty ? nil : .multi(current)
-        } else {
-            // Single-select
-            answers[question.id] = .single(option.value)
-
-            if isSingleQuestionSingleSelect {
-                // Direct send — one tap, done
-                onSubmit(answers)
-            } else {
-                // Auto-advance after brief delay
-                Task {
-                    try? await Task.sleep(for: autoAdvanceDelay)
-                    withAnimation(.easeInOut(duration: 0.25)) {
-                        advanceToNextPage()
-                    }
-                }
-            }
-        }
-    }
-
     private func confirmMultiSelect(for question: AskQuestion) {
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
         withAnimation(.easeInOut(duration: 0.25)) {
@@ -468,19 +425,6 @@ struct AskCard: View {
         }
     }
 
-    // MARK: - Display Helpers
-
-    private func answerDisplayText(_ answer: AskAnswer?) -> String {
-        guard let answer else { return "(not answered)" }
-        switch answer {
-        case .single(let value):
-            return value
-        case .multi(let values):
-            return Array(values).sorted().joined(separator: ", ")
-        case .custom(let text):
-            return "\"\(text)\""
-        }
-    }
 }
 
 // MARK: - Page Count Helper (testable)

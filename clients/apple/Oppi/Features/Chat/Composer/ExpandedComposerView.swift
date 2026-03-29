@@ -129,26 +129,36 @@ struct ExpandedComposerView: View {
                     textColor: UIColor(Color.themeFg),
                     tintColor: UIColor(accentColor),
                     autocorrectionEnabled: composerAutocorrectionEnabled,
-                    onPasteImages: handlePastedImages,
+                    onPasteImages: { ComposerShared.handlePastedImages($0, into: $pendingImages) },
                     onCommandEnter: handleSend,
                     onAlternateEnter: handleSend,
                     autoFocusOnAppear: false,
                     focusRequestID: focusRequestID,
                     suppressKeyboard: suppressKeyboard,
                     allowKeyboardRestoreOnTap: true,
-                    onKeyboardRestoreRequest: handleKeyboardRestore
+                    onKeyboardRestoreRequest: {
+                        ComposerShared.handleKeyboardRestore(
+                            suppressKeyboard: $suppressKeyboard,
+                            textBeforeRecording: $textBeforeRecording,
+                            voiceInputManager: voiceInputManager
+                        )
+                    }
                 )
 
                 if !slashSuggestions.isEmpty {
-                    SlashCommandSuggestionList(suggestions: slashSuggestions, onSelect: insertSlashCommand)
-                        .padding(.horizontal, 12)
-                        .padding(.bottom, 8)
+                    SlashCommandSuggestionList(suggestions: slashSuggestions) { command in
+                        ComposerShared.insertSlashCommand(command, into: $text)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 8)
                 }
 
                 if !fileSuggestions.isEmpty, case .atFile = autocompleteContext {
-                    FileSuggestionList(suggestions: fileSuggestions, onSelect: insertFileSuggestion)
-                        .padding(.horizontal, 12)
-                        .padding(.bottom, 8)
+                    FileSuggestionList(suggestions: fileSuggestions) { suggestion in
+                        ComposerShared.insertFileSuggestion(suggestion, text: $text, pendingFiles: $pendingFiles)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 8)
                 }
 
                 Divider().overlay(Color.themeComment.opacity(0.2))
@@ -181,10 +191,15 @@ struct ExpandedComposerView: View {
         }
         .preferredColorScheme(ThemeRuntimeState.currentThemeID().preferredColorScheme)
         .onChange(of: text) { _, newText in
-            notifyFileSuggestionContext(for: newText)
+            ComposerShared.notifyFileSuggestionContext(
+                for: newText,
+                isBusy: isBusy,
+                onFileSuggestionQuery: onFileSuggestionQuery
+            )
         }
         .onChange(of: photoSelection) { _, items in
-            loadSelectedPhotos(items)
+            ComposerShared.loadSelectedPhotos(items, into: $pendingImages)
+            photoSelection = []
         }
         .onChange(of: voiceInputManager?.currentTranscript) { _, newTranscript in
             guard let prefix = textBeforeRecording, let transcript = newTranscript else { return }
@@ -200,18 +215,7 @@ struct ExpandedComposerView: View {
                 )
             }
         }
-        .fullScreenCover(isPresented: $showCamera) {
-            CameraPicker(
-                onCapture: { image in
-                    addCapturedImage(image)
-                    showCamera = false
-                },
-                onCancel: {
-                    showCamera = false
-                }
-            )
-            .ignoresSafeArea()
-        }
+        .composerCameraCover(isPresented: $showCamera, pendingImages: $pendingImages)
     }
 
     // MARK: - Subviews
@@ -281,7 +285,7 @@ struct ExpandedComposerView: View {
                             )
 
                         Button {
-                            removeImage(pending.id)
+                            ComposerShared.removeImage(pending.id, from: $pendingImages)
                         } label: {
                             Image(systemName: "xmark.circle.fill")
                                 .font(.caption)
@@ -300,42 +304,13 @@ struct ExpandedComposerView: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 6) {
                 ForEach(pendingFiles) { file in
-                    filePillView(file)
+                    ComposerFilePill(file: file) {
+                        ComposerShared.removeFile(file.id, from: $pendingFiles)
+                    }
                 }
             }
             .padding(.horizontal, 16)
         }
-    }
-
-    private func filePillView(_ file: PendingFileReference) -> some View {
-        let icon = file.isDirectory
-            ? FileIcon(symbolName: "folder.fill", color: .themeYellow)
-            : FileIcon.forPath(file.path)
-
-        return HStack(spacing: 4) {
-            Image(systemName: icon.symbolName)
-                .font(.appTag)
-                .foregroundStyle(icon.color)
-
-            Text(file.displayName)
-                .font(.caption2.monospaced())
-                .foregroundStyle(.themeFg)
-                .lineLimit(1)
-                .fixedSize()
-
-            Button {
-                removeFile(file.id)
-            } label: {
-                Image(systemName: "xmark")
-                    .font(.appBadge)
-                    .foregroundStyle(.themeComment)
-            }
-            .buttonStyle(.plain)
-        }
-        .padding(.leading, 6)
-        .padding(.trailing, 4)
-        .padding(.vertical, 4)
-        .background(.themeComment.opacity(0.1), in: Capsule())
     }
 
     private var attachMenu: some View {
@@ -376,7 +351,7 @@ struct ExpandedComposerView: View {
         let isRecording = manager.isRecording
         let isPreparing = manager.isPreparing
         let isProcessing = manager.isProcessing
-        let engineBadge = micEngineBadge(for: manager)
+        let engineBadge = ComposerShared.micEngineBadge(for: manager)
 
         return Button {
             Task {
@@ -424,36 +399,11 @@ struct ExpandedComposerView: View {
         .buttonStyle(.plain)
         .disabled(isProcessing)
         .accessibilityIdentifier("expanded.voiceInput")
-        .accessibilityLabel(accessibilityLabel(isRecording: isRecording, isPreparing: isPreparing))
-        .accessibilityValue(voiceRouteAccessibilityValue(for: manager))
+        .accessibilityLabel(ComposerShared.accessibilityLabel(isRecording: isRecording, isPreparing: isPreparing))
+        .accessibilityValue(ComposerShared.voiceRouteAccessibilityValue(for: manager))
     }
 
     // MARK: - Actions
-
-    private func micEngineBadge(for manager: VoiceInputManager) -> MicButtonLabel.EngineBadge {
-        switch manager.routeIndicator {
-        case .auto:
-            return .auto
-        case .onDevice:
-            return .onDevice
-        case .remote:
-            return .remote
-        }
-    }
-
-    private func voiceRouteAccessibilityValue(for manager: VoiceInputManager) -> String {
-        manager.routeIndicator.accessibilityLabel
-    }
-
-    private func accessibilityLabel(isRecording: Bool, isPreparing: Bool) -> String {
-        if isRecording {
-            return "Stop recording"
-        }
-        if isPreparing {
-            return "Cancel voice input"
-        }
-        return "Start voice input"
-    }
 
     private func handleSend() {
         // Stop voice recording setup/session before sending
@@ -469,85 +419,5 @@ struct ExpandedComposerView: View {
         }
         onSend()
         dismiss()
-    }
-
-    /// User tapped back into the composer while voice was active — restore the
-    /// keyboard immediately and stop/cancel voice so typing takes over.
-    private func handleKeyboardRestore() {
-        suppressKeyboard = false
-        textBeforeRecording = nil
-        if let manager = voiceInputManager, manager.isRecording || manager.isPreparing {
-            Task {
-                if manager.isRecording {
-                    await manager.stopRecording()
-                } else {
-                    await manager.cancelRecording()
-                }
-            }
-        }
-    }
-
-    private func insertSlashCommand(_ command: SlashCommand) {
-        text = ComposerAutocomplete.insertSlashCommand(command, into: text)
-    }
-
-    private func insertFileSuggestion(_ suggestion: FileSuggestion) {
-        // Add as pill instead of inline text. Remove the @query token from text.
-        if let tokenRange = ComposerAutocomplete.activeAtTokenRange(in: text) {
-            text.replaceSubrange(tokenRange, with: "")
-        }
-
-        let ref = PendingFileReference(path: suggestion.path, isDirectory: suggestion.isDirectory)
-        if !pendingFiles.contains(where: { $0.path == ref.path }) {
-            pendingFiles.append(ref)
-        }
-
-        // If it's a directory, re-trigger autocomplete for its contents
-        if suggestion.isDirectory {
-            text += "@\(suggestion.path)"
-        }
-    }
-
-    private func removeFile(_ id: String) {
-        pendingFiles.removeAll { $0.id == id }
-    }
-
-    private func notifyFileSuggestionContext(for newText: String) {
-        let ctx = ComposerAutocomplete.context(for: newText)
-        if case .atFile(let query) = ctx, !isBusy {
-            onFileSuggestionQuery?(query)
-        } else {
-            onFileSuggestionQuery?(nil)
-        }
-    }
-
-    private func handlePastedImages(_ images: [UIImage]) {
-        for image in images {
-            let pending = PendingImage.from(image)
-            pendingImages.append(pending)
-        }
-    }
-
-    private func loadSelectedPhotos(_ items: [PhotosPickerItem]) {
-        for item in items {
-            Task {
-                guard let data = try? await item.loadTransferable(type: Data.self) else { return }
-                guard let uiImage = UIImage(data: data) else { return }
-                let pending = PendingImage.from(uiImage)
-                await MainActor.run {
-                    pendingImages.append(pending)
-                }
-            }
-        }
-        photoSelection = []
-    }
-
-    private func addCapturedImage(_ image: UIImage) {
-        let pending = PendingImage.from(image)
-        pendingImages.append(pending)
-    }
-
-    private func removeImage(_ id: String) {
-        pendingImages.removeAll { $0.id == id }
     }
 }
