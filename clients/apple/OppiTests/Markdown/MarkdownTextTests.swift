@@ -845,3 +845,44 @@ struct OnlineImageNoWorkspaceTests {
         #expect(imageSegments.count == 2, "Expected 2 image segments in full markdown. All segments: \(segments.map { "\($0)" }.joined(separator: ", "))")
     }
 }
+
+// MARK: - NativeMarkdownImageView loading
+
+@Suite("NativeMarkdownImageView online loading")
+@MainActor
+struct NativeMarkdownImageViewTests {
+
+    @Test func loadsHTTPSImageFromURL() async throws {
+        let view = NativeMarkdownImageView()
+        let url = URL(string: "https://avatars.githubusercontent.com/u/1?v=4")!
+        view.apply(url: url, alt: "Test", fetchWorkspaceFile: nil)
+
+        // Wait for async load (up to 10 seconds)
+        var loaded = false
+        for _ in 0..<100 {
+            try await Task.sleep(for: .milliseconds(100))
+            // Check if imageView has an image by inspecting subviews
+            if let imageView = view.subviews.first(where: { $0 is UIImageView }) as? UIImageView,
+               imageView.image != nil, !imageView.isHidden {
+                loaded = true
+                break
+            }
+        }
+        #expect(loaded, "NativeMarkdownImageView should load and display the image from https URL")
+    }
+
+    @Test func showsLoadingPlaceholderHeight() {
+        let view = NativeMarkdownImageView()
+        // Force layout
+        view.frame = CGRect(x: 0, y: 0, width: 300, height: 100)
+        view.layoutIfNeeded()
+
+        let url = URL(string: "https://example.com/test.png")!
+        view.apply(url: url, alt: "Loading test", fetchWorkspaceFile: nil)
+
+        // The view should have a height constraint of 80 (loading placeholder)
+        let heightConstraints = view.constraints.filter { $0.firstAttribute == .height }
+        let hasPlaceholderHeight = heightConstraints.contains { $0.constant == 80 }
+        #expect(hasPlaceholderHeight, "Should have 80pt loading placeholder height. Constraints: \(heightConstraints.map { "\($0.constant)" })")
+    }
+}

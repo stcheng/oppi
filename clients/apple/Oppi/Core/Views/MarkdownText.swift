@@ -251,7 +251,7 @@ enum FlatSegment: Sendable {
 
             case .paragraph(let inlines):
                 // Promote image-only paragraphs to a standalone `.image` segment
-                // when workspace context is available and the source is a relative path.
+                // when the source is a resolvable URL (absolute or workspace-relative).
                 if let imageURL = resolveStandaloneImage(
                     inlines: inlines,
                     workspaceID: workspaceID,
