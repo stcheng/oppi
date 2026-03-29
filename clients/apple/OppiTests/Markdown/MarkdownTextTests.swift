@@ -617,6 +617,77 @@ struct FlatSegmentImageResolutionTests {
             #expect(segments.isEmpty || segments.count == 1)
         }
     }
+
+    // MARK: - Source directory resolution
+
+    @Test func relativeImagePathIsResolvedAgainstSourceDirectory() {
+        let blocks: [MarkdownBlock] = [
+            .paragraph([.image(alt: "Chart", source: "images/chart.png")])
+        ]
+        let segments = FlatSegment.build(
+            from: blocks,
+            workspaceID: workspaceID,
+            serverBaseURL: baseURL,
+            sourceDirectory: "docs"
+        )
+        #expect(segments.count == 1)
+        if case .image(_, let url) = segments[0] {
+            // Should resolve to docs/images/chart.png, not images/chart.png
+            #expect(url.absoluteString.contains("/files/docs/images/chart.png"),
+                    "Expected docs/images/chart.png, got \(url.absoluteString)")
+        } else {
+            Issue.record("Expected .image segment, got \(segments[0])")
+        }
+    }
+
+    @Test func absolutePathIgnoresSourceDirectory() {
+        let blocks: [MarkdownBlock] = [
+            .paragraph([.image(alt: "Fig", source: "/absolute/image.png")])
+        ]
+        let segments = FlatSegment.build(
+            from: blocks,
+            workspaceID: workspaceID,
+            serverBaseURL: baseURL,
+            sourceDirectory: "docs"
+        )
+        if case .image(_, let url) = segments[0] {
+            // Absolute paths should NOT be prefixed with sourceDirectory
+            #expect(url.absoluteString.contains("/files/absolute/image.png"))
+            #expect(!url.absoluteString.contains("docs/absolute"))
+        }
+    }
+
+    @Test func httpsURLIgnoresSourceDirectory() {
+        let blocks: [MarkdownBlock] = [
+            .paragraph([.image(alt: "Remote", source: "https://example.com/pic.png")])
+        ]
+        let segments = FlatSegment.build(
+            from: blocks,
+            workspaceID: workspaceID,
+            serverBaseURL: baseURL,
+            sourceDirectory: "docs"
+        )
+        if case .image(_, let url) = segments[0] {
+            #expect(url.absoluteString == "https://example.com/pic.png",
+                    "HTTPS URLs should pass through unchanged")
+        }
+    }
+
+    @Test func nilSourceDirectoryLeavesPathUnchanged() {
+        let blocks: [MarkdownBlock] = [
+            .paragraph([.image(alt: "Fig", source: "images/fig.png")])
+        ]
+        let segments = FlatSegment.build(
+            from: blocks,
+            workspaceID: workspaceID,
+            serverBaseURL: baseURL,
+            sourceDirectory: nil
+        )
+        if case .image(_, let url) = segments[0] {
+            #expect(url.absoluteString.contains("/files/images/fig.png"))
+            #expect(!url.absoluteString.contains("docs"))
+        }
+    }
 }
 
 // MARK: - Table cell inline content (links in table cells)
