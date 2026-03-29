@@ -113,21 +113,7 @@ Before choosing an API for a performance-sensitive surface, check Apple's curren
 
 UIKit owns content rendering chrome. SwiftUI owns navigation shells and forms. Do not duplicate logic across frameworks.
 
-**Shared components — use these, do not reimplement:**
-
-| Component | Where | What it does |
-|---|---|---|
-| `RenderableDocumentView` | `Core/Views/RenderableDocumentView.swift` | UIKit chrome for all renderable file types (header, source toggle, expand, copy, context menu, floating capsule). Configure via `Config` static properties. |
-| `RenderableDocumentWrapper` | `Core/Views/RenderableDocumentWrapper.swift` | SwiftUI bridge — reads environment, owns full-screen state, delegates to UIKit. |
-| `FileSharePresenter` | `Core/Services/FileSharePresenter.swift` | All share/export flow. `makeShareBarButtonItem(for:)` for UIKit, `FileShareButton` for SwiftUI. Never create `UIActivityViewController` directly. |
-| `FileShareService` | `Core/Services/FileShareService.swift` | Export registry (`ContentExportSpec`) + rendering. Format metadata lives in `exportSpec(for:)`. |
-| `.fullScreenViewer()` | `Core/Views/FullScreenCodeView.swift` | View modifier for full-screen code viewer sheets. Never use raw `.sheet` + `FullScreenCodeView` + `.presentationDetents`. |
-
-**Rules:**
-- **New renderable content type** (e.g., Graphviz, TOML): Add a `Config` static property to `RenderableDocumentView.Config`, create a thin file view with `RenderableDocumentWrapper` + rendered view factory. Do NOT copy-paste an existing file view.
-- **New share format**: Add to `ContentExportSpec` in `exportSpec(for:)` + rendering logic. All surfaces update automatically.
-- **New full-screen entry point**: Use `.fullScreenViewer()` (SwiftUI) or `ToolTimelineRowPresentationHelpers.presentFullScreenContent()` (UIKit). Do NOT create `FullScreenCodeViewController` directly except in those two places.
-- **New share button**: Use `FileSharePresenter.makeShareBarButtonItem(for:)` (UIKit) or `FileShareButton` (SwiftUI). Do NOT build inline `UIActivityViewController` presentation.
+Run `bash clients/apple/scripts/check-duplication.sh` before committing — it enforces shared component usage mechanically. The script checks for raw `UIActivityViewController`, manual sheet setup, direct VC creation, and file views bypassing `RenderableDocumentWrapper`.
 
 ### Key Principles
 

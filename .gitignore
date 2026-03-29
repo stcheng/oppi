@@ -20,6 +20,7 @@ server/scripts/*
 clients/apple/scripts/
 !clients/apple/scripts/testflight.sh
 !clients/apple/scripts/release-mac.sh
+!clients/apple/scripts/check-duplication.sh
 !server/docker/entrypoint.sh
 
 # CI / internal tooling
