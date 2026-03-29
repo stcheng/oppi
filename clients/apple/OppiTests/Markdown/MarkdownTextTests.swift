@@ -33,6 +33,37 @@ struct FlatSegmentBuildTests {
         }
     }
 
+    @Test func mermaidCodeBlockProducesMermaidDiagramSegment() {
+        let blocks: [MarkdownBlock] = [.codeBlock(language: "mermaid", code: "graph TD\n    A-->B")]
+        let segments = FlatSegment.build(from: blocks, themeID: .dark)
+        #expect(segments.count == 1)
+        if case .mermaidDiagram(let code) = segments[0] {
+            #expect(code == "graph TD\n    A-->B")
+        } else {
+            Issue.record("Expected .mermaidDiagram segment, got \(segments[0])")
+        }
+    }
+
+    @Test func mermaidCodeBlockWithMmdAlias() {
+        let blocks: [MarkdownBlock] = [.codeBlock(language: "mmd", code: "sequenceDiagram\n    A->>B: Hello")]
+        let segments = FlatSegment.build(from: blocks, themeID: .dark)
+        #expect(segments.count == 1)
+        if case .mermaidDiagram = segments[0] {} else {
+            Issue.record("Expected .mermaidDiagram for 'mmd' language")
+        }
+    }
+
+    @Test func nonMermaidCodeBlockStaysAsCodeBlock() {
+        let blocks: [MarkdownBlock] = [.codeBlock(language: "python", code: "print('hi')")]
+        let segments = FlatSegment.build(from: blocks, themeID: .dark)
+        #expect(segments.count == 1)
+        if case .codeBlock(let lang, _) = segments[0] {
+            #expect(lang == "python")
+        } else {
+            Issue.record("Expected .codeBlock segment for python")
+        }
+    }
+
     @Test func tableProducesTableSegment() {
         let blocks: [MarkdownBlock] = [.table(headers: [[.text("A")]], rows: [[[.text("1")]]])]
         let segments = FlatSegment.build(from: blocks, themeID: .dark)

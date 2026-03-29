@@ -186,6 +186,9 @@ enum FlatSegment: Sendable {
     /// A standalone image paragraph. The URL is fully resolved at build time
     /// using the workspace context. Rendered by `NativeMarkdownImageView`.
     case image(alt: String, url: URL)
+    /// A mermaid diagram code block. The applier decides whether to render
+    /// the diagram or show as a code block based on streaming state.
+    case mermaidDiagram(code: String)
 
     /// Convert CommonMark blocks into renderable segments.
     ///
@@ -232,7 +235,11 @@ enum FlatSegment: Sendable {
             switch block {
             case .codeBlock(let language, let code):
                 flushPendingText()
-                result.append(.codeBlock(language: language, code: code))
+                if let lang = language, SyntaxLanguage.detect(lang) == .mermaid {
+                    result.append(.mermaidDiagram(code: code))
+                } else {
+                    result.append(.codeBlock(language: language, code: code))
+                }
 
             case .table(let headers, let rows):
                 flushPendingText()

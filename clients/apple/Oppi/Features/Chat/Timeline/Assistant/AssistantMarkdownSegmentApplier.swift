@@ -15,6 +15,8 @@ final class AssistantMarkdownSegmentApplier {
     private var tableViews: [Int: NativeTableBlockView] = [:]
     /// References to image views for in-place updates.
     private var imageViews: [Int: NativeMarkdownImageView] = [:]
+    /// References to mermaid diagram views for in-place updates.
+    private var mermaidViews: [Int: NativeMermaidBlockView] = [:]
     private var highlightTasks: [Int: Task<Void, Never>] = [:]
 
     /// Smooth character reveal for the actively streaming text segment.
@@ -53,6 +55,7 @@ final class AssistantMarkdownSegmentApplier {
         codeBlockViews.removeAll()
         tableViews.removeAll()
         imageViews.removeAll()
+        mermaidViews.removeAll()
         renderedSegmentSignatures = []
     }
 
@@ -138,6 +141,23 @@ final class AssistantMarkdownSegmentApplier {
                 imageView.apply(url: url, alt: alt, fetchWorkspaceFile: fetchWorkspaceFile)
                 stackView.addArrangedSubview(imageView)
                 imageViews[index] = imageView
+
+            case .mermaidDiagram(let code):
+                let mermaidView = NativeMermaidBlockView()
+                let isOpen = config.isStreaming
+                    && index == segments.count - 1
+                    && AssistantMarkdownSegmentSource.hasUnclosedCodeFence(config.content)
+                mermaidView.configureSelectedTextPi(
+                    router: config.selectedTextPiRouter,
+                    sourceContext: assistantCodeBlockSourceContext(language: "mermaid", config: config)
+                )
+                if isOpen {
+                    mermaidView.applyAsCode(language: "mermaid", code: code, palette: palette, isOpen: true)
+                } else {
+                    mermaidView.applyAsDiagram(code: code, palette: palette)
+                }
+                stackView.addArrangedSubview(mermaidView)
+                mermaidViews[index] = mermaidView
             }
         }
 
@@ -200,6 +220,7 @@ final class AssistantMarkdownSegmentApplier {
             codeBlockViews.removeValue(forKey: index)
             tableViews.removeValue(forKey: index)
             imageViews.removeValue(forKey: index)
+            mermaidViews.removeValue(forKey: index)
             highlightTasks[index]?.cancel()
             highlightTasks.removeValue(forKey: index)
         }
@@ -248,6 +269,23 @@ final class AssistantMarkdownSegmentApplier {
                 imageView.apply(url: url, alt: alt, fetchWorkspaceFile: fetchWorkspaceFile)
                 stackView.addArrangedSubview(imageView)
                 imageViews[index] = imageView
+
+            case .mermaidDiagram(let code):
+                let mermaidView = NativeMermaidBlockView()
+                let isOpen = config.isStreaming
+                    && index == segments.count - 1
+                    && AssistantMarkdownSegmentSource.hasUnclosedCodeFence(config.content)
+                mermaidView.configureSelectedTextPi(
+                    router: config.selectedTextPiRouter,
+                    sourceContext: assistantCodeBlockSourceContext(language: "mermaid", config: config)
+                )
+                if isOpen {
+                    mermaidView.applyAsCode(language: "mermaid", code: code, palette: palette, isOpen: true)
+                } else {
+                    mermaidView.applyAsDiagram(code: code, palette: palette)
+                }
+                stackView.addArrangedSubview(mermaidView)
+                mermaidViews[index] = mermaidView
             }
         }
 
@@ -420,6 +458,22 @@ final class AssistantMarkdownSegmentApplier {
                 if let imageView = imageViews[index] {
                     imageView.apply(url: url, alt: alt, fetchWorkspaceFile: fetchWorkspaceFile)
                 }
+
+            case .mermaidDiagram(let code):
+                if let mermaidView = mermaidViews[index] {
+                    let isOpen = config.isStreaming
+                        && index == segments.count - 1
+                        && AssistantMarkdownSegmentSource.hasUnclosedCodeFence(config.content)
+                    mermaidView.configureSelectedTextPi(
+                        router: config.selectedTextPiRouter,
+                        sourceContext: assistantCodeBlockSourceContext(language: "mermaid", config: config)
+                    )
+                    if isOpen {
+                        mermaidView.applyAsCode(language: "mermaid", code: code, palette: palette, isOpen: true)
+                    } else {
+                        mermaidView.applyAsDiagram(code: code, palette: palette)
+                    }
+                }
             }
         }
     }
@@ -516,6 +570,7 @@ private enum SegmentSignature: Equatable {
     case table
     case thematicBreak
     case image(url: URL)
+    case mermaidDiagram
 
     init(_ segment: FlatSegment) {
         switch segment {
@@ -529,6 +584,8 @@ private enum SegmentSignature: Equatable {
             self = .thematicBreak
         case .image(_, let url):
             self = .image(url: url)
+        case .mermaidDiagram:
+            self = .mermaidDiagram
         }
     }
 }
