@@ -3,161 +3,34 @@ import SwiftUI
 // MARK: - MarkdownFileView
 
 /// Rendered markdown with source toggle and full-screen reader mode.
+///
+/// All chrome (header, source toggle, expand, copy, context menu) is handled by
+/// ``RenderableDocumentView``. This file only provides the configuration and
+/// the rendered content view factory.
 struct MarkdownFileView: View {
     let content: String
     let filePath: String?
     let presentation: FileContentPresentation
 
-    @Environment(\.allowsFullScreenExpansion) private var allowsFullScreenExpansion
-    @Environment(\.selectedTextPiActionRouter) private var piRouter
-    @State private var showRaw = false
-    @State private var showFullScreen = false
-
-    private var lineCount: Int {
-        content.split(separator: "\n", omittingEmptySubsequences: false).count
-    }
-
     var body: some View {
-        Group {
-            if presentation.usesInlineChrome {
-                inlineBody
-            } else {
-                documentBody
+        RenderableDocumentWrapper(
+            config: .markdown,
+            content: content,
+            filePath: filePath,
+            presentation: presentation,
+            fullScreenContent: .markdown(content: content, filePath: filePath),
+            renderedViewFactory: { [content, filePath] in
+                let view = AssistantMarkdownContentView()
+                view.backgroundColor = .clear
+                view.apply(configuration: .init(
+                    content: content,
+                    isStreaming: false,
+                    themeID: ThemeRuntimeState.currentThemeID(),
+                    textSelectionEnabled: true,
+                    plainTextFallbackThreshold: presentation == .document ? nil : AssistantMarkdownContentView.Configuration.defaultPlainTextFallbackThreshold
+                ))
+                return view
             }
-        }
-        .fullScreenViewer(
-            isPresented: $showFullScreen,
-            content: .markdown(content: content, filePath: filePath),
-            piRouter: piRouter
         )
-    }
-
-    private var inlineBody: some View {
-        let hasFullScreenAffordance = presentation.allowsExpansionAffordance && allowsFullScreenExpansion
-        let inlineSelectionEnabled = ExpandableInlineTextSelectionPolicy.allowsInlineSelection(
-            hasFullScreenAffordance: hasFullScreenAffordance
-        )
-
-        return VStack(alignment: .leading, spacing: 0) {
-            // Header
-            HStack(spacing: 6) {
-                Image(systemName: "doc.richtext")
-                    .font(.caption)
-                    .foregroundStyle(.themeCyan)
-                Text("Markdown")
-                    .font(.caption2.bold())
-                    .foregroundStyle(.themeFgDim)
-                Text("\(lineCount) lines")
-                    .font(.caption2)
-                    .foregroundStyle(.themeComment)
-
-                Spacer()
-
-                Button {
-                    withAnimation(.easeInOut(duration: 0.15)) { showRaw.toggle() }
-                } label: {
-                    Text(showRaw ? "Reader" : "Source")
-                        .font(.caption2)
-                        .foregroundStyle(.themeBlue)
-                }
-                .buttonStyle(.plain)
-
-                if hasFullScreenAffordance {
-                    Button {
-                        showFullScreen = true
-                    } label: {
-                        Image(systemName: "arrow.up.left.and.arrow.down.right")
-                            .font(.caption2)
-                            .foregroundStyle(.themeFgDim)
-                    }
-                    .buttonStyle(.plain)
-                }
-
-                CopyButton(content: content)
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .background(Color.themeBgHighlight)
-
-            // Content
-            ScrollView(.vertical) {
-                Group {
-                    if showRaw {
-                        Text(content)
-                            .font(.appCaptionMono)
-                            .foregroundStyle(.themeFg)
-                            .applyInlineTextSelectionPolicy(inlineSelectionEnabled)
-                    } else {
-                        MarkdownContentViewWrapper(
-                            content: content,
-                            textSelectionEnabled: inlineSelectionEnabled
-                        )
-                    }
-                }
-                .padding(10)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .frame(maxHeight: presentation.viewportMaxHeight)
-        }
-        .codeBlockChrome()
-        .contextMenu {
-            if hasFullScreenAffordance {
-                Button("Open Full Screen", systemImage: "arrow.up.left.and.arrow.down.right") {
-                    showFullScreen = true
-                }
-            }
-            Button("Copy", systemImage: "doc.on.doc") {
-                UIPasteboard.general.string = content
-            }
-        }
-    }
-
-    private var documentBody: some View {
-        ZStack(alignment: .topTrailing) {
-            Group {
-                if showRaw {
-                    NativeCodeBodyView(
-                        content: content,
-                        language: "markdown",
-                        startLine: 1,
-                        selectedTextSourceContext: piRouter != nil
-                            ? fileContentSourceContext(filePath: filePath, language: "markdown")
-                            : nil
-                    )
-                } else {
-                    ScrollView(.vertical) {
-                        MarkdownContentViewWrapper(
-                            content: content,
-                            plainTextFallbackThreshold: nil,
-                            selectedTextSourceContext: piRouter != nil
-                                ? fileContentSourceContext(filePath: filePath, surface: .fullScreenMarkdown)
-                                : nil
-                        )
-                        .allowsFullScreenExpansion(false)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 12)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                }
-            }
-
-            // Floating source toggle
-            Button {
-                withAnimation(.easeInOut(duration: 0.15)) { showRaw.toggle() }
-            } label: {
-                Label(
-                    showRaw ? "Reader" : "Source",
-                    systemImage: showRaw ? "doc.richtext" : "curlybraces"
-                )
-                .font(.caption2.bold())
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(.ultraThinMaterial)
-                .clipShape(Capsule())
-            }
-            .buttonStyle(.plain)
-            .padding(.trailing, 12)
-            .padding(.top, 8)
-        }
     }
 }
