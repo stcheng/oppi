@@ -1270,7 +1270,7 @@ struct ChatSessionManagerTests {
 
         let sessionStore = SessionStore()
 
-        let connectStartMs = ChatMetricsService.nowMs()
+        let connectStartMs = Date.nowMs()
 
         let connectTask = Task { @MainActor in
             await manager.connect(connection: connection, sessionStore: sessionStore)
@@ -1280,7 +1280,7 @@ struct ChatSessionManagerTests {
         #expect(await streams.waitForCreated(1))
 
         // Yield .connected with inbound meta (simulating WS receive)
-        let connectedYieldMs = ChatMetricsService.nowMs()
+        let connectedYieldMs = Date.nowMs()
         manager._consumeInboundMetaForTesting = {
             WebSocketClient.InboundMeta(seq: nil, currentSeq: 0, receivedAtMs: connectedYieldMs)
         }
@@ -1290,7 +1290,7 @@ struct ChatSessionManagerTests {
         let reachedStreaming = await waitForTestCondition(timeoutMs: 2_000) {
             await MainActor.run { manager.entryState == .streaming }
         }
-        let streamingReachedMs = ChatMetricsService.nowMs()
+        let streamingReachedMs = Date.nowMs()
         let dispatchLagMs = streamingReachedMs - connectedYieldMs
         let totalMs = streamingReachedMs - connectStartMs
 

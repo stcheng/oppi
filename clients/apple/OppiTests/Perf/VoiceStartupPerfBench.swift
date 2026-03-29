@@ -272,7 +272,7 @@ struct VoiceStartupPerfBench {
         let us = Self.measureMedianUs {
             for _ in 0 ..< 5 {
                 _ = ChatMetricSample(
-                    ts: ChatMetricsService.nowMs(),
+                    ts: Date.nowMs(),
                     metric: .voiceSetupMs,
                     value: 42.0,
                     unit: .ms,
