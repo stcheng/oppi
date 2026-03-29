@@ -67,13 +67,10 @@ struct InlineFileContentChrome<Content: View>: View {
             }
         }
         .codeBlockChrome(showBorder: showBorder)
-        .sheet(isPresented: $showFullScreen) {
-            FullScreenCodeView(
-                content: fullScreenContent,
-                selectedTextPiRouter: piRouter
-            )
-            .presentationDetents([.large])
-            .presentationDragIndicator(.visible)
-        }
+        .fullScreenViewer(
+            isPresented: $showFullScreen,
+            content: fullScreenContent,
+            piRouter: piRouter
+        )
     }
 }

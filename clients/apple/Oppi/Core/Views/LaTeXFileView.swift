@@ -23,14 +23,11 @@ struct LaTeXFileView: View {
                 documentBody
             }
         }
-        .sheet(isPresented: $showFullScreen) {
-            FullScreenCodeView(
-                content: .latex(content: content, filePath: filePath),
-                selectedTextPiRouter: piRouter
-            )
-                .presentationDetents([.large])
-                .presentationDragIndicator(.visible)
-        }
+        .fullScreenViewer(
+            isPresented: $showFullScreen,
+            content: .latex(content: content, filePath: filePath),
+            piRouter: piRouter
+        )
     }
 
     // MARK: - Inline Body

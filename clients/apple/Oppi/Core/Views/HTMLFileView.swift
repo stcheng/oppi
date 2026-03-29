@@ -49,14 +49,11 @@ struct HTMLFileView: View {
                 documentBody
             }
         }
-        .sheet(isPresented: $showFullScreen) {
-            FullScreenCodeView(
-                content: .html(content: content, filePath: filePath),
-                selectedTextPiRouter: piRouter
-            )
-            .presentationDetents([.large])
-            .presentationDragIndicator(.visible)
-        }
+        .fullScreenViewer(
+            isPresented: $showFullScreen,
+            content: .html(content: content, filePath: filePath),
+            piRouter: piRouter
+        )
     }
 
     // MARK: - Inline body (tool output context)

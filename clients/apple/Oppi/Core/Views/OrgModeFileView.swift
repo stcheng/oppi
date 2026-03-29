@@ -59,14 +59,11 @@ struct OrgModeFileView: View {
             }.value
             cachedTree = tree
         }
-        .sheet(isPresented: $showFullScreen) {
-            FullScreenCodeView(
-                content: .orgMode(content: content, filePath: filePath),
-                selectedTextPiRouter: piRouter
-            )
-                .presentationDetents([.large])
-                .presentationDragIndicator(.visible)
-        }
+        .fullScreenViewer(
+            isPresented: $showFullScreen,
+            content: .orgMode(content: content, filePath: filePath),
+            piRouter: piRouter
+        )
     }
 
     // MARK: - Inline Body

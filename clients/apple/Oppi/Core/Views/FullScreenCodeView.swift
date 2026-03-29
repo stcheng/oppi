@@ -230,6 +230,46 @@ indirect enum FullScreenCodeContent {
 ///
 /// Used by `.fullScreenCover` in `FileContentView`, `MarkdownText`,
 /// and `DiffContentView`. All rendering is UIKit.
+// MARK: - Full-Screen Sheet Modifier
+
+extension View {
+    /// Attach a full-screen code viewer sheet to any view.
+    ///
+    /// Centralizes the sheet presentation config (detents, grabber) that was
+    /// previously copy-pasted across every file view. Callers keep their own
+    /// `@State var showFullScreen` because they trigger it from different
+    /// places (expand button, context menu, etc.).
+    ///
+    /// Usage:
+    /// ```swift
+    /// myView
+    ///     .fullScreenViewer(
+    ///         isPresented: $showFullScreen,
+    ///         content: .markdown(content: text, filePath: path)
+    ///     )
+    /// ```
+    func fullScreenViewer(
+        isPresented: Binding<Bool>,
+        content: FullScreenCodeContent,
+        piRouter: SelectedTextPiActionRouter? = nil,
+        sessionId: String? = nil,
+        sourceLabel: String? = nil
+    ) -> some View {
+        sheet(isPresented: isPresented) {
+            FullScreenCodeView(
+                content: content,
+                selectedTextPiRouter: piRouter,
+                selectedTextSessionId: sessionId,
+                selectedTextSourceLabel: sourceLabel
+            )
+            .presentationDetents([.large])
+            .presentationDragIndicator(.visible)
+        }
+    }
+}
+
+// MARK: - FullScreenCodeView
+
 struct FullScreenCodeView: UIViewControllerRepresentable {
     let content: FullScreenCodeContent
     let selectedTextPiRouter: SelectedTextPiActionRouter?

@@ -25,14 +25,11 @@ struct MarkdownFileView: View {
                 documentBody
             }
         }
-        .sheet(isPresented: $showFullScreen) {
-            FullScreenCodeView(
-                content: .markdown(content: content, filePath: filePath),
-                selectedTextPiRouter: piRouter
-            )
-                .presentationDetents([.large])
-                .presentationDragIndicator(.visible)
-        }
+        .fullScreenViewer(
+            isPresented: $showFullScreen,
+            content: .markdown(content: content, filePath: filePath),
+            piRouter: piRouter
+        )
     }
 
     private var inlineBody: some View {
