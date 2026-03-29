@@ -502,6 +502,7 @@ final class NativeFullScreenMarkdownBody: UIView, UIScrollViewDelegate {
     private let selectedTextSourceContext: SelectedTextSourceContext?
     private let workspaceID: String?
     private let serverBaseURL: URL?
+    private let sourceFilePath: String?
 
     private var latestSnapshot: ThinkingTraceStream.Snapshot
     private var renderedSnapshot: ThinkingTraceStream.Snapshot?
@@ -524,6 +525,7 @@ final class NativeFullScreenMarkdownBody: UIView, UIScrollViewDelegate {
         selectedTextSourceContext: SelectedTextSourceContext?,
         workspaceID: String? = nil,
         serverBaseURL: URL? = nil,
+        sourceFilePath: String? = nil,
         fetchWorkspaceFile: ((_ workspaceID: String, _ path: String) async throws -> Data)? = nil
     ) {
         self.stream = stream
@@ -532,6 +534,7 @@ final class NativeFullScreenMarkdownBody: UIView, UIScrollViewDelegate {
         self.selectedTextSourceContext = selectedTextSourceContext
         self.workspaceID = workspaceID
         self.serverBaseURL = serverBaseURL
+        self.sourceFilePath = sourceFilePath
         let initialSnapshot = stream?.snapshot
             ?? ThinkingTraceStream.Snapshot(text: content, isDone: true)
         latestSnapshot = initialSnapshot
@@ -617,6 +620,7 @@ final class NativeFullScreenMarkdownBody: UIView, UIScrollViewDelegate {
             selectedTextSourceContext: selectedTextSourceContext,
             workspaceID: workspaceID,
             serverBaseURL: serverBaseURL,
+            sourceFilePath: sourceFilePath,
             perfSurface: .fullScreenThinking
         ))
 

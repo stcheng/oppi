@@ -55,7 +55,8 @@ final class AssistantMarkdownSegmentSource {
             from: blocks,
             themeID: config.themeID,
             workspaceID: config.workspaceID,
-            serverBaseURL: config.serverBaseURL
+            serverBaseURL: config.serverBaseURL,
+            sourceDirectory: config.sourceDirectory
         )
         let buildEnd = MarkdownStreamingPerf.timestampNs()
 
@@ -100,6 +101,7 @@ final class AssistantMarkdownSegmentSource {
         let themeID = config.themeID
         let workspaceID = config.workspaceID
         let serverBaseURL = config.serverBaseURL
+        let sourceDirectory = config.sourceDirectory
         let contentUTF8 = content.utf8
 
         if let state = streamingState,
@@ -138,7 +140,8 @@ final class AssistantMarkdownSegmentSource {
                         from: state.prefixBlocks,
                         themeID: themeID,
                         workspaceID: workspaceID,
-                        serverBaseURL: serverBaseURL
+                        serverBaseURL: serverBaseURL,
+            sourceDirectory: sourceDirectory
                     )
                 }
 
@@ -146,7 +149,8 @@ final class AssistantMarkdownSegmentSource {
                     from: tailBlocks,
                     themeID: themeID,
                     workspaceID: workspaceID,
-                    serverBaseURL: serverBaseURL
+                    serverBaseURL: serverBaseURL,
+            sourceDirectory: sourceDirectory
                 )
                 let buildEnd = MarkdownStreamingPerf.timestampNs()
                 let segments = mergeSegments(prefix: prefixSegments, tail: tailSegments)
@@ -169,7 +173,8 @@ final class AssistantMarkdownSegmentSource {
                             from: tailFinalizedBlocks,
                             themeID: themeID,
                             workspaceID: workspaceID,
-                            serverBaseURL: serverBaseURL
+                            serverBaseURL: serverBaseURL,
+            sourceDirectory: sourceDirectory
                         )
                         let newPrefixSegments = mergeSegments(
                             prefix: prefixSegments,
@@ -209,7 +214,8 @@ final class AssistantMarkdownSegmentSource {
             from: allBlocks,
             themeID: themeID,
             workspaceID: workspaceID,
-            serverBaseURL: serverBaseURL
+            serverBaseURL: serverBaseURL,
+            sourceDirectory: sourceDirectory
         )
         let buildEnd = MarkdownStreamingPerf.timestampNs()
 
@@ -228,7 +234,8 @@ final class AssistantMarkdownSegmentSource {
             lastBlockLine: lastBlockLine,
             themeID: themeID,
             workspaceID: workspaceID,
-            serverBaseURL: serverBaseURL
+            serverBaseURL: serverBaseURL,
+            sourceDirectory: sourceDirectory
         )
 
         return segments
@@ -241,7 +248,8 @@ final class AssistantMarkdownSegmentSource {
         lastBlockLine: Int,
         themeID: ThemeID,
         workspaceID: String?,
-        serverBaseURL: URL?
+        serverBaseURL: URL?,
+        sourceDirectory: String?
     ) {
         guard allBlocks.count >= 2, lastBlockLine > 1 else {
             streamingState = nil
@@ -259,7 +267,8 @@ final class AssistantMarkdownSegmentSource {
             from: prefixBlocks,
             themeID: themeID,
             workspaceID: workspaceID,
-            serverBaseURL: serverBaseURL
+            serverBaseURL: serverBaseURL,
+            sourceDirectory: sourceDirectory
         )
 
         streamingState = StreamingParseState(

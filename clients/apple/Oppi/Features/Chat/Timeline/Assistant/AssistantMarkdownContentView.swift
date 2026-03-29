@@ -42,6 +42,17 @@ final class AssistantMarkdownContentView: UIView {
         /// Workspace context for resolving inline image paths.
         let workspaceID: String?
         let serverBaseURL: URL?
+        /// Path of the source markdown file in the workspace (e.g. "docs/readme.md").
+        /// Used to resolve relative image paths against the file's directory.
+        let sourceFilePath: String?
+
+        /// Directory containing the source file, derived from `sourceFilePath`.
+        /// e.g. "docs/readme.md" → "docs", "readme.md" → nil
+        var sourceDirectory: String? {
+            guard let sourceFilePath else { return nil }
+            let dir = (sourceFilePath as NSString).deletingLastPathComponent
+            return dir.isEmpty || dir == "." ? nil : dir
+        }
         /// Surface tag for streaming markdown perf instrumentation.
         let perfSurface: MarkdownStreamingPerf.Surface?
         /// Controls whether async work (mermaid rendering, syntax highlighting,
@@ -61,6 +72,7 @@ final class AssistantMarkdownContentView: UIView {
             selectedTextSourceContext: SelectedTextSourceContext? = nil,
             workspaceID: String? = nil,
             serverBaseURL: URL? = nil,
+            sourceFilePath: String? = nil,
             perfSurface: MarkdownStreamingPerf.Surface? = nil,
             renderingMode: ContentRenderingMode = .live
         ) {
@@ -73,6 +85,7 @@ final class AssistantMarkdownContentView: UIView {
             self.selectedTextSourceContext = selectedTextSourceContext
             self.workspaceID = workspaceID
             self.serverBaseURL = serverBaseURL
+            self.sourceFilePath = sourceFilePath
             self.perfSurface = perfSurface
             self.renderingMode = renderingMode
         }
@@ -87,6 +100,7 @@ final class AssistantMarkdownContentView: UIView {
                 && lhs.selectedTextSourceContext == rhs.selectedTextSourceContext
                 && lhs.workspaceID == rhs.workspaceID
                 && lhs.serverBaseURL == rhs.serverBaseURL
+                && lhs.sourceFilePath == rhs.sourceFilePath
                 && lhs.perfSurface == rhs.perfSurface
                 && lhs.renderingMode == rhs.renderingMode
         }

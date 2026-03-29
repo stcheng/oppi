@@ -206,7 +206,11 @@ enum FlatSegment: Sendable {
         from blocks: [MarkdownBlock],
         themeID: ThemeID = ThemeRuntimeState.currentThemeID(),
         workspaceID: String? = nil,
-        serverBaseURL: URL? = nil
+        serverBaseURL: URL? = nil,
+        /// Directory path of the source markdown file (e.g. "docs/").
+        /// Used to resolve relative image paths like `images/foo.png`
+        /// → `docs/images/foo.png` in the workspace.
+        sourceDirectory: String? = nil
     ) -> [Self] {
         let palette = themeID.palette
         var result: [Self] = []
@@ -255,7 +259,8 @@ enum FlatSegment: Sendable {
                 if let imageURL = resolveStandaloneImage(
                     inlines: inlines,
                     workspaceID: workspaceID,
-                    serverBaseURL: serverBaseURL
+                    serverBaseURL: serverBaseURL,
+                    sourceDirectory: sourceDirectory
                 ) {
                     let alt = (inlines.first.flatMap {
                         if case .image(let a, _) = $0 { return a } else { return nil }
@@ -291,7 +296,8 @@ enum FlatSegment: Sendable {
     private static func resolveStandaloneImage(
         inlines: [MarkdownInline],
         workspaceID: String?,
-        serverBaseURL: URL?
+        serverBaseURL: URL?,
+        sourceDirectory: String? = nil
     ) -> URL? {
         guard inlines.count == 1,
               case .image(_, let source) = inlines[0],
@@ -317,7 +323,14 @@ enum FlatSegment: Sendable {
             return nil
         }
 
-        return WorkspaceFileURL.make(baseURL: baseURL, workspaceID: workspaceID, filePath: source)
+        // Resolve relative path against the markdown file's directory.
+        // e.g. sourceDirectory="docs/", source="images/foo.png" → "docs/images/foo.png"
+        var resolvedPath = source
+        if !source.hasPrefix("/"), let dir = sourceDirectory, !dir.isEmpty {
+            resolvedPath = (dir as NSString).appendingPathComponent(source)
+        }
+
+        return WorkspaceFileURL.make(baseURL: baseURL, workspaceID: workspaceID, filePath: resolvedPath)
     }
 
     // MARK: - Block → AttributedString

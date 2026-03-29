@@ -308,6 +308,7 @@ final class FullScreenCodeViewController: UIViewController {
                 ),
                 workspaceID: wsContext?.workspaceID,
                 serverBaseURL: wsContext?.serverBaseURL,
+                sourceFilePath: filePath,
                 fetchWorkspaceFile: wsContext?.fetchWorkspaceFile
             )
             return body
