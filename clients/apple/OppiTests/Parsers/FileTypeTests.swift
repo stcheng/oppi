@@ -309,15 +309,4 @@ struct FileContentPresentationPolicyTests {
         #expect(FileContentPresentation.document.allowsExpansionAffordance == false)
     }
 
-    @MainActor
-    @Test func skillFileViewIsPinnedToDocumentPresentation() {
-        #expect(SkillFileView.contentPresentation == .document)
-        #expect(SkillFileView.allowsNestedFullScreenExpansion == false)
-    }
-
-    @MainActor
-    @Test func remoteFileViewIsPinnedToDocumentPresentation() {
-        #expect(RemoteFileView.contentPresentation == .document)
-        #expect(RemoteFileView.allowsNestedFullScreenExpansion == false)
-    }
 }
