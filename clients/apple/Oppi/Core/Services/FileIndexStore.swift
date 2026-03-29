@@ -61,6 +61,20 @@ final class FileIndexStore {
     private func load(workspaceId: String, apiClient: APIClient) {
         loadTask?.cancel()
         dirty = false
+
+        // Show disk-cached index immediately while fetching fresh
+        if paths == nil {
+            Task {
+                if let cached = await FileBrowserCache.shared.fileIndex(workspaceId: workspaceId) {
+                    if self.workspaceId == workspaceId, self.paths == nil {
+                        self.paths = cached
+                        self.isLoading = false
+                        logger.debug("File index loaded from cache: \(cached.count) paths")
+                    }
+                }
+            }
+        }
+
         isLoading = paths == nil
 
         loadTask = Task { [weak self] in
@@ -69,6 +83,8 @@ final class FileIndexStore {
                 guard let self, !Task.isCancelled, self.workspaceId == workspaceId else { return }
                 self.paths = response.paths
                 self.isLoading = false
+                // Persist to disk for next app launch
+                await FileBrowserCache.shared.cacheFileIndex(response.paths, workspaceId: workspaceId)
                 logger.debug("File index loaded: \(response.paths.count) paths for workspace \(workspaceId)")
             } catch {
                 guard let self, !Task.isCancelled, self.workspaceId == workspaceId else { return }

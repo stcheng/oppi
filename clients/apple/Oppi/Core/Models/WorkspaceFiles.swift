@@ -5,7 +5,7 @@ import Foundation
 /// Mirrors `FileEntry`, `DirectoryListingResponse`, and `FileSearchResponse`
 /// from `server/src/types.ts`.
 
-struct FileEntry: Decodable, Sendable, Equatable, Identifiable, Hashable {
+struct FileEntry: Codable, Sendable, Equatable, Identifiable, Hashable {
     let name: String
     let type: FileEntryType
     let size: Int
@@ -40,12 +40,12 @@ struct FileEntry: Decodable, Sendable, Equatable, Identifiable, Hashable {
     }
 }
 
-enum FileEntryType: String, Decodable, Sendable, Equatable, Hashable {
+enum FileEntryType: String, Codable, Sendable, Equatable, Hashable {
     case file
     case directory
 }
 
-struct DirectoryListingResponse: Decodable, Sendable, Equatable {
+struct DirectoryListingResponse: Codable, Sendable, Equatable {
     let path: String
     let entries: [FileEntry]
     let truncated: Bool
