@@ -12,6 +12,8 @@ struct AssistantTimelineRowConfiguration: UIContentConfiguration {
     let isStreaming: Bool
     let canFork: Bool
     let onFork: (() -> Void)?
+    /// Session ID for the grid badge icon.
+    let sessionId: String
     /// Shared interaction context for π text-selection actions.
     let interactionContext: TimelineInteractionContext?
     /// Workspace context for resolving markdown image paths.
@@ -26,6 +28,7 @@ struct AssistantTimelineRowConfiguration: UIContentConfiguration {
         isStreaming: Bool,
         canFork: Bool,
         onFork: (() -> Void)?,
+        sessionId: String = "",
         interactionContext: TimelineInteractionContext? = nil,
         workspaceID: String? = nil,
         serverBaseURL: URL? = nil,
@@ -35,6 +38,7 @@ struct AssistantTimelineRowConfiguration: UIContentConfiguration {
         self.isStreaming = isStreaming
         self.canFork = canFork
         self.onFork = onFork
+        self.sessionId = sessionId
         self.interactionContext = interactionContext
         self.workspaceID = workspaceID
         self.serverBaseURL = serverBaseURL
@@ -54,7 +58,7 @@ final class AssistantTimelineRowContentView: UIView, UIContentView, TimelineRowI
     private static let maxValidHeight: CGFloat = 10_000
 
     private let bubbleContainer = UIView()
-    private let iconLabel = UILabel()
+    private let iconBadge = SessionGridBadgeView()
     private let markdownView = AssistantMarkdownContentView()
 
     private var currentConfiguration: AssistantTimelineRowConfiguration
@@ -144,18 +148,14 @@ final class AssistantTimelineRowContentView: UIView, UIContentView, TimelineRowI
         bubbleContainer.layer.cornerRadius = TimelineBubbleStyle.bubbleCornerRadius
         bubbleContainer.clipsToBounds = true
 
-        iconLabel.translatesAutoresizingMaskIntoConstraints = false
-        iconLabel.font = AppFont.monoXL
-        iconLabel.textColor = UIColor(ThemeRuntimeState.currentPalette().purple)
-        iconLabel.text = "π"
-        iconLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
-        iconLabel.setContentHuggingPriority(.required, for: .horizontal)
-        iconLabel.isUserInteractionEnabled = true
+        iconBadge.translatesAutoresizingMaskIntoConstraints = false
+        iconBadge.setContentCompressionResistancePriority(.required, for: .horizontal)
+        iconBadge.setContentHuggingPriority(.required, for: .horizontal)
 
         markdownView.translatesAutoresizingMaskIntoConstraints = false
 
         addSubview(bubbleContainer)
-        bubbleContainer.addSubview(iconLabel)
+        bubbleContainer.addSubview(iconBadge)
         bubbleContainer.addSubview(markdownView)
         interactionHandlers = TimelineRowInteractionInstaller.install(
             on: bubbleContainer,
@@ -169,11 +169,12 @@ final class AssistantTimelineRowContentView: UIView, UIContentView, TimelineRowI
             bubbleContainer.bottomAnchor.constraint(equalTo: bottomAnchor),
 
             // Match user bubble insets: 10pt horizontal, 8pt vertical.
-            iconLabel.leadingAnchor.constraint(equalTo: bubbleContainer.leadingAnchor, constant: 10),
-            iconLabel.topAnchor.constraint(equalTo: bubbleContainer.topAnchor, constant: 9),
-            iconLabel.bottomAnchor.constraint(lessThanOrEqualTo: bubbleContainer.bottomAnchor, constant: -8),
+            iconBadge.widthAnchor.constraint(equalToConstant: 18),
+            iconBadge.heightAnchor.constraint(equalToConstant: 18),
+            iconBadge.leadingAnchor.constraint(equalTo: bubbleContainer.leadingAnchor, constant: 10),
+            iconBadge.topAnchor.constraint(equalTo: bubbleContainer.topAnchor, constant: 10),
 
-            markdownView.leadingAnchor.constraint(equalTo: iconLabel.trailingAnchor, constant: 6),
+            markdownView.leadingAnchor.constraint(equalTo: iconBadge.trailingAnchor, constant: 8),
             markdownView.topAnchor.constraint(equalTo: bubbleContainer.topAnchor, constant: 8),
             markdownView.trailingAnchor.constraint(equalTo: bubbleContainer.trailingAnchor, constant: -10),
             markdownView.bottomAnchor.constraint(equalTo: bubbleContainer.bottomAnchor, constant: -8),
@@ -184,7 +185,7 @@ final class AssistantTimelineRowContentView: UIView, UIContentView, TimelineRowI
         currentConfiguration = configuration
 
         let palette = ThemeRuntimeState.currentPalette()
-        iconLabel.textColor = UIColor(palette.purple)
+        iconBadge.sessionId = configuration.sessionId
         bubbleContainer.backgroundColor = UIColor(palette.purple).withAlphaComponent(TimelineBubbleStyle.subtleBgAlpha)
 
         let trimmedText = configuration.text.trimmingCharacters(in: .whitespacesAndNewlines)

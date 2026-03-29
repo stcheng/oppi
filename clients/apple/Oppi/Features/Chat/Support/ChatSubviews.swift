@@ -3,11 +3,37 @@ import SwiftUI
 // MARK: - Empty State
 
 struct ChatEmptyState: View {
+    var sessionId: String = ""
+    @State private var visible = false
+
     var body: some View {
-        Text("π")
-            .font(.appHeroMono)
-            .foregroundStyle(.themePurple.opacity(0.5))
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        Group {
+            let avatar = AssistantAvatar.current
+            switch avatar {
+            case .golGrid:
+                SessionGridView(sessionId: sessionId)
+            case .piText:
+                Text("π")
+                    .font(.appHeroMono)
+                    .foregroundStyle(.themePurple.opacity(0.5))
+            case .emoji(let char):
+                Text(char)
+                    .font(.system(size: 48))
+            case .genmoji:
+                // Genmoji in empty state — fall back to grid
+                SessionGridView(sessionId: sessionId)
+            }
+        }
+        .opacity(visible ? 1 : 0)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .task {
+            // Delay appearance to avoid flash on existing sessions
+            // that briefly have empty items while loading.
+            try? await Task.sleep(for: .milliseconds(300))
+            withAnimation(.easeIn(duration: 0.3)) {
+                visible = true
+            }
+        }
     }
 }
 

@@ -116,7 +116,7 @@ struct ChatTimelineView: View {
         .background(Color.themeBg)
         .overlay {
             if reducer.items.isEmpty && !isBusy {
-                ChatEmptyState()
+                ChatEmptyState(sessionId: sessionId)
             }
         }
         .onAppear {

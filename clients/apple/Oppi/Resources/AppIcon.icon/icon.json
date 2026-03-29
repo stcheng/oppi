@@ -1,13 +1,33 @@
 {
   "fill": {
-    "automatic-gradient": "extended-srgb:0.06000,0.09000,0.26000,1.00000"
+    "automatic-gradient": "extended-srgb:0.06667,0.06667,0.09412,1.00000"
   },
   "groups": [
     {
       "layers": [
         {
-          "image-name": "835C931E-C63C-48AC-BDD7-E705250EE958",
-          "name": "835C931E-C63C-48AC-BDD7-E705250EE958"
+          "image-name": "51D9A5D1-2702-4BF3-A2A7-1474C6C8410B",
+          "name": "scatter"
+        },
+        {
+          "image-name": "99C94EB1-4F1B-4FE8-9BA1-47F0520B85E9",
+          "name": "growth"
+        }
+      ],
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0.3
+      },
+      "translucency": {
+        "enabled": true,
+        "value": 0.5
+      }
+    },
+    {
+      "layers": [
+        {
+          "image-name": "B0F17084-7E1B-4FE0-9131-1EF9662FB3AB",
+          "name": "pi-mono"
         }
       ],
       "shadow": {
@@ -17,6 +37,26 @@
       "translucency": {
         "enabled": true,
         "value": 0.35
+      }
+    },
+    {
+      "layers": [
+        {
+          "image-name": "E1C0C46E-20F9-47A7-9EB0-957DF4DEF167",
+          "name": "almost-sparks"
+        },
+        {
+          "image-name": "F557959C-FCD2-45C7-9BF9-150869EE72BA",
+          "name": "sparks"
+        }
+      ],
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0.4
+      },
+      "translucency": {
+        "enabled": false,
+        "value": 0
       }
     }
   ],

@@ -302,6 +302,7 @@ enum AppPreferences {
         static func setSpinnerStyle(_ style: SpinnerStyle) {
             UserDefaults.standard.set(style.rawValue, forKey: spinnerStyleKey)
         }
+
     }
 
     // MARK: - Recent Models

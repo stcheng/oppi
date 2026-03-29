@@ -16,6 +16,7 @@ extension ChatTimelineCollectionHost.Controller {
             isStreaming: isStreaming,
             canFork: false,
             onFork: nil,
+            sessionId: sessionId,
             interactionContext: interactionContext,
             workspaceID: workspaceId,
             serverBaseURL: connection?.apiClient?.baseURL,

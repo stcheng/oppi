@@ -1,0 +1,177 @@
+import UIKit
+
+/// Renders the assistant avatar as a cached `UIImage` in a `UIImageView`.
+///
+/// Supports all `AssistantAvatar` types:
+/// - `.piText` → rendered π character
+/// - `.golGrid` → Game of Life grid, unique per session
+/// - `.emoji` → rendered emoji character
+/// - `.genmoji` → NSAdaptiveImageGlyph image
+///
+/// One render per (sessionId, avatar, theme) combo, then pure UIImageView.
+final class SessionGridBadgeView: UIView {
+
+    private let imageView = UIImageView()
+    private static var imageCache = NSCache<NSString, UIImage>()
+
+    var sessionId: String = "" {
+        didSet { updateIfNeeded() }
+    }
+
+    private var lastCacheKey: String?
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        isOpaque = false
+        backgroundColor = .clear
+        imageView.contentMode = .scaleAspectFit
+        imageView.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(imageView)
+        NSLayoutConstraint.activate([
+            imageView.leadingAnchor.constraint(equalTo: leadingAnchor),
+            imageView.trailingAnchor.constraint(equalTo: trailingAnchor),
+            imageView.topAnchor.constraint(equalTo: topAnchor),
+            imageView.bottomAnchor.constraint(equalTo: bottomAnchor),
+        ])
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("Not supported") }
+
+    override var intrinsicContentSize: CGSize {
+        CGSize(width: 18, height: 18)
+    }
+
+    /// Call when avatar preference changes to flush stale cached images.
+    static func clearCache() {
+        imageCache.removeAllObjects()
+    }
+
+    private func updateIfNeeded() {
+        let avatar = AssistantAvatar.current
+        let themeId = ThemeRuntimeState.currentThemeID()
+        let cacheKey = "\(sessionId):\(themeId):\(avatar.displayName)"
+        guard cacheKey != lastCacheKey else { return }
+        lastCacheKey = cacheKey
+
+        if let cached = Self.imageCache.object(forKey: cacheKey as NSString) {
+            imageView.image = cached
+            return
+        }
+
+        let image: UIImage
+        switch avatar {
+        case .golGrid:
+            image = Self.renderGrid(sessionId: sessionId, size: 36)
+        case .piText:
+            image = Self.renderText("π", size: 36)
+        case .emoji(let char):
+            image = Self.renderEmoji(char, size: 36)
+        case .genmoji(let data):
+            if #available(iOS 18.0, *),
+               let genmojiImage = Self.renderGenmoji(data: data, size: 36) {
+                image = genmojiImage
+            } else {
+                image = Self.renderText("π", size: 36)
+            }
+        }
+
+        Self.imageCache.setObject(image, forKey: cacheKey as NSString)
+        imageView.image = image
+    }
+
+    // MARK: - Renderers
+
+    private static func renderGrid(sessionId: String, size: CGFloat) -> UIImage {
+        let palette = ThemeRuntimeState.currentPalette()
+        let fgColor = UIColor(palette.fg)
+        let sparkColor = UIColor(palette.orange)
+
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: size, height: size))
+        return renderer.image { ctx in
+            let cgCtx = ctx.cgContext
+            let grid = 8
+            let cellTotal = size / CGFloat(grid)
+            let gap = cellTotal * 0.10
+            let cellSize = cellTotal - gap
+            let cornerRadius = cellSize * 0.24
+
+            let cells = SessionGridRenderer.generateCells(sessionId: sessionId)
+
+            for cell in cells {
+                let x = CGFloat(cell.col) * cellTotal + gap / 2
+                let y = CGFloat(cell.row) * cellTotal + gap / 2
+                let rect = CGRect(x: x, y: y, width: cellSize, height: cellSize)
+                let path = UIBezierPath(roundedRect: rect, cornerRadius: cornerRadius)
+
+                let color: UIColor
+                switch cell.role {
+                case .spark:
+                    color = sparkColor.withAlphaComponent(0.90)
+                case .almostSpark:
+                    color = sparkColor.withAlphaComponent(0.30)
+                default:
+                    color = fgColor.withAlphaComponent(CGFloat(cell.opacity))
+                }
+
+                cgCtx.setFillColor(color.cgColor)
+                cgCtx.addPath(path.cgPath)
+                cgCtx.fillPath()
+            }
+        }
+    }
+
+    private static func renderText(_ text: String, size: CGFloat) -> UIImage {
+        let palette = ThemeRuntimeState.currentPalette()
+        let font = UIFont.monospacedSystemFont(ofSize: size * 0.55, weight: .semibold)
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: size, height: size))
+        return renderer.image { _ in
+            let attrs: [NSAttributedString.Key: Any] = [
+                .font: font,
+                .foregroundColor: UIColor(palette.purple),
+            ]
+            let nsText = text as NSString
+            let textSize = nsText.size(withAttributes: attrs)
+            let x = (size - textSize.width) / 2
+            let y = (size - textSize.height) / 2
+            nsText.draw(at: CGPoint(x: x, y: y), withAttributes: attrs)
+        }
+    }
+
+    private static func renderEmoji(_ emoji: String, size: CGFloat) -> UIImage {
+        let font = UIFont.systemFont(ofSize: size * 0.7)
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: size, height: size))
+        return renderer.image { _ in
+            let attrs: [NSAttributedString.Key: Any] = [.font: font]
+            let nsText = emoji as NSString
+            let textSize = nsText.size(withAttributes: attrs)
+            let x = (size - textSize.width) / 2
+            let y = (size - textSize.height) / 2
+            nsText.draw(at: CGPoint(x: x, y: y), withAttributes: attrs)
+        }
+    }
+
+    @available(iOS 18.0, *)
+    private static func renderGenmoji(data: Data, size: CGFloat) -> UIImage? {
+        // NSAdaptiveImageGlyph imageContent is opaque — render via a temporary UILabel
+        // with an attributed string containing the glyph
+        guard let glyph = try? NSAdaptiveImageGlyph(imageContent: data) else { return nil }
+        let label = UILabel()
+        label.numberOfLines = 1
+        let attrStr = NSMutableAttributedString(string: " ")
+        attrStr.addAttribute(.adaptiveImageGlyph, value: glyph, range: NSRange(location: 0, length: 1))
+        attrStr.addAttribute(.font, value: UIFont.systemFont(ofSize: size * 0.8), range: NSRange(location: 0, length: 1))
+        label.attributedText = attrStr
+        label.sizeToFit()
+
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: size, height: size))
+        return renderer.image { ctx in
+            let scale = min(size / max(label.bounds.width, 1), size / max(label.bounds.height, 1))
+            let scaledW = label.bounds.width * scale
+            let scaledH = label.bounds.height * scale
+            ctx.cgContext.translateBy(x: (size - scaledW) / 2, y: (size - scaledH) / 2)
+            ctx.cgContext.scaleBy(x: scale, y: scale)
+            label.layer.render(in: ctx.cgContext)
+        }
+    }
+}
