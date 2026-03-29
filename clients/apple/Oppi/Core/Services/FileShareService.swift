@@ -121,25 +121,147 @@ enum FileShareService {
         }
     }
 
-    // MARK: - Format Selection
+    // MARK: - Export Registry
+    //
+    // Single source of truth for what formats each content type supports.
+    // All format-selection functions derive from this registry.
+    //
+    // To add a new content type or change format support:
+    //   1. Add/edit the entry in exportSpec(for:)
+    //   2. Add rendering logic in renderImage/renderPDF/renderSource
+    //   3. Done — all UI surfaces pick up the change automatically.
+
+    /// Declarative specification for how a content type can be exported.
+    ///
+    /// Captures format availability, defaults, and display metadata in one place.
+    /// The rendering strategy (CGContext, attributed string, web view, etc.)
+    /// is still in the render functions — this struct only describes *what*
+    /// formats exist, not *how* they render.
+    struct ContentExportSpec {
+        /// The format used when sharing via single tap (no picker).
+        let defaultFormat: ExportFormat
+        /// All formats available, in display order.
+        let formats: [ExportFormat]
+        /// User-facing label for the source format (e.g. "Markdown File").
+        let sourceLabel: String
+        /// Base filename for source export (e.g. "document").
+        let sourceBaseName: String
+        /// File extension for source export (e.g. "md"). Nil for binary pass-through.
+        let sourceExtension: String?
+        /// Filename for PDF export (e.g. "document.pdf").
+        let pdfFilename: String
+    }
+
+    /// Returns the full export spec for any shareable content.
+    ///
+    /// This is the single lookup for format metadata. All format-selection
+    /// and filename functions below delegate here.
+    static func exportSpec(for content: ShareableContent) -> ContentExportSpec {
+        switch content {
+        case .mermaid:
+            return ContentExportSpec(
+                defaultFormat: .pdf,
+                formats: [.pdf, .image, .source],
+                sourceLabel: "Mermaid Source",
+                sourceBaseName: "diagram",
+                sourceExtension: "mmd",
+                pdfFilename: "diagram.pdf"
+            )
+        case .latex:
+            return ContentExportSpec(
+                defaultFormat: .pdf,
+                formats: [.pdf, .image, .source],
+                sourceLabel: "LaTeX Source",
+                sourceBaseName: "formula",
+                sourceExtension: "tex",
+                pdfFilename: "formula.pdf"
+            )
+        case .markdown:
+            return ContentExportSpec(
+                defaultFormat: .pdf,
+                formats: [.pdf, .image, .source],
+                sourceLabel: "Markdown File",
+                sourceBaseName: "document",
+                sourceExtension: "md",
+                pdfFilename: "document.pdf"
+            )
+        case .orgMode:
+            return ContentExportSpec(
+                defaultFormat: .pdf,
+                formats: [.pdf, .image, .source],
+                sourceLabel: "Org File",
+                sourceBaseName: "document",
+                sourceExtension: "org",
+                pdfFilename: "document.pdf"
+            )
+        case .code(_, let language):
+            let ext = fileExtension(for: language) ?? "txt"
+            return ContentExportSpec(
+                defaultFormat: .pdf,
+                formats: [.pdf, .image, .source],
+                sourceLabel: "Source File",
+                sourceBaseName: "code",
+                sourceExtension: ext,
+                pdfFilename: "code.pdf"
+            )
+        case .html:
+            return ContentExportSpec(
+                defaultFormat: .pdf,
+                formats: [.pdf, .image, .source],
+                sourceLabel: "HTML Source",
+                sourceBaseName: "page",
+                sourceExtension: "html",
+                pdfFilename: "page.pdf"
+            )
+        case .json:
+            return ContentExportSpec(
+                defaultFormat: .pdf,
+                formats: [.pdf, .image, .source],
+                sourceLabel: "JSON File",
+                sourceBaseName: "data",
+                sourceExtension: "json",
+                pdfFilename: "data.pdf"
+            )
+        case .plainText:
+            return ContentExportSpec(
+                defaultFormat: .source,
+                formats: [.source, .pdf, .image],
+                sourceLabel: "Text File",
+                sourceBaseName: "text",
+                sourceExtension: "txt",
+                pdfFilename: "text.pdf"
+            )
+        case .imageData(_, let filename):
+            return ContentExportSpec(
+                defaultFormat: .image,
+                formats: [.image],
+                sourceLabel: "Image File",
+                sourceBaseName: (filename as NSString).deletingPathExtension,
+                sourceExtension: (filename as NSString).pathExtension,
+                pdfFilename: "image.pdf"
+            )
+        case .pdfData(_, let filename):
+            return ContentExportSpec(
+                defaultFormat: .pdf,
+                formats: [.pdf],
+                sourceLabel: "PDF File",
+                sourceBaseName: (filename as NSString).deletingPathExtension,
+                sourceExtension: "pdf",
+                pdfFilename: filename
+            )
+        }
+    }
+
+    // MARK: - Format Selection (derived from registry)
 
     /// Smart default export format for each content type.
     static func defaultFormat(for content: ShareableContent) -> ExportFormat {
-        switch content {
-        case .html:
-            // HTML uses PDF via WKWebView.pdf(configuration:) — the native API
-            // produces selectable text and proper layout. Canvas elements are
-            // converted to static images before capture (see renderHTMLToPDF).
-            return .pdf
-        case .mermaid, .latex, .markdown, .orgMode, .code, .json:
-            return .pdf
-        case .plainText:
-            return .source
-        case .imageData:
-            return .image
-        case .pdfData:
-            return .pdf
-        }
+        exportSpec(for: content).defaultFormat
+    }
+
+    /// Available export formats for a content type, in display order.
+    static func availableFormats(for content: ShareableContent) -> [ExportFormat] {
+        exportSpec(for: content).formats
     }
 
     /// Display info for an export format in the context of specific content.
@@ -157,42 +279,8 @@ enum FileShareService {
         case .pdf:
             return ("PDF", "doc.richtext")
         case .source:
-            return (sourceFormatLabel(for: content), "doc.text")
-        }
-    }
-
-    /// Content-aware label for the source export option.
-    private static func sourceFormatLabel(for content: ShareableContent?) -> String {
-        guard let content else { return "Source File" }
-        switch content {
-        case .markdown: return "Markdown File"
-        case .orgMode: return "Org File"
-        case .mermaid: return "Mermaid Source"
-        case .latex: return "LaTeX Source"
-        case .html: return "HTML Source"
-        case .json: return "JSON File"
-        case .code: return "Source File"
-        case .plainText: return "Text File"
-        case .imageData: return "Image File"
-        case .pdfData: return "PDF File"
-        }
-    }
-
-    /// Available export formats for a content type.
-    static func availableFormats(for content: ShareableContent) -> [ExportFormat] {
-        switch content {
-        case .mermaid, .latex:
-            return [.pdf, .image, .source]
-        case .html:
-            return [.image, .pdf, .source]
-        case .markdown, .orgMode, .code, .json:
-            return [.pdf, .image, .source]
-        case .plainText:
-            return [.source]
-        case .imageData:
-            return [.image]
-        case .pdfData:
-            return [.pdf]
+            let label = content.map { exportSpec(for: $0).sourceLabel } ?? "Source File"
+            return (label, "doc.text")
         }
     }
 
@@ -413,7 +501,14 @@ enum FileShareService {
             (w - insetX, h - insetY),
         ]
 
-        func samplePixel(x: Int, y: Int) -> (r: UInt8, g: UInt8, b: UInt8, a: UInt8)? {
+        struct SampleRGBA {
+            let r: UInt8
+            let g: UInt8
+            let b: UInt8
+            let a: UInt8
+        }
+
+        func samplePixel(x: Int, y: Int) -> SampleRGBA? {
             var pixel: [UInt8] = [0, 0, 0, 0]
             guard let ctx = CGContext(
                 data: &pixel,
@@ -424,14 +519,14 @@ enum FileShareService {
                 bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
             ) else { return nil }
             ctx.draw(cgImage, in: CGRect(x: -x, y: -y, width: w, height: h))
-            return (pixel[0], pixel[1], pixel[2], pixel[3])
+            return SampleRGBA(r: pixel[0], g: pixel[1], b: pixel[2], a: pixel[3])
         }
 
         var blankCount = 0
         for (x, y) in points {
-            guard let (r, g, b, a) = samplePixel(x: x, y: y) else { continue }
+            guard let sample = samplePixel(x: x, y: y) else { continue }
             // Transparent or near-black = GPU failure signature
-            if a < 10 || (r < 5 && g < 5 && b < 5) {
+            if sample.a < 10 || (sample.r < 5 && sample.g < 5 && sample.b < 5) {
                 blankCount += 1
             }
         }
@@ -541,38 +636,29 @@ enum FileShareService {
     // MARK: - PDF Rendering
 
     private static func renderPDF(_ content: ShareableContent) async -> ShareItem {
-        let filename: String
+        let spec = exportSpec(for: content)
         let pdfData: Data
 
         switch content {
         case .mermaid(let source):
-            filename = "diagram.pdf"
             pdfData = renderMermaidToPDF(source)
         case .latex(let source):
-            filename = "formula.pdf"
             pdfData = renderLatexToPDF(source)
         case .html(let source):
-            filename = "page.pdf"
             pdfData = await renderHTMLToPDF(source)
         case .pdfData(let data, let name):
             return .pdf(data, filename: name)
         case .markdown(let source):
-            filename = "document.pdf"
             pdfData = await renderMarkdownToPDF(source)
         case .orgMode(let source):
-            filename = "document.pdf"
             pdfData = await renderMarkdownToPDF(DocumentRenderPipeline.orgToMarkdown(source))
         case .code(let source, let language):
-            filename = sourceFilename(for: content, extension: "pdf")
             pdfData = renderCodeToPDF(source, language: language)
         case .json(let source):
-            filename = "data.pdf"
             pdfData = renderCodeToPDF(source, language: "json")
         case .plainText(let source):
-            filename = "text.pdf"
             pdfData = renderCodeToPDF(source, language: nil)
         case .imageData(let data, _):
-            filename = "image.pdf"
             if let image = UIImage(data: data) {
                 pdfData = embedImageInPDF(image)
             } else {
@@ -580,7 +666,7 @@ enum FileShareService {
             }
         }
 
-        return .pdf(pdfData, filename: filename)
+        return .pdf(pdfData, filename: spec.pdfFilename)
     }
 
     private static func renderMermaidToPDF(_ source: String) -> Data {
@@ -870,20 +956,9 @@ enum FileShareService {
     // MARK: - Helpers
 
     private static func sourceFilename(for content: ShareableContent, extension ext: String?) -> String {
-        switch content {
-        case .mermaid: return "diagram.\(ext ?? "mmd")"
-        case .latex: return "formula.\(ext ?? "tex")"
-        case .markdown: return "document.\(ext ?? "md")"
-        case .orgMode: return "document.\(ext ?? "org")"
-        case .code(_, let language):
-            let fileExt = ext ?? fileExtension(for: language) ?? "txt"
-            return "code.\(fileExt)"
-        case .html: return "page.\(ext ?? "html")"
-        case .json: return "data.\(ext ?? "json")"
-        case .plainText: return "text.\(ext ?? "txt")"
-        case .imageData(_, let name): return name
-        case .pdfData(_, let name): return name
-        }
+        let spec = exportSpec(for: content)
+        let resolvedExt = ext ?? spec.sourceExtension ?? "txt"
+        return "\(spec.sourceBaseName).\(resolvedExt)"
     }
 
     private static func fileExtension(for language: String?) -> String? {
@@ -961,8 +1036,7 @@ enum FileShareService {
 
     /// Current theme's RenderTheme for CGContext renderers.
     private static var currentRenderTheme: RenderTheme {
-        let themeID = ThemeRuntimeState.currentThemeID()
-        return themeID.preferredColorScheme == .light ? .light : .fallback
+        ThemeRuntimeState.currentRenderTheme()
     }
 
     /// Current theme's background color for image/PDF export.

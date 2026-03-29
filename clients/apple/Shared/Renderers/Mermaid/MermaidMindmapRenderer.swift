@@ -11,21 +11,24 @@ enum MermaidMindmapRenderer {
 
     // MARK: - Branch palette
 
-    /// Colors for top-level branches. Index wraps around for large trees.
-    private static let branchColors: [(r: CGFloat, g: CGFloat, b: CGFloat)] = [
-        (0.30, 0.56, 0.88),  // blue
-        (0.36, 0.72, 0.36),  // green
-        (0.90, 0.58, 0.22),  // orange
-        (0.62, 0.42, 0.82),  // purple
-        (0.20, 0.72, 0.76),  // cyan
-        (0.86, 0.36, 0.42),  // red
-        (0.56, 0.70, 0.32),  // olive
-        (0.78, 0.48, 0.64),  // pink
-    ]
+    /// Theme-derived colors for top-level branches. Index wraps around for large trees.
+    private static func branchPalette(theme: RenderTheme) -> [CGColor] {
+        [
+            theme.accentBlue,
+            theme.accentGreen,
+            theme.accentOrange,
+            theme.accentPurple,
+            theme.accentCyan,
+            theme.accentRed,
+            theme.accentYellow,
+            theme.type,
+        ]
+    }
 
-    private static func branchColor(index: Int, alpha: CGFloat = 1.0) -> CGColor {
-        let c = branchColors[index % branchColors.count]
-        return CGColor(red: c.r, green: c.g, blue: c.b, alpha: alpha)
+    private static func branchColor(index: Int, theme: RenderTheme, alpha: CGFloat = 1.0) -> CGColor {
+        let colors = branchPalette(theme: theme)
+        let base = colors[index % colors.count]
+        return base.copy(alpha: alpha) ?? base
     }
 
     // MARK: - Layout constants
@@ -244,7 +247,7 @@ enum MermaidMindmapRenderer {
         // Draw connecting line from parent to this node.
         if let parent {
             let parentRect = parent.rect.offsetBy(dx: origin.x, dy: origin.y)
-            drawConnection(from: parentRect, to: nodeRect, branchIndex: node.branchIndex, in: ctx)
+            drawConnection(from: parentRect, to: nodeRect, branchIndex: node.branchIndex, theme: theme, in: ctx)
         }
 
         // Draw node shape.
@@ -265,6 +268,7 @@ enum MermaidMindmapRenderer {
         from parentRect: CGRect,
         to childRect: CGRect,
         branchIndex: Int,
+        theme: RenderTheme,
         in ctx: CGContext
     ) {
         let startX = parentRect.maxX
@@ -275,7 +279,7 @@ enum MermaidMindmapRenderer {
         let controlOffset = (endX - startX) * 0.5
 
         ctx.saveGState()
-        ctx.setStrokeColor(branchColor(index: max(0, branchIndex), alpha: 0.6))
+        ctx.setStrokeColor(branchColor(index: max(0, branchIndex), theme: theme, alpha: 0.6))
         ctx.setLineWidth(2.0)
         ctx.setLineCap(.round)
 
@@ -304,14 +308,14 @@ enum MermaidMindmapRenderer {
         let strokeColor: CGColor
 
         if node.depth == 0 {
-            // Root: use theme foreground tinted
-            fillColor = CGColor(red: 0.25, green: 0.45, blue: 0.70, alpha: 1.0)
-            strokeColor = CGColor(red: 0.30, green: 0.55, blue: 0.80, alpha: 1.0)
+            // Root: use the primary diagram accent, lightly tinted so theme foreground stays readable.
+            fillColor = theme.accentBlue.copy(alpha: 0.22) ?? theme.accentBlue
+            strokeColor = theme.accentBlue.copy(alpha: 0.78) ?? theme.accentBlue
         } else {
-            // Branch/leaf: use branch palette
-            let alpha: CGFloat = node.depth == 1 ? 0.20 : 0.12
-            fillColor = branchColor(index: max(0, node.branchIndex), alpha: alpha)
-            strokeColor = branchColor(index: max(0, node.branchIndex), alpha: 0.7)
+            // Branch/leaf: use the active theme palette rather than hardcoded RGB values.
+            let alpha: CGFloat = node.depth == 1 ? 0.18 : 0.10
+            fillColor = branchColor(index: max(0, node.branchIndex), theme: theme, alpha: alpha)
+            strokeColor = branchColor(index: max(0, node.branchIndex), theme: theme, alpha: 0.72)
         }
 
         ctx.setFillColor(fillColor)

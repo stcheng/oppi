@@ -121,7 +121,7 @@ enum MermaidGanttRenderer {
 
             // Grid lines.
             ctx.saveGState()
-            ctx.setStrokeColor(CGColor(gray: 0.3, alpha: 0.4))
+            ctx.setStrokeColor(theme.comment.copy(alpha: 0.35) ?? theme.comment)
             ctx.setLineWidth(0.5)
             for unit in 0...timelineUnits {
                 let x = ox + chartLeft + CGFloat(unit) * pixelsPerUnit
@@ -163,7 +163,7 @@ enum MermaidGanttRenderer {
 
                 // Section separator line.
                 ctx.saveGState()
-                ctx.setStrokeColor(CGColor(gray: 0.3, alpha: 0.3))
+                ctx.setStrokeColor(theme.comment.copy(alpha: 0.25) ?? theme.comment)
                 ctx.setLineWidth(0.5)
                 ctx.move(to: CGPoint(x: ox + leftMargin, y: oy + section.headerY))
                 ctx.addLine(to: CGPoint(
@@ -206,7 +206,7 @@ enum MermaidGanttRenderer {
                         diamond.addLine(to: CGPoint(x: cx - s, y: cy))
                         diamond.closeSubpath()
                         ctx.saveGState()
-                        ctx.setFillColor(theme.keyword)
+                        ctx.setFillColor(theme.accentPurple)
                         ctx.addPath(diamond)
                         ctx.fillPath()
                         ctx.restoreGState()
@@ -352,24 +352,16 @@ enum MermaidGanttRenderer {
     ) -> CGColor {
         switch status {
         case .normal:
-            return CGColor(
-                red: 0.5, green: 0.6, blue: 0.7, alpha: 0.4
-            )
+            return theme.foregroundDim.copy(alpha: 0.28) ?? theme.foregroundDim
         case .active:
-            return CGColor(
-                red: 0.25, green: 0.55, blue: 0.9, alpha: 0.8
-            )
+            return theme.accentBlue.copy(alpha: 0.78) ?? theme.accentBlue
         case .done:
-            return CGColor(
-                red: 0.35, green: 0.65, blue: 0.35, alpha: 0.5
-            )
+            return theme.accentGreen.copy(alpha: 0.56) ?? theme.accentGreen
         case .critical:
-            return CGColor(
-                red: 0.9, green: 0.35, blue: 0.25, alpha: 0.8
-            )
+            return theme.accentRed.copy(alpha: 0.78) ?? theme.accentRed
         case .milestone:
             // Milestones use diamond marker, not bars.
-            return theme.keyword
+            return theme.accentPurple
         }
     }
 

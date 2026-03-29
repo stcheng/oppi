@@ -186,16 +186,24 @@ final class FullScreenCodeViewController: UIViewController {
         copyButton = copy
         rightItems.append(copy)
 
-        // Share button — tap for default, long-press for format picker
+        // Share button — single format: tap exports directly.
+        // Multiple formats: tap opens format picker menu.
         if let shareable = shareableContent() {
             let formats = FileShareService.availableFormats(for: shareable)
-            let shareButton = UIBarButtonItem(
-                image: UIImage(systemName: "square.and.arrow.up"),
-                primaryAction: UIAction { [weak self] _ in
-                    self?.shareDefaultFormat()
-                },
-                menu: formats.count > 1 ? makeShareMenu(formats: formats) : nil
-            )
+            let shareButton: UIBarButtonItem
+            if formats.count <= 1 {
+                shareButton = UIBarButtonItem(
+                    image: UIImage(systemName: "square.and.arrow.up"),
+                    style: .plain,
+                    target: self,
+                    action: #selector(shareDefaultTapped)
+                )
+            } else {
+                shareButton = UIBarButtonItem(
+                    image: UIImage(systemName: "square.and.arrow.up"),
+                    menu: makeShareMenu(formats: formats)
+                )
+            }
             shareButton.tintColor = UIColor(palette.fgDim)
             rightItems.append(shareButton)
         }
@@ -567,6 +575,10 @@ final class FullScreenCodeViewController: UIViewController {
         case .liveSource(let snapshot, _):
             return .plainText(snapshot.text)
         }
+    }
+
+    @objc private func shareDefaultTapped() {
+        shareDefaultFormat()
     }
 
     private func shareDefaultFormat() {

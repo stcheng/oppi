@@ -159,7 +159,12 @@ private struct MermaidRenderedView: View {
             parser: MermaidParser(),
             renderer: MermaidFlowchartRenderer(),
             text: content,
-            config: .default(maxWidth: 600)
+            config: RenderConfiguration(
+                fontSize: 14,
+                maxWidth: 600,
+                theme: ThemeRuntimeState.currentRenderTheme(),
+                displayMode: .document
+            )
         )
         let durationMs = ChatTimelinePerf.elapsedMs(since: startNs)
         let _ = {

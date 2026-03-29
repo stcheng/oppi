@@ -77,9 +77,8 @@ private struct RenderContext: @unchecked Sendable {
         commentColor = PlatformColor(cgColor: theme.comment) ?? PlatformColor.gray
         stringColor = PlatformColor(cgColor: theme.string) ?? PlatformColor.green
 
-        // Subtle code background — slightly lighter than main background.
-        codeBackground = PlatformColor(cgColor: CGColor(gray: 0.18, alpha: 1))
-            ?? PlatformColor.darkGray
+        codeBackground = PlatformColor(cgColor: theme.backgroundDark)
+            ?? background
 
         #if canImport(UIKit)
         bodyFont = PlatformFont.systemFont(ofSize: size)

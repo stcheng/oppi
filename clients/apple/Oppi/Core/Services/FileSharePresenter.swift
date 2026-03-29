@@ -67,8 +67,8 @@ enum FileSharePresenter {
 
 /// Reusable share button for document-mode file views.
 ///
-/// Tap triggers the default format (PDF). Context menu offers all
-/// available formats for the content type.
+/// Single-format content: tap exports directly (no picker needed).
+/// Multi-format content: tap opens format picker menu.
 struct FileShareButton: View {
     let content: FileShareService.ShareableContent
     let style: ButtonStyle
@@ -90,34 +90,48 @@ struct FileShareButton: View {
     var body: some View {
         let formats = FileShareService.availableFormats(for: content)
 
-        Menu {
-            ForEach(formats, id: \.self) { format in
-                Button {
-                    Task { await export(format: format) }
-                } label: {
-                    Label(formatLabel(format), systemImage: formatIcon(format))
-                }
+        if formats.count <= 1 {
+            // Single format — tap exports directly, no picker
+            Button {
+                Task { await exportDefault() }
+            } label: {
+                shareLabel
             }
-        } label: {
-            Group {
-                switch style {
-                case .capsule:
-                    Label("Share", systemImage: "square.and.arrow.up")
-                        .font(.caption2.bold())
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
-                        .background(.ultraThinMaterial)
-                        .clipShape(Capsule())
-                case .icon:
-                    Image(systemName: "square.and.arrow.up")
-                        .font(.caption2)
+            .disabled(isExporting)
+        } else {
+            // Multiple formats — tap opens format picker
+            Menu {
+                ForEach(formats, id: \.self) { format in
+                    Button {
+                        Task { await export(format: format) }
+                    } label: {
+                        Label(formatLabel(format), systemImage: formatIcon(format))
+                    }
                 }
+            } label: {
+                shareLabel
             }
-            .opacity(isExporting ? 0.5 : 1)
-        } primaryAction: {
-            Task { await exportDefault() }
+            .disabled(isExporting)
         }
-        .disabled(isExporting)
+    }
+
+    @ViewBuilder
+    private var shareLabel: some View {
+        Group {
+            switch style {
+            case .capsule:
+                Label("Share", systemImage: "square.and.arrow.up")
+                    .font(.caption2.bold())
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(.ultraThinMaterial)
+                    .clipShape(Capsule())
+            case .icon:
+                Image(systemName: "square.and.arrow.up")
+                    .font(.caption2)
+            }
+        }
+        .opacity(isExporting ? 0.5 : 1)
     }
 
     private func exportDefault() async {

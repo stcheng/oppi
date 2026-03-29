@@ -485,9 +485,39 @@ enum ThemeRuntimeState {
         state.withLock { $0.palette }
     }
 
+    static func currentRenderTheme() -> RenderTheme {
+        currentPalette().renderTheme
+    }
+
     // periphery:ignore - API surface for future custom theme editing
     /// Force palette recomputation (e.g. after editing a custom theme's colors).
     static func invalidateCache() {
         state.withLock { $0.palette = $0.themeID.palette }
+    }
+}
+
+extension ThemePalette {
+    var renderTheme: RenderTheme {
+        RenderTheme(
+            foreground: UIColor(fg).cgColor,
+            foregroundDim: UIColor(fgDim).cgColor,
+            background: UIColor(bg).cgColor,
+            backgroundDark: UIColor(bgDark).cgColor,
+            comment: UIColor(comment).cgColor,
+            keyword: UIColor(syntaxKeyword).cgColor,
+            string: UIColor(syntaxString).cgColor,
+            number: UIColor(syntaxNumber).cgColor,
+            function: UIColor(syntaxFunction).cgColor,
+            type: UIColor(syntaxType).cgColor,
+            link: UIColor(mdLink).cgColor,
+            heading: UIColor(mdHeading).cgColor,
+            accentBlue: UIColor(blue).cgColor,
+            accentCyan: UIColor(cyan).cgColor,
+            accentGreen: UIColor(green).cgColor,
+            accentOrange: UIColor(orange).cgColor,
+            accentPurple: UIColor(purple).cgColor,
+            accentRed: UIColor(red).cgColor,
+            accentYellow: UIColor(yellow).cgColor
+        )
     }
 }

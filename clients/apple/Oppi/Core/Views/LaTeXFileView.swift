@@ -157,7 +157,12 @@ private struct LaTeXRenderedView: View {
 
     var body: some View {
         let startNs = ChatTimelinePerf.timestampNs()
-        let config = RenderConfiguration(fontSize: 20, maxWidth: 600, theme: .fallback, displayMode: .document)
+        let config = RenderConfiguration(
+            fontSize: 20,
+            maxWidth: 600,
+            theme: ThemeRuntimeState.currentRenderTheme(),
+            displayMode: .document
+        )
         let multiLayout = DocumentRenderPipeline.layoutLatexExpressions(text: content, config: config)
         let durationMs = ChatTimelinePerf.elapsedMs(since: startNs)
         let _ = {

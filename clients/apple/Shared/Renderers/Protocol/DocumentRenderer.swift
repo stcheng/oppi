@@ -86,6 +86,13 @@ struct RenderTheme: Sendable {
     let type: CGColor
     let link: CGColor
     let heading: CGColor
+    let accentBlue: CGColor
+    let accentCyan: CGColor
+    let accentGreen: CGColor
+    let accentOrange: CGColor
+    let accentPurple: CGColor
+    let accentRed: CGColor
+    let accentYellow: CGColor
 
     /// Neutral fallback for tests and platforms without theme context.
     static let fallback = RenderTheme(
@@ -100,11 +107,17 @@ struct RenderTheme: Sendable {
         function: CGColor(red: 0.38, green: 0.68, blue: 0.94, alpha: 1),
         type: CGColor(red: 0.38, green: 0.68, blue: 0.94, alpha: 1),
         link: CGColor(red: 0.38, green: 0.68, blue: 0.94, alpha: 1),
-        heading: CGColor(gray: 0.9, alpha: 1)
+        heading: CGColor(gray: 0.9, alpha: 1),
+        accentBlue: CGColor(red: 0.38, green: 0.68, blue: 0.94, alpha: 1),
+        accentCyan: CGColor(red: 0.47, green: 0.73, blue: 0.70, alpha: 1),
+        accentGreen: CGColor(red: 0.58, green: 0.79, blue: 0.39, alpha: 1),
+        accentOrange: CGColor(red: 0.82, green: 0.58, blue: 0.34, alpha: 1),
+        accentPurple: CGColor(red: 0.78, green: 0.46, blue: 0.92, alpha: 1),
+        accentRed: CGColor(red: 0.88, green: 0.43, blue: 0.45, alpha: 1),
+        accentYellow: CGColor(red: 0.78, green: 0.71, blue: 0.47, alpha: 1)
     )
 
-    /// Light theme for export/sharing. Always used for shared images
-    /// regardless of the app's current theme setting.
+    /// Built-in light render theme for tests and light-mode exports.
     static let light = RenderTheme(
         foreground: CGColor(gray: 0.1, alpha: 1),
         foregroundDim: CGColor(gray: 0.4, alpha: 1),
@@ -117,7 +130,14 @@ struct RenderTheme: Sendable {
         function: CGColor(red: 0.20, green: 0.47, blue: 0.78, alpha: 1),
         type: CGColor(red: 0.18, green: 0.54, blue: 0.51, alpha: 1),
         link: CGColor(red: 0.20, green: 0.47, blue: 0.78, alpha: 1),
-        heading: CGColor(gray: 0.1, alpha: 1)
+        heading: CGColor(gray: 0.1, alpha: 1),
+        accentBlue: CGColor(red: 0.20, green: 0.47, blue: 0.78, alpha: 1),
+        accentCyan: CGColor(red: 0.18, green: 0.54, blue: 0.51, alpha: 1),
+        accentGreen: CGColor(red: 0.23, green: 0.52, blue: 0.31, alpha: 1),
+        accentOrange: CGColor(red: 0.66, green: 0.46, blue: 0.19, alpha: 1),
+        accentPurple: CGColor(red: 0.46, green: 0.38, blue: 0.66, alpha: 1),
+        accentRed: CGColor(red: 0.78, green: 0.31, blue: 0.35, alpha: 1),
+        accentYellow: CGColor(red: 0.76, green: 0.61, blue: 0.24, alpha: 1)
     )
 }
 

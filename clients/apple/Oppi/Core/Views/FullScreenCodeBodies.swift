@@ -829,7 +829,12 @@ final class NativeFullScreenRenderedDocumentBody: UIView {
     required init?(coder: NSCoder) { nil }
 
     private func makeLatexView(text: String) -> UIView {
-        let config = RenderConfiguration(fontSize: 20, maxWidth: 800, theme: .fallback, displayMode: .document)
+        let config = RenderConfiguration(
+            fontSize: 20,
+            maxWidth: 800,
+            theme: ThemeRuntimeState.currentRenderTheme(),
+            displayMode: .document
+        )
         let multiLayout = DocumentRenderPipeline.layoutLatexExpressions(text: text, config: config)
 
         let stack = UIStackView()
@@ -867,7 +872,12 @@ final class NativeFullScreenRenderedDocumentBody: UIView {
     private func makeZoomableGraphicalView<P: DocumentParser, R: GraphicalDocumentRenderer>(
         parser: P, renderer: R, text: String, fontSize: CGFloat
     ) -> UIView where P.Document == R.Document {
-        let config = RenderConfiguration(fontSize: fontSize, maxWidth: 800, theme: .fallback, displayMode: .document)
+        let config = RenderConfiguration(
+            fontSize: fontSize,
+            maxWidth: 800,
+            theme: ThemeRuntimeState.currentRenderTheme(),
+            displayMode: .document
+        )
         let layout = DocumentRenderPipeline.layoutGraphical(
             parser: parser, renderer: renderer, text: text, config: config
         )
