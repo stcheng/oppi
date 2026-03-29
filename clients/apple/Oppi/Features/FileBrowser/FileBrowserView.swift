@@ -46,7 +46,7 @@ struct FileBrowserView: View {
         .background(Color.themeBgDark)
         .navigationTitle(isRoot ? "Files" : lastPathComponent)
         .navigationBarTitleDisplayMode(.inline)
-        .searchable(text: $searchText, prompt: "Search")
+        .searchable(text: $searchText, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search files")
         .onChange(of: searchText) { _, newValue in
             let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
             if trimmed.isEmpty {
@@ -60,8 +60,23 @@ struct FileBrowserView: View {
             guard !trimmed.isEmpty else { return }
             performLocalSearch(query: trimmed)
         }
+        .refreshable {
+            await loadDirectory()
+            if let api = apiClient {
+                fileIndexStore.invalidate()
+                fileIndexStore.ensureLoaded(workspaceId: workspaceId, apiClient: api)
+            }
+        }
         .task { await loadDirectory() }
         .task { ensureFileIndex() }
+    }
+
+    private var searchResultCountText: String {
+        let count = fuzzyResults.count
+        if count >= 100 {
+            return "100+ files"
+        }
+        return "\(count) file\(count == 1 ? "" : "s")"
     }
 
     // MARK: - Directory List
@@ -100,28 +115,47 @@ struct FileBrowserView: View {
             ContentUnavailableView.search(text: searchText)
         } else {
             List {
-                ForEach(fuzzyResults, id: \.path) { result in
-                    NavigationLink {
-                        FileBrowserContentView(
-                            workspaceId: workspaceId,
-                            filePath: result.path,
-                            fileName: (result.path as NSString).lastPathComponent
-                        )
-                    } label: {
-                        Label {
-                            VStack(alignment: .leading, spacing: 2) {
-                                HighlightedPathText(
-                                    path: result.path,
-                                    matchPositions: result.positions
-                                )
-                                .lineLimit(1)
+                Section {
+                    ForEach(fuzzyResults, id: \.path) { result in
+                        let fileName = (result.path as NSString).lastPathComponent
+                        let dirPath = {
+                            let dir = (result.path as NSString).deletingLastPathComponent
+                            return dir.isEmpty ? "" : dir + "/"
+                        }()
+                        NavigationLink {
+                            FileBrowserContentView(
+                                workspaceId: workspaceId,
+                                filePath: result.path,
+                                fileName: fileName
+                            )
+                        } label: {
+                            Label {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    SearchResultFileName(
+                                        fileName: fileName,
+                                        fullPath: result.path,
+                                        matchPositions: result.positions
+                                    )
+                                    if !dirPath.isEmpty {
+                                        Text(dirPath)
+                                            .font(.caption2.monospaced())
+                                            .foregroundStyle(.themeComment)
+                                            .lineLimit(1)
+                                            .truncationMode(.middle)
+                                    }
+                                }
+                            } icon: {
+                                let icon = FileIcon.forPath(result.path)
+                                Image(systemName: icon.symbolName)
+                                    .foregroundStyle(icon.color)
                             }
-                        } icon: {
-                            let icon = FileIcon.forPath(result.path)
-                            Image(systemName: icon.symbolName)
-                                .foregroundStyle(icon.color)
                         }
                     }
+                } header: {
+                    Text(searchResultCountText)
+                        .font(.caption2.monospacedDigit())
+                        .foregroundStyle(.themeComment)
+                        .textCase(nil)
                 }
             }
             .listStyle(.plain)
@@ -224,42 +258,57 @@ struct FileBrowserView: View {
     }
 }
 
-// MARK: - Highlighted Path Text
+// MARK: - Search Result File Name
 
-/// Renders a file path with matched characters highlighted using AttributedString.
-private struct HighlightedPathText: View {
-    let path: String
+/// Renders the filename with matched characters highlighted.
+///
+/// Match positions from FuzzyMatch refer to the full path. This view
+/// translates them into filename-relative offsets so only the filename
+/// portion is displayed, with highlights applied to characters that
+/// were part of the fuzzy match.
+private struct SearchResultFileName: View {
+    let fileName: String
+    let fullPath: String
     let matchPositions: [Int]
 
     var body: some View {
-        Text(attributedPath)
+        Text(attributedFileName)
+            .lineLimit(1)
     }
 
-    private var attributedPath: AttributedString {
-        let scalars = Array(path.unicodeScalars)
-        let matchSet = Set(matchPositions)
-        var result = AttributedString()
+    private var attributedFileName: AttributedString {
+        let fileNameScalars = Array(fileName.unicodeScalars)
+        let pathScalars = Array(fullPath.unicodeScalars)
+        let fileNameStart = pathScalars.count - fileNameScalars.count
 
+        // Translate full-path match positions to filename-relative positions
+        let matchSet = Set(
+            matchPositions
+                .filter { $0 >= fileNameStart }
+                .map { $0 - fileNameStart }
+        )
+
+        var result = AttributedString()
         var i = 0
-        while i < scalars.count {
+        while i < fileNameScalars.count {
             if matchSet.contains(i) {
                 var end = i
-                while end + 1 < scalars.count, matchSet.contains(end + 1) {
+                while end + 1 < fileNameScalars.count, matchSet.contains(end + 1) {
                     end += 1
                 }
-                var segment = AttributedString(String(String.UnicodeScalarView(scalars[i...end])))
+                var segment = AttributedString(String(String.UnicodeScalarView(fileNameScalars[i...end])))
                 segment.foregroundColor = .themeYellow
-                segment.font = .body.monospaced().bold()
+                segment.font = .body.bold()
                 result.append(segment)
                 i = end + 1
             } else {
                 var end = i
-                while end + 1 < scalars.count, !matchSet.contains(end + 1) {
+                while end + 1 < fileNameScalars.count, !matchSet.contains(end + 1) {
                     end += 1
                 }
-                var segment = AttributedString(String(String.UnicodeScalarView(scalars[i...end])))
-                segment.foregroundColor = .themeFgDim
-                segment.font = .body.monospaced()
+                var segment = AttributedString(String(String.UnicodeScalarView(fileNameScalars[i...end])))
+                segment.foregroundColor = .themeFg
+                segment.font = .body
                 result.append(segment)
                 i = end + 1
             }
