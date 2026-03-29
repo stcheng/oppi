@@ -1009,4 +1009,79 @@ struct NativeMermaidBlockViewTests {
             Issue.record("Expected .image from mermaid export, got \(item)")
         }
     }
+
+    /// When markdown containing a mermaid code block is exported as an image,
+    /// the mermaid diagram must render with actual content — not appear as a
+    /// blank box. We verify by comparing pixel diversity in the diagram area
+    /// against the standalone mermaid export (which is known to work).
+    @Test func markdownExportRendersMermaidDiagramNotBlankBox() async {
+        let code = "graph TD\n    A[Start] --> B[End]"
+
+        // 1. Standalone mermaid export (known working)
+        let standalone = await FileShareService.render(.mermaid(code), as: .image)
+        guard case .image(let standaloneImg) = standalone else {
+            Issue.record("Standalone mermaid export failed")
+            return
+        }
+
+        // 2. Markdown export containing the same mermaid
+        let markdown = "```mermaid\n\(code)\n```"
+        let mdExport = await FileShareService.render(.markdown(markdown), as: .image)
+        guard case .image(let mdImg) = mdExport else {
+            Issue.record("Markdown export failed")
+            return
+        }
+
+        // 3. The standalone image has diagram content (colored pixels).
+        //    Count distinct colors in the center region of each image.
+        let standaloneColors = sampleDistinctColors(in: standaloneImg)
+        let mdColors = sampleDistinctColors(in: mdImg)
+
+        // The standalone diagram has many distinct colors (node fills, borders,
+        // text, background). The markdown export should too — if it rendered
+        // only a blank box, it would have very few colors (just background +
+        // box border).
+        #expect(standaloneColors >= 5,
+                "Standalone mermaid should have varied colors, got \(standaloneColors)")
+        #expect(mdColors >= 5,
+                "Markdown mermaid export only has \(mdColors) distinct colors — diagram likely didn't render (blank box)")
+    }
+
+    /// Sample the center 50% of an image and count distinct colors.
+    private func sampleDistinctColors(in image: UIImage) -> Int {
+        guard let cgImage = image.cgImage else { return 0 }
+        let w = cgImage.width, h = cgImage.height
+        guard w > 4, h > 4 else { return 0 }
+
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        let bytesPerPixel = 4
+        let bytesPerRow = bytesPerPixel * w
+        var pixelData = [UInt8](repeating: 0, count: w * h * bytesPerPixel)
+
+        guard let context = CGContext(
+            data: &pixelData, width: w, height: h,
+            bitsPerComponent: 8, bytesPerRow: bytesPerRow,
+            space: colorSpace,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return 0 }
+
+        context.draw(cgImage, in: CGRect(x: 0, y: 0, width: w, height: h))
+
+        // Sample center 50% region
+        let x0 = w / 4, x1 = 3 * w / 4
+        let y0 = h / 4, y1 = 3 * h / 4
+        var colors = Set<UInt32>()
+        // Sample every 4th pixel for speed
+        for y in stride(from: y0, to: y1, by: 4) {
+            for x in stride(from: x0, to: x1, by: 4) {
+                let offset = (y * w + x) * bytesPerPixel
+                // Quantize to 6-bit per channel to ignore anti-aliasing noise
+                let r = UInt32(pixelData[offset] >> 2)
+                let g = UInt32(pixelData[offset + 1] >> 2)
+                let b = UInt32(pixelData[offset + 2] >> 2)
+                colors.insert((r << 16) | (g << 8) | b)
+            }
+        }
+        return colors.count
+    }
 }

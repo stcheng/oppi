@@ -394,7 +394,8 @@ enum FileShareService {
             isStreaming: false,
             themeID: ThemeRuntimeState.currentThemeID(),
             textSelectionEnabled: false,
-            plainTextFallbackThreshold: nil
+            plainTextFallbackThreshold: nil,
+            synchronousRendering: true
         ))
         return snapshotView(view, width: textLayoutWidth, padding: exportPadding, backgroundColor: currentBackgroundColor)
     }

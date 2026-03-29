@@ -25,6 +25,10 @@ final class AssistantMarkdownContentView: UIView {
         let serverBaseURL: URL?
         /// Surface tag for streaming markdown perf instrumentation.
         let perfSurface: MarkdownStreamingPerf.Surface?
+        /// When true, render mermaid diagrams synchronously on the current
+        /// thread instead of dispatching to a background task. Used by export
+        /// paths that snapshot the view immediately after layout.
+        let synchronousRendering: Bool
 
         init(
             content: String,
@@ -36,7 +40,8 @@ final class AssistantMarkdownContentView: UIView {
             selectedTextSourceContext: SelectedTextSourceContext? = nil,
             workspaceID: String? = nil,
             serverBaseURL: URL? = nil,
-            perfSurface: MarkdownStreamingPerf.Surface? = nil
+            perfSurface: MarkdownStreamingPerf.Surface? = nil,
+            synchronousRendering: Bool = false
         ) {
             self.content = content
             self.isStreaming = isStreaming
@@ -48,6 +53,7 @@ final class AssistantMarkdownContentView: UIView {
             self.workspaceID = workspaceID
             self.serverBaseURL = serverBaseURL
             self.perfSurface = perfSurface
+            self.synchronousRendering = synchronousRendering
         }
 
         static func == (lhs: Self, rhs: Self) -> Bool {
@@ -61,6 +67,7 @@ final class AssistantMarkdownContentView: UIView {
                 && lhs.workspaceID == rhs.workspaceID
                 && lhs.serverBaseURL == rhs.serverBaseURL
                 && lhs.perfSurface == rhs.perfSurface
+                && lhs.synchronousRendering == rhs.synchronousRendering
         }
     }
 

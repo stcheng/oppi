@@ -154,7 +154,7 @@ final class AssistantMarkdownSegmentApplier {
                 if isOpen {
                     mermaidView.applyAsCode(language: "mermaid", code: code, palette: palette, isOpen: true)
                 } else {
-                    mermaidView.applyAsDiagram(code: code, palette: palette)
+                    config.synchronousRendering ? mermaidView.applyAsDiagramSync(code: code, palette: palette) : mermaidView.applyAsDiagram(code: code, palette: palette)
                 }
                 stackView.addArrangedSubview(mermaidView)
                 mermaidViews[index] = mermaidView
@@ -282,7 +282,7 @@ final class AssistantMarkdownSegmentApplier {
                 if isOpen {
                     mermaidView.applyAsCode(language: "mermaid", code: code, palette: palette, isOpen: true)
                 } else {
-                    mermaidView.applyAsDiagram(code: code, palette: palette)
+                    config.synchronousRendering ? mermaidView.applyAsDiagramSync(code: code, palette: palette) : mermaidView.applyAsDiagram(code: code, palette: palette)
                 }
                 stackView.addArrangedSubview(mermaidView)
                 mermaidViews[index] = mermaidView
@@ -471,7 +471,7 @@ final class AssistantMarkdownSegmentApplier {
                     if isOpen {
                         mermaidView.applyAsCode(language: "mermaid", code: code, palette: palette, isOpen: true)
                     } else {
-                        mermaidView.applyAsDiagram(code: code, palette: palette)
+                        config.synchronousRendering ? mermaidView.applyAsDiagramSync(code: code, palette: palette) : mermaidView.applyAsDiagram(code: code, palette: palette)
                     }
                 }
             }

@@ -102,6 +102,43 @@ final class NativeMermaidBlockView: UIView {
         currentCode = code
     }
 
+    /// Render synchronously on the current thread. Used by export paths that
+    /// snapshot the view immediately after layout — async rendering would
+    /// complete after the snapshot, producing blank boxes.
+    func applyAsDiagramSync(code: String, palette: ThemePalette) {
+        currentCode = code
+
+        let theme = ThemeRuntimeState.currentRenderTheme()
+        let availableWidth = bounds.width > 0
+            ? bounds.width
+            : (window?.windowScene?.screen.bounds.width ?? 360)
+
+        let layout = DocumentRenderPipeline.layoutGraphical(
+            parser: MermaidParser(),
+            renderer: MermaidFlowchartRenderer(),
+            text: code,
+            config: RenderConfiguration(
+                fontSize: 13,
+                maxWidth: availableWidth,
+                theme: theme,
+                displayMode: .inline
+            )
+        )
+        guard layout.size.width > 0, layout.size.height > 0 else {
+            showAsCodeFallback(code: code, palette: palette)
+            return
+        }
+
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 2.0
+        let renderer = UIGraphicsImageRenderer(size: layout.size, format: format)
+        let image = renderer.image { ctx in
+            layout.draw(ctx.cgContext, .zero)
+        }
+
+        showDiagram(image: image, naturalSize: layout.size, palette: palette)
+    }
+
     /// Render as a diagram (fence closed, not streaming).
     func applyAsDiagram(code: String, palette: ThemePalette) {
         // Skip redundant renders.
