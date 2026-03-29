@@ -886,3 +886,44 @@ struct NativeMarkdownImageViewTests {
         #expect(hasPlaceholderHeight, "Should have 80pt loading placeholder height. Constraints: \(heightConstraints.map { "\($0.constant)" })")
     }
 }
+
+// MARK: - NativeMermaidBlockView tests
+
+@Suite("NativeMermaidBlockView")
+@MainActor
+struct NativeMermaidBlockViewTests {
+
+    private func makeDiagramView() -> NativeMermaidBlockView {
+        let view = NativeMermaidBlockView()
+        view.frame = CGRect(x: 0, y: 0, width: 360, height: 400)
+        return view
+    }
+
+    @Test func tapGestureOnSelfNotScrollView() async throws {
+        let view = makeDiagramView()
+        let palette = ThemeRuntimeState.currentPalette()
+        view.applyAsDiagram(code: "graph TD\n    A-->B", palette: palette)
+        try await Task.sleep(for: .milliseconds(500))
+
+        // The tap gesture must be on the NativeMermaidBlockView itself —
+        // UIScrollView swallows single taps when it has zoom enabled.
+        let selfTaps = (view.gestureRecognizers ?? [])
+            .compactMap { $0 as? UITapGestureRecognizer }
+            .filter { $0.numberOfTapsRequired == 1 }
+        #expect(!selfTaps.isEmpty, "NativeMermaidBlockView must have a single-tap gesture on itself")
+    }
+
+    @Test func mermaidExportRendersNonBlankImage() async {
+        // Verify the FileShareService export path produces a real image
+        let code = "graph TD\n    A[Start] --> B[End]"
+        let content = FileShareService.ShareableContent.mermaid(code)
+        let item = await FileShareService.render(content, as: .image)
+        if case .image(let image) = item {
+            #expect(image.size.width >= 50, "Export image too narrow: \(image.size.width)")
+            #expect(image.size.height >= 50, "Export image too short: \(image.size.height)")
+            #expect(!FileShareService.isBlankImage(image), "Export image is blank")
+        } else {
+            Issue.record("Expected .image from mermaid export, got \(item)")
+        }
+    }
+}

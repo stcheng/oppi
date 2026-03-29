@@ -106,13 +106,12 @@ final class NativeMermaidBlockView: UIView {
         centerX.priority = .defaultHigh
         imageCenterXConstraint = centerX
 
-        // Tap to open fullscreen — use a single-tap that doesn't interfere
-        // with the scroll view's pinch gesture.
+        // Tap to open fullscreen — placed on self, NOT the scroll view.
+        // UIScrollView with zoom enabled swallows single taps internally.
         let tapGesture = UITapGestureRecognizer(target: self, action: #selector(handleTap))
         tapGesture.numberOfTapsRequired = 1
-        // Don't delay scroll view touches waiting for tap to fail.
         tapGesture.cancelsTouchesInView = false
-        scrollView.addGestureRecognizer(tapGesture)
+        addGestureRecognizer(tapGesture)
 
         NSLayoutConstraint.activate([
             // Code block fills self
