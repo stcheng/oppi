@@ -48,10 +48,18 @@ struct FileBrowserContentView: View {
     }
 
     /// Whether the UIKit file viewer is active (text content loaded).
+    /// Whether the file type is markdown (detected from file path).
+    private var isMarkdownFile: Bool {
+        FileType.detect(from: filePath) == .markdown
+    }
+
     /// When true, the SwiftUI navigation bar is hidden and the UIKit
     /// viewer's internal nav bar provides all chrome.
+    ///
+    /// Markdown files use `MarkdownFileView` which renders in SwiftUI with its
+    /// own chrome — the SwiftUI nav bar stays visible for those.
     private var isUsingFileViewer: Bool {
-        if case .text = content { return true }
+        if case .text = content { return !isMarkdownFile }
         return false
     }
 
@@ -70,10 +78,21 @@ struct FileBrowserContentView: View {
                     description: Text(message)
                 )
             case .text(let text):
-                EmbeddedFileViewerView(
-                    content: fullScreenContent(text: text)
-                )
-                .ignoresSafeArea(edges: .top)
+                // Markdown gets a direct rendering path via MarkdownFileView.
+                // This avoids the 10-layer FullScreenCodeViewController stack that was
+                // designed for streaming chat content — the file browser has static content
+                // and needs workspace context (workspaceID + apiClient) for inline images.
+                //
+                // Other text types (code, JSON, plain text) still use EmbeddedFileViewerView
+                // which provides multi-format chrome via FullScreenCodeViewController.
+                if isMarkdownFile {
+                    markdownView(text: text)
+                } else {
+                    EmbeddedFileViewerView(
+                        content: .fromText(text, filePath: filePath)
+                    )
+                    .ignoresSafeArea(edges: .top)
+                }
             case .image(let data):
                 imageView(data)
             case .video(let url):
@@ -224,27 +243,44 @@ struct FileBrowserContentView: View {
         }
     }
 
-    // MARK: - Share
+    // MARK: - Markdown
 
-    /// Build full-screen content with workspace context for relative image resolution.
-    private func fullScreenContent(text: String) -> FullScreenCodeContent {
-        let base = FullScreenCodeContent.fromText(text, filePath: filePath)
-        // Inject workspace context for markdown files so relative images resolve.
-        if case .markdown(let content, let path, _) = base, let api = apiClient {
-            return .markdown(
-                content: content,
-                filePath: path,
-                workspaceContext: .init(
-                    workspaceID: workspaceId,
-                    serverBaseURL: api.baseURL,
-                    fetchWorkspaceFile: { [workspaceId] wsID, filePath in
-                        try await api.browseWorkspaceFile(workspaceId: wsID.isEmpty ? workspaceId : wsID, path: filePath)
-                    }
-                )
+    /// Direct markdown rendering with explicit workspace context.
+    ///
+    /// Uses `MarkdownFileView` instead of `EmbeddedFileViewerView` because:
+    /// 1. Markdown needs workspace context for inline images (relative paths)
+    /// 2. `@Environment(\.apiClient)` is unreliable across UIViewControllerRepresentable
+    ///    bridges — it was nil when evaluated, silently breaking image loading
+    /// 3. `MarkdownFileView` passes context as explicit params, not environment
+    /// 4. Eliminates 6 unnecessary layers (FullScreenCodeVC, NativeFullScreenMarkdownBody,
+    ///    etc.) that exist for streaming chat content the file browser doesn't need
+    @ViewBuilder
+    private func markdownView(text: String) -> some View {
+        if let api = apiClient {
+            MarkdownFileView(
+                content: text,
+                filePath: filePath,
+                presentation: .document,
+                workspaceID: workspaceId,
+                serverBaseURL: api.baseURL,
+                fetchWorkspaceFile: { [workspaceId] wsID, path in
+                    try await api.browseWorkspaceFile(
+                        workspaceId: wsID.isEmpty ? workspaceId : wsID,
+                        path: path
+                    )
+                }
+            )
+        } else {
+            // Fallback: render without workspace context (images show as alt text).
+            MarkdownFileView(
+                content: text,
+                filePath: filePath,
+                presentation: .document
             )
         }
-        return base
     }
+
+    // MARK: - Share
 
     /// Build shareable content from the current loaded phase.
     private func shareableContent() -> FileShareService.ShareableContent? {

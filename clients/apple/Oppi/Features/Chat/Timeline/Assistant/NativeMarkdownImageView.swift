@@ -1,4 +1,7 @@
+import OSLog
 import UIKit
+
+private let logger = Logger(subsystem: "dev.chenda.Oppi", category: "MarkdownImage")
 
 /// UIKit view that loads and displays an image referenced in markdown.
 ///
@@ -140,7 +143,9 @@ final class NativeMarkdownImageView: UIView {
                     showLoadedState(image: image)
                     return
                 }
+                logger.error("Workspace file is not a valid image: \(components.filePath) (\(data.count) bytes)")
             } catch {
+                logger.error("Workspace image load failed: \(error.localizedDescription) path=\(components.filePath)")
                 guard !Task.isCancelled else { return }
             }
         }

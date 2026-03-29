@@ -406,4 +406,229 @@ struct MarkdownRenderingIntegrationTests {
         #expect(!FileShareService.isBlankImage(images[0]), "Social table should not be blank")
         writeArtifact(name: "social-table-wrapped", image: images[0])
     }
+
+    // MARK: - Workspace Image Context Tests
+
+    /// Verify that workspace context (workspaceID + serverBaseURL) flows through
+    /// the full AssistantMarkdownContentView pipeline and creates NativeMarkdownImageView
+    /// subviews (not just text with [alt]).
+    @Test func workspaceContextCreatesImageViews() {
+        let md = "![Test image](images/test.png)"
+        let view = AssistantMarkdownContentView()
+        view.fetchWorkspaceFile = { _, _ in Data() } // dummy — we just need non-nil
+
+        view.apply(configuration: .init(
+            content: md,
+            isStreaming: false,
+            themeID: .light,
+            textSelectionEnabled: false,
+            plainTextFallbackThreshold: nil,
+            workspaceID: "test-ws",
+            serverBaseURL: URL(string: "https://example.com/api")!,
+            sourceFilePath: "docs/readme.md",
+            renderingMode: .export
+        ))
+
+        // Layout so subviews are created
+        let host = UIView(frame: CGRect(x: 0, y: 0, width: 600, height: 1000))
+        view.translatesAutoresizingMaskIntoConstraints = false
+        host.addSubview(view)
+        NSLayoutConstraint.activate([
+            view.leadingAnchor.constraint(equalTo: host.leadingAnchor),
+            view.trailingAnchor.constraint(equalTo: host.trailingAnchor),
+            view.topAnchor.constraint(equalTo: host.topAnchor),
+        ])
+        host.layoutIfNeeded()
+
+        // Walk the view hierarchy looking for NativeMarkdownImageView
+        func findImageViews(in root: UIView) -> [NativeMarkdownImageView] {
+            var found: [NativeMarkdownImageView] = []
+            for sub in root.subviews {
+                if let imageView = sub as? NativeMarkdownImageView {
+                    found.append(imageView)
+                }
+                found.append(contentsOf: findImageViews(in: sub))
+            }
+            return found
+        }
+
+        let imageViews = findImageViews(in: view)
+        #expect(!imageViews.isEmpty,
+                "Expected NativeMarkdownImageView in hierarchy — workspace context should produce .image segments, not [alt] text")
+    }
+
+    /// Verify that fullScreenContent-equivalent logic produces the right enum case.
+    @Test func fromTextDetectsMarkdownForDocsPath() {
+        let content = FullScreenCodeContent.fromText(
+            "![Chart](images/chart.png)",
+            filePath: "docs/image-load-test.md"
+        )
+        if case .markdown = content {
+            // Expected
+        } else {
+            Issue.record("Expected .markdown for .md file, got \(content)")
+        }
+    }
+
+    /// Verify that fullScreenContent-equivalent logic WITH workspace context
+    /// creates a FullScreenCodeContent that FullScreenCodeVC can render with images.
+    @Test func fullScreenContentWithWorkspaceContextProducesImages() {
+        // Simulate exactly what FileBrowserContentView.fullScreenContent does:
+        let text = "![Chart](images/chart.png)"
+        let filePath = "docs/image-load-test.md"
+        let base = FullScreenCodeContent.fromText(text, filePath: filePath)
+
+        let result: FullScreenCodeContent
+        if case .markdown(let content, let path, _) = base {
+            result = .markdown(
+                content: content,
+                filePath: path,
+                workspaceContext: .init(
+                    workspaceID: "test-ws",
+                    serverBaseURL: URL(string: "https://example.com/api")!,
+                    fetchWorkspaceFile: { _, _ in Data() }
+                )
+            )
+        } else {
+            Issue.record("fromText should produce .markdown for .md file")
+            return
+        }
+
+        // Now feed it to FullScreenCodeVC
+        let vc = FullScreenCodeViewController(content: result, presentationMode: .sheet)
+        vc.loadViewIfNeeded()
+        vc.view.frame = CGRect(x: 0, y: 0, width: 600, height: 1000)
+        vc.view.layoutIfNeeded()
+
+        func findImageViews(in root: UIView) -> [NativeMarkdownImageView] {
+            var found: [NativeMarkdownImageView] = []
+            for sub in root.subviews {
+                if let iv = sub as? NativeMarkdownImageView { found.append(iv) }
+                found.append(contentsOf: findImageViews(in: sub))
+            }
+            return found
+        }
+
+        let imageViews = findImageViews(in: vc.view)
+        #expect(!imageViews.isEmpty,
+                "Full pipeline (fromText + workspace context + FullScreenCodeVC) should create image views")
+    }
+
+    /// Verify workspace context flows through FullScreenCodeViewController
+    /// → NativeFullScreenMarkdownBody → AssistantMarkdownContentView.
+    @Test func workspaceContextFlowsThroughFullScreenVC() {
+        let wsContext = FullScreenCodeContent.WorkspaceContext(
+            workspaceID: "test-ws",
+            serverBaseURL: URL(string: "https://example.com/api")!,
+            fetchWorkspaceFile: { _, _ in Data() }
+        )
+        let content = FullScreenCodeContent.markdown(
+            content: "![Chart](images/chart.png)",
+            filePath: "docs/readme.md",
+            workspaceContext: wsContext
+        )
+
+        let vc = FullScreenCodeViewController(
+            content: content,
+            presentationMode: .sheet
+        )
+        vc.loadViewIfNeeded()
+        vc.view.frame = CGRect(x: 0, y: 0, width: 600, height: 1000)
+        vc.view.layoutIfNeeded()
+
+        func findImageViews(in root: UIView) -> [NativeMarkdownImageView] {
+            var found: [NativeMarkdownImageView] = []
+            for sub in root.subviews {
+                if let iv = sub as? NativeMarkdownImageView { found.append(iv) }
+                found.append(contentsOf: findImageViews(in: sub))
+            }
+            return found
+        }
+
+        let imageViews = findImageViews(in: vc.view)
+        #expect(!imageViews.isEmpty,
+                "FullScreenCodeViewController with workspace context should create NativeMarkdownImageView, not alt text fallback")
+    }
+
+    /// Verify workspace context flows through NativeFullScreenMarkdownBody
+    /// (the layer between FullScreenCodeVC and AssistantMarkdownContentView).
+    @Test func workspaceContextFlowsThroughFullScreenMarkdownBody() {
+        let body = NativeFullScreenMarkdownBody(
+            content: "![Chart](images/chart.png)",
+            stream: nil,
+            palette: ThemeID.dark.palette,
+            plainTextFallbackThreshold: nil,
+            selectedTextPiRouter: nil,
+            selectedTextSourceContext: nil,
+            workspaceID: "test-ws",
+            serverBaseURL: URL(string: "https://example.com/api")!,
+            sourceFilePath: "docs/readme.md",
+            fetchWorkspaceFile: { _, _ in Data() }
+        )
+
+        let host = UIView(frame: CGRect(x: 0, y: 0, width: 600, height: 1000))
+        body.translatesAutoresizingMaskIntoConstraints = false
+        host.addSubview(body)
+        NSLayoutConstraint.activate([
+            body.leadingAnchor.constraint(equalTo: host.leadingAnchor),
+            body.trailingAnchor.constraint(equalTo: host.trailingAnchor),
+            body.topAnchor.constraint(equalTo: host.topAnchor),
+            body.bottomAnchor.constraint(equalTo: host.bottomAnchor),
+        ])
+        host.layoutIfNeeded()
+
+        func findImageViews(in root: UIView) -> [NativeMarkdownImageView] {
+            var found: [NativeMarkdownImageView] = []
+            for sub in root.subviews {
+                if let iv = sub as? NativeMarkdownImageView { found.append(iv) }
+                found.append(contentsOf: findImageViews(in: sub))
+            }
+            return found
+        }
+
+        let imageViews = findImageViews(in: body)
+        #expect(!imageViews.isEmpty,
+                "NativeFullScreenMarkdownBody should create NativeMarkdownImageView when workspace context is provided")
+    }
+
+    /// Same test WITHOUT workspace context — should fall back to text with [alt].
+    @Test func noWorkspaceContextFallsBackToAltText() {
+        let md = "![Test image](images/test.png)"
+        let view = AssistantMarkdownContentView()
+        // No fetchWorkspaceFile, no workspaceID, no serverBaseURL
+
+        view.apply(configuration: .init(
+            content: md,
+            isStreaming: false,
+            themeID: .light,
+            textSelectionEnabled: false,
+            plainTextFallbackThreshold: nil,
+            renderingMode: .export
+        ))
+
+        let host = UIView(frame: CGRect(x: 0, y: 0, width: 600, height: 1000))
+        view.translatesAutoresizingMaskIntoConstraints = false
+        host.addSubview(view)
+        NSLayoutConstraint.activate([
+            view.leadingAnchor.constraint(equalTo: host.leadingAnchor),
+            view.trailingAnchor.constraint(equalTo: host.trailingAnchor),
+            view.topAnchor.constraint(equalTo: host.topAnchor),
+        ])
+        host.layoutIfNeeded()
+
+        func findImageViews(in root: UIView) -> [NativeMarkdownImageView] {
+            var found: [NativeMarkdownImageView] = []
+            for sub in root.subviews {
+                if let imageView = sub as? NativeMarkdownImageView {
+                    found.append(imageView)
+                }
+                found.append(contentsOf: findImageViews(in: sub))
+            }
+            return found
+        }
+
+        let imageViews = findImageViews(in: view)
+        #expect(imageViews.isEmpty,
+                "Without workspace context, images should fall back to alt text, not create NativeMarkdownImageView")
+    }
 }
