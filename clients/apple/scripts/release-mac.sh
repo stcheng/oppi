@@ -214,6 +214,7 @@ cp "$SERVER_DIR/package.json" "$SERVER_SEED/"
 
 # Install production deps into seed
 cp "$SERVER_DIR/package-lock.json" "$SERVER_SEED/"
+[[ -f "$SERVER_DIR/bun.lock" ]] && cp "$SERVER_DIR/bun.lock" "$SERVER_SEED/"
 cd "$SERVER_SEED"
 "$RESOURCES/bun" install --production --ignore-scripts 2>&1 | tail -3
 rm -f "$SERVER_SEED/package-lock.json" "$SERVER_SEED/bun.lock"
