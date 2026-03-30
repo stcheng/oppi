@@ -16,6 +16,8 @@ import { PolicyEngine, type GateRequest } from "../src/policy.js";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
+const CHAINED_GIT_PUSH_COMMAND = 'cd /Users/chenda/workspace/oppi && git add -A && git commit -m "fix: copy bun.lock to server seed for frozen-lockfile compat" --no-verify && git push origin main';
+
 // ─── Helpers ───
 
 function bash(command: string): GateRequest {
@@ -137,6 +139,9 @@ describe("host preset: external actions gated", () => {
   });
   it("asks for chained git push", () => {
     expect(policy.evaluate(bash("cd / && git push origin main")).action).toBe("ask");
+  });
+  it("asks for git push in a git add/commit/push chain", () => {
+    expect(policy.evaluate(bash(CHAINED_GIT_PUSH_COMMAND)).action).toBe("ask");
   });
   it("asks for chained ssh", () => {
     expect(policy.evaluate(bash("echo ok; ssh user@server.com")).action).toBe("ask");

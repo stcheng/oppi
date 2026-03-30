@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { PolicyEngine, parseBashCommand, matchBashPattern } from "../src/policy.js";
+import { PolicyEngine, parseBashCommand, matchBashPattern, splitBashCommandChain } from "../src/policy.js";
+
+const CHAINED_GIT_PUSH_COMMAND = 'cd /Users/chenda/workspace/oppi && git add -A && git commit -m "fix: copy bun.lock to server seed for frozen-lockfile compat" --no-verify && git push origin main';
 
 // ─── Bash Parsing ───
 
@@ -9,6 +11,15 @@ describe("parseBashCommand", () => {
     expect(p.executable).toBe("ls");
     expect(p.args[0]).toBe("-la");
     expect(p.hasPipe).toBe(false);
+  });
+
+  it("splits chained git push command without breaking quoted commit message", () => {
+    expect(splitBashCommandChain(CHAINED_GIT_PUSH_COMMAND)).toEqual([
+      "cd /Users/chenda/workspace/oppi",
+      "git add -A",
+      'git commit -m "fix: copy bun.lock to server seed for frozen-lockfile compat" --no-verify',
+      "git push origin main",
+    ]);
   });
 
   it("detects pipes", () => {
@@ -226,6 +237,11 @@ describe("PolicyEngine (container) — destructive ops → ask", () => {
 
   it("asks for chained git push", () => {
     const d = container.evaluate({ tool: "bash", input: { command: "cd / && git push origin main" }, toolCallId: "33a" });
+    expect(d.action).toBe("ask");
+  });
+
+  it("asks for git push in a git add/commit/push chain", () => {
+    const d = container.evaluate({ tool: "bash", input: { command: CHAINED_GIT_PUSH_COMMAND }, toolCallId: "33b" });
     expect(d.action).toBe("ask");
   });
 

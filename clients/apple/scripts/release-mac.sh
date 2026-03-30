@@ -280,8 +280,10 @@ find "$RESOURCES/server-seed/node_modules" -name "*.node" -type f 2>/dev/null | 
 done
 
 # 3. Sign any other Mach-O binaries in Frameworks/ or Helpers/
-find "$APP_PATH/Contents/Frameworks" "$APP_PATH/Contents/Helpers" \
-    -type f -perm +111 2>/dev/null | while read -r binary; do
+SIGN_DIRS=()
+[[ -d "$APP_PATH/Contents/Frameworks" ]] && SIGN_DIRS+=("$APP_PATH/Contents/Frameworks")
+[[ -d "$APP_PATH/Contents/Helpers" ]] && SIGN_DIRS+=("$APP_PATH/Contents/Helpers")
+find "${SIGN_DIRS[@]}" -type f -perm +111 2>/dev/null | while read -r binary; do
     # Skip non-Mach-O files
     file "$binary" | grep -q "Mach-O" || continue
     codesign --force --options runtime --timestamp \

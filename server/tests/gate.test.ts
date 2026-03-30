@@ -8,6 +8,8 @@ import { RuleStore } from "../src/rules.js";
 import { AuditLog } from "../src/audit.js";
 import type { PolicyConfig } from "../src/types.js";
 
+const CHAINED_GIT_PUSH_COMMAND = 'cd /Users/chenda/workspace/oppi && git add -A && git commit -m "fix: copy bun.lock to server seed for frozen-lockfile compat" --no-verify && git push origin main';
+
 const SESSION_ID = "test-session-1";
 
 let gate: GateServer;
@@ -137,6 +139,28 @@ describe("GateServer", () => {
       tool: "bash",
       input: { command: "cd /Users/dev/workspace/myproject && git push origin main" },
       toolCallId: "tc_3b",
+    });
+
+    expect(result.action).toBe("allow");
+    expect(approvalCount).toBe(1);
+    expect(lastReason).toContain("Git push");
+  });
+
+  it("asks for git push in a git add/commit/push chain", async () => {
+    setupGuardedSession("host");
+    let approvalCount = 0;
+    let lastReason = "";
+
+    gate.on("approval_needed", (pending: { id: string; reason: string }) => {
+      approvalCount += 1;
+      lastReason = pending.reason;
+      setTimeout(() => gate.resolveDecision(pending.id, "allow"), 20);
+    });
+
+    const result = await gate.checkToolCall(SESSION_ID, {
+      tool: "bash",
+      input: { command: CHAINED_GIT_PUSH_COMMAND },
+      toolCallId: "tc_3c",
     });
 
     expect(result.action).toBe("allow");
