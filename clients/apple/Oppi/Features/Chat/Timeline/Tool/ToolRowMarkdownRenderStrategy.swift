@@ -20,7 +20,7 @@ struct ToolRowMarkdownRenderStrategy {
         let shouldRerender = signature != previousSignature
             || !isUsingMarkdownLayout
 
-        expandedMarkdownView.apply(configuration: .init(
+        expandedMarkdownView.apply(configuration: .make(
             content: text,
             isStreaming: isStreaming,
             themeID: ThemeRuntimeState.currentThemeID(),

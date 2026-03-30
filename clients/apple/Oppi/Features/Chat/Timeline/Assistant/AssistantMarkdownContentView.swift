@@ -62,7 +62,7 @@ final class AssistantMarkdownContentView: UIView {
         /// - `.export`: synchronous rendering so snapshots capture all content
         let renderingMode: ContentRenderingMode
 
-        init(
+        private init(
             content: String,
             isStreaming: Bool,
             themeID: ThemeID,
@@ -88,6 +88,36 @@ final class AssistantMarkdownContentView: UIView {
             self.sourceFilePath = sourceFilePath
             self.perfSurface = perfSurface
             self.renderingMode = renderingMode
+        }
+
+        static func make(
+            content: String,
+            isStreaming: Bool,
+            themeID: ThemeID,
+            textSelectionEnabled: Bool = true,
+            plainTextFallbackThreshold: Int? = Self.defaultPlainTextFallbackThreshold,
+            selectedTextPiRouter: SelectedTextPiActionRouter? = nil,
+            selectedTextSourceContext: SelectedTextSourceContext? = nil,
+            workspaceID: String? = nil,
+            serverBaseURL: URL? = nil,
+            sourceFilePath: String? = nil,
+            perfSurface: MarkdownStreamingPerf.Surface? = nil,
+            renderingMode: ContentRenderingMode = .live
+        ) -> Self {
+            Self(
+                content: content,
+                isStreaming: isStreaming,
+                themeID: themeID,
+                textSelectionEnabled: textSelectionEnabled,
+                plainTextFallbackThreshold: plainTextFallbackThreshold,
+                selectedTextPiRouter: selectedTextPiRouter,
+                selectedTextSourceContext: selectedTextSourceContext,
+                workspaceID: workspaceID,
+                serverBaseURL: serverBaseURL,
+                sourceFilePath: sourceFilePath,
+                perfSurface: perfSurface,
+                renderingMode: renderingMode
+            )
         }
 
         static func == (lhs: Self, rhs: Self) -> Bool {

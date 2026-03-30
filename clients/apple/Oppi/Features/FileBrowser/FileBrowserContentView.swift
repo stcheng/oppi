@@ -245,17 +245,12 @@ struct FileBrowserContentView: View {
     /// re-evaluates `body` after an async state change. The captured reference is
     /// guaranteed non-nil since we used it to successfully load the file.
     private func fullScreenContent(text: String) -> FullScreenCodeContent {
-        let base = FullScreenCodeContent.fromText(text, filePath: filePath)
-
-        // Use captured client (preferred) or current environment (fallback).
-        guard case .markdown(let content, let path, _) = base,
-              let api = loadedApiClient ?? apiClient else {
-            return base
+        guard let api = loadedApiClient ?? apiClient else {
+            return .fromText(text, filePath: filePath)
         }
-
-        return .markdown(
-            content: content,
-            filePath: path,
+        return .fromText(
+            text,
+            filePath: filePath,
             workspaceContext: .init(
                 workspaceID: workspaceId,
                 serverBaseURL: api.baseURL,

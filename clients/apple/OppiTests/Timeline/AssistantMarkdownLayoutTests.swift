@@ -104,7 +104,7 @@ struct AssistantMarkdownLayoutTests {
         ])
 
         let phase1 = "Streaming markdown should start with a short line."
-        markdownView.apply(configuration: .init(
+        markdownView.apply(configuration: .make(
             content: phase1,
             isStreaming: true,
             themeID: .dark
@@ -124,7 +124,7 @@ struct AssistantMarkdownLayoutTests {
 
         Then the same text segment keeps growing with enough additional prose to wrap across several lines inside the same UITextView. Without intrinsic-size invalidation after textStorage.append(delta), UIKit keeps the old height and later lines paint over whatever follows.
         """
-        markdownView.apply(configuration: .init(
+        markdownView.apply(configuration: .make(
             content: phase2,
             isStreaming: true,
             themeID: .dark
@@ -146,6 +146,39 @@ struct AssistantMarkdownLayoutTests {
         #expect(
             grownFittedHeight > initialFittedHeight + 20,
             "Markdown view fitted height should grow after append (before: \(initialFittedHeight), after: \(grownFittedHeight))"
+        )
+    }
+
+    @Test func veryLongAssistantMessageDoesNotClampBelowMarkdownHeight() {
+        let sections = (1...1_100).map { index in
+            """
+            ## Section \(index)
+
+            This is a long assistant paragraph intended to reproduce the tall-markdown bug. It wraps across multiple lines on iPhone-width layouts, includes **bold text**, `inline code`, and enough prose to force the rendered height far beyond ten thousand points.
+            """
+        }
+        let markdown = sections.joined(separator: "\n\n")
+
+        let row = AssistantTimelineRowContentView(configuration: .init(
+            text: markdown,
+            isStreaming: false,
+            canFork: false,
+            onFork: nil
+        ))
+        let rowSize = fittedTimelineSize(for: row, width: 338)
+
+        let markdownView = AssistantMarkdownContentView()
+        markdownView.apply(configuration: .make(
+            content: markdown,
+            isStreaming: false,
+            themeID: .dark
+        ))
+        let markdownSize = fittedTimelineSize(for: markdownView, width: 302)
+
+        #expect(markdownSize.height > 10_000, "Fixture must exceed the old 10k height cap, got \(markdownSize.height)")
+        #expect(
+            rowSize.height >= markdownSize.height + 8,
+            "Assistant row height \(rowSize.height) clipped markdown content needing \(markdownSize.height)pt"
         )
     }
 

@@ -504,6 +504,8 @@ final class NativeFullScreenMarkdownBody: UIView, UIScrollViewDelegate {
     private let serverBaseURL: URL?
     private let sourceFilePath: String?
 
+    private let perfSurface: MarkdownStreamingPerf.Surface?
+
     private var latestSnapshot: ThinkingTraceStream.Snapshot
     private var renderedSnapshot: ThinkingTraceStream.Snapshot?
     private var streamObserverID: UUID?
@@ -526,9 +528,11 @@ final class NativeFullScreenMarkdownBody: UIView, UIScrollViewDelegate {
         workspaceID: String? = nil,
         serverBaseURL: URL? = nil,
         sourceFilePath: String? = nil,
+        perfSurface: MarkdownStreamingPerf.Surface? = nil,
         fetchWorkspaceFile: ((_ workspaceID: String, _ path: String) async throws -> Data)? = nil
     ) {
         self.stream = stream
+        self.perfSurface = perfSurface
         self.plainTextFallbackThreshold = plainTextFallbackThreshold
         self.selectedTextPiRouter = selectedTextPiRouter
         self.selectedTextSourceContext = selectedTextSourceContext
@@ -577,7 +581,10 @@ final class NativeFullScreenMarkdownBody: UIView, UIScrollViewDelegate {
         markdownView.fetchWorkspaceFile = fetchWorkspaceFile
         render(snapshot: initialSnapshot)
 
-        streamObserverID = stream?.addObserver { [weak self] snapshot in
+        // Static markdown (stream == nil): no observer needed, tail-follow stays off
+        guard let stream else { return }
+
+        streamObserverID = stream.addObserver { [weak self] snapshot in
             self?.handleStreamUpdate(snapshot)
         }
     }
@@ -611,7 +618,7 @@ final class NativeFullScreenMarkdownBody: UIView, UIScrollViewDelegate {
         }
 
         renderedSnapshot = snapshot
-        markdownView.apply(configuration: .init(
+        markdownView.apply(configuration: .make(
             content: snapshot.text,
             isStreaming: !snapshot.isDone,
             themeID: ThemeRuntimeState.currentThemeID(),
@@ -621,7 +628,7 @@ final class NativeFullScreenMarkdownBody: UIView, UIScrollViewDelegate {
             workspaceID: workspaceID,
             serverBaseURL: serverBaseURL,
             sourceFilePath: sourceFilePath,
-            perfSurface: .fullScreenThinking
+            perfSurface: perfSurface
         ))
 
         tailFollowCoordinator.scheduleAutoFollowToBottomIfNeeded()
@@ -879,7 +886,7 @@ final class NativeFullScreenRenderedDocumentBody: UIView {
 
         let mdView = AssistantMarkdownContentView()
         mdView.backgroundColor = .clear
-        mdView.apply(configuration: .init(
+        mdView.apply(configuration: .make(
             content: markdownText,
             isStreaming: false,
             themeID: ThemeRuntimeState.currentThemeID(),

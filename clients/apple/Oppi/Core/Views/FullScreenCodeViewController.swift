@@ -309,6 +309,7 @@ final class FullScreenCodeViewController: UIViewController {
                 workspaceID: wsContext?.workspaceID,
                 serverBaseURL: wsContext?.serverBaseURL,
                 sourceFilePath: filePath,
+                perfSurface: .fullScreenMarkdown,
                 fetchWorkspaceFile: wsContext?.fetchWorkspaceFile
             )
             return body
@@ -329,7 +330,8 @@ final class FullScreenCodeViewController: UIViewController {
                 selectedTextSourceContext: makeSourceContext(
                     surface: .fullScreenThinking,
                     fallbackSourceLabel: String(localized: "Thinking")
-                )
+                ),
+                perfSurface: .fullScreenThinking
             )
         case .terminal(let text, let command, let stream):
             return NativeFullScreenTerminalBody(

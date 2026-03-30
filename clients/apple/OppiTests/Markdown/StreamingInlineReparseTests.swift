@@ -35,7 +35,7 @@ struct StreamingInlineReparseTests {
     ) {
         let blocks = parseCommonMark(content)
         let segments = FlatSegment.build(from: blocks, themeID: .dark)
-        let config = AssistantMarkdownContentView.Configuration(
+        let config = AssistantMarkdownContentView.Configuration.make(
             content: content,
             isStreaming: isStreaming,
             themeID: .dark

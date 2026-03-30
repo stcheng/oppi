@@ -147,7 +147,7 @@ struct MarkdownParsePerfBench {
     // MARK: - Config Helpers
 
     private static func streamingConfig(content: String) -> AssistantMarkdownContentView.Configuration {
-        AssistantMarkdownContentView.Configuration(
+        AssistantMarkdownContentView.Configuration.make(
             content: content,
             isStreaming: true,
             themeID: .dark,

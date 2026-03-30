@@ -21,7 +21,7 @@ struct OrgModeFileView: View {
                 let markdownContent = DocumentRenderPipeline.orgToMarkdown(content)
                 let view = AssistantMarkdownContentView()
                 view.backgroundColor = .clear
-                view.apply(configuration: .init(
+                view.apply(configuration: .make(
                     content: markdownContent,
                     isStreaming: false,
                     themeID: ThemeRuntimeState.currentThemeID(),

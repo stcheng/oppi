@@ -299,6 +299,17 @@ enum FlatSegment: Sendable {
         serverBaseURL: URL?,
         sourceDirectory: String? = nil
     ) -> URL? {
+        #if DEBUG
+        if workspaceID == nil,
+           inlines.count == 1,
+           case .image(_, let source) = inlines[0],
+           let source, !source.isEmpty,
+           !source.hasPrefix("data:"),
+           !source.hasPrefix("http://"),
+           !source.hasPrefix("https://") {
+            print("[FlatSegment] WARNING: relative image '\(source)' but workspaceID is nil — workspace context not threaded to this rendering path")
+        }
+        #endif
         guard inlines.count == 1,
               case .image(_, let source) = inlines[0],
               let source,

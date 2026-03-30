@@ -217,7 +217,7 @@ final class CompactionTimelineRowContentView: UIView, UIContentView, TimelineRow
 
             if showMarkdown {
                 detailMarkdownView.apply(
-                    configuration: .init(
+                    configuration: .make(
                         content: trimmedDetail,
                         isStreaming: false,
                         themeID: ThemeRuntimeState.currentThemeID()

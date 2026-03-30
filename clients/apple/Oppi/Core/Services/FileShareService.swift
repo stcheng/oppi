@@ -389,7 +389,7 @@ enum FileShareService {
     private static func renderMarkdownToImage(_ source: String) -> UIImage {
         let view = AssistantMarkdownContentView()
         view.backgroundColor = currentBackgroundColor
-        view.apply(configuration: .init(
+        view.apply(configuration: .make(
             content: source,
             isStreaming: false,
             themeID: ThemeRuntimeState.currentThemeID(),

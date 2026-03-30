@@ -29,7 +29,7 @@ struct MarkdownRenderingIntegrationTests {
     ) -> UIImage {
         let view = AssistantMarkdownContentView()
         view.backgroundColor = UIColor.white
-        view.apply(configuration: .init(
+        view.apply(configuration: .make(
             content: markdown,
             isStreaming: false,
             themeID: .light,
@@ -66,7 +66,7 @@ struct MarkdownRenderingIntegrationTests {
     ) async -> UIImage {
         let view = AssistantMarkdownContentView()
         view.backgroundColor = UIColor.white
-        view.apply(configuration: .init(
+        view.apply(configuration: .make(
             content: markdown,
             isStreaming: false,
             themeID: .light,
@@ -417,7 +417,7 @@ struct MarkdownRenderingIntegrationTests {
         let view = AssistantMarkdownContentView()
         view.fetchWorkspaceFile = { _, _ in Data() } // dummy — we just need non-nil
 
-        view.apply(configuration: .init(
+        view.apply(configuration: .make(
             content: md,
             isStreaming: false,
             themeID: .light,
@@ -597,7 +597,7 @@ struct MarkdownRenderingIntegrationTests {
         let view = AssistantMarkdownContentView()
         // No fetchWorkspaceFile, no workspaceID, no serverBaseURL
 
-        view.apply(configuration: .init(
+        view.apply(configuration: .make(
             content: md,
             isStreaming: false,
             themeID: .light,

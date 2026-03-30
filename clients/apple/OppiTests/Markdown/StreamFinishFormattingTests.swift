@@ -64,8 +64,8 @@ struct StreamFinishFormattingTests {
         let blocks = parseCommonMark(markdown)
         let segments = FlatSegment.build(from: blocks, themeID: .dark)
 
-        applier.apply(segments: segments, config: .init(content: markdown, isStreaming: true, themeID: .dark))
-        applier.apply(segments: segments, config: .init(content: markdown, isStreaming: false, themeID: .dark))
+        applier.apply(segments: segments, config: .make(content: markdown, isStreaming: true, themeID: .dark))
+        applier.apply(segments: segments, config: .make(content: markdown, isStreaming: false, themeID: .dark))
 
         guard let attrText = findTextViews(in: stackView).first?.attributedText else {
             Issue.record("No attributed text after finish"); return

@@ -47,7 +47,7 @@ struct MarkdownFileView: View {
                 let view = AssistantMarkdownContentView()
                 view.backgroundColor = .clear
                 view.fetchWorkspaceFile = fetchWorkspaceFile
-                view.apply(configuration: .init(
+                view.apply(configuration: .make(
                     content: content,
                     isStreaming: false,
                     themeID: ThemeRuntimeState.currentThemeID(),

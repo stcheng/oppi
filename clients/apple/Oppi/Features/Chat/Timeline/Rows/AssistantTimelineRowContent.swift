@@ -55,7 +55,10 @@ struct AssistantTimelineRowConfiguration: UIContentConfiguration {
 }
 
 final class AssistantTimelineRowContentView: UIView, UIContentView, TimelineRowInteractionProvider {
-    private static let maxValidHeight: CGFloat = 10_000
+    /// Guard against non-finite/absurd Auto Layout results without truncating
+    /// legitimately huge assistant messages. Very long review/write-up turns can
+    /// exceed 10k points on phone-width layouts.
+    private static let maxValidHeight: CGFloat = 1_000_000
 
     private let bubbleContainer = UIView()
     private let iconBadge = SessionGridBadgeView()
@@ -196,7 +199,7 @@ final class AssistantTimelineRowContentView: UIView, UIContentView, TimelineRowI
         // applier does structural diffing and only updates the growing tail.
         // StreamingTextRevealer inside the applier handles smooth character fade.
         markdownView.fetchWorkspaceFile = configuration.fetchWorkspaceFile
-        markdownView.apply(configuration: .init(
+        markdownView.apply(configuration: .make(
             content: trimmedText,
             isStreaming: configuration.isStreaming,
             themeID: ThemeRuntimeState.currentThemeID(),

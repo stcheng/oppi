@@ -24,7 +24,7 @@ struct MarkdownContentViewWrapper: UIViewRepresentable {
 
     func updateUIView(_ uiView: AssistantMarkdownContentView, context: Context) {
         uiView.fetchWorkspaceFile = fetchWorkspaceFile
-        uiView.apply(configuration: .init(
+        uiView.apply(configuration: .make(
             content: content,
             isStreaming: isStreaming,
             themeID: ThemeRuntimeState.currentThemeID(),

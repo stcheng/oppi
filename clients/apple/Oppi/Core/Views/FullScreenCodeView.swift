@@ -231,6 +231,21 @@ indirect enum FullScreenCodeContent {
             return .plainText(content: text, filePath: filePath)
         }
     }
+
+    /// Build content from raw text with workspace context for markdown image resolution.
+    /// The workspace context is only used for `.markdown` — other file types ignore it.
+    static func fromText(
+        _ text: String,
+        filePath: String?,
+        workspaceContext: WorkspaceContext?
+    ) -> FullScreenCodeContent {
+        let base = fromText(text, filePath: filePath)
+        // Attach workspace context to markdown content for inline image resolution.
+        if let wsContext = workspaceContext, case .markdown(let content, let path, _) = base {
+            return .markdown(content: content, filePath: path, workspaceContext: wsContext)
+        }
+        return base
+    }
 }
 
 /// SwiftUI wrapper around ``FullScreenCodeViewController``.
