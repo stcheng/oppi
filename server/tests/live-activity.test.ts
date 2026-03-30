@@ -65,6 +65,7 @@ function makeStorageStub(
       token = t;
       if (t === null) stub.clearedToken = true;
     }),
+    getSession: vi.fn((id: string) => sessions.find((s) => s.id === id)),
     listSessions: vi.fn(() => sessions),
   };
   return stub as unknown as Storage & { clearedToken: boolean };
