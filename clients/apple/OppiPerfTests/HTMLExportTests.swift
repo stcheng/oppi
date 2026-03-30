@@ -162,7 +162,7 @@ struct HTMLExportTests {
 
     @Test func chartJsPDFProducesValidPDF() async {
         guard let html = chartJsFixtureHTML() else {
-            Issue.record("Fixture chartjs-markets-dashboard.html not found in test bundle")
+            Issue.record("Fixture chartjs-test-fixture.html not found in test bundle")
             return
         }
         let result = await FileShareService.render(.html(html), as: .pdf)
@@ -178,7 +178,7 @@ struct HTMLExportTests {
 
     @Test func chartJsImageIsNotBlank() async {
         guard let html = chartJsFixtureHTML() else {
-            Issue.record("Fixture chartjs-markets-dashboard.html not found in test bundle")
+            Issue.record("Fixture chartjs-test-fixture.html not found in test bundle")
             return
         }
         let result = await FileShareService.render(.html(html), as: .image)
@@ -193,7 +193,7 @@ struct HTMLExportTests {
 
     private func chartJsFixtureHTML() -> String? {
         guard let url = Bundle(for: BundleToken.self)
-            .url(forResource: "chartjs-markets-dashboard", withExtension: "html") else {
+            .url(forResource: "chartjs-test-fixture", withExtension: "html") else {
             return nil
         }
         return try? String(contentsOf: url, encoding: .utf8)

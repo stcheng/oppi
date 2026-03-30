@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Snack Consumption Report</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 600px; margin: 2rem auto; padding: 1rem; background: #fafafa; color: #333; }
+  h1 { font-size: 1.4rem; }
+  .chart-box { background: #fff; border-radius: 8px; padding: 1rem; margin: 1rem 0; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+  table { width: 100%; border-collapse: collapse; margin: 1rem 0; font-size: 0.9rem; }
+  th, td { padding: 0.5rem; text-align: left; border-bottom: 1px solid #eee; }
+  th { font-weight: 600; }
+</style>
+</head>
+<body>
+  <h1>Weekly Snack Consumption Report</h1>
+  <p>A rigorous analysis of office snack habits.</p>
+
+  <div class="chart-box">
+    <canvas id="barChart" width="500" height="300"></canvas>
+  </div>
+
+  <div class="chart-box">
+    <canvas id="doughnutChart" width="300" height="300"></canvas>
+  </div>
+
+  <table>
+    <thead><tr><th>Snack</th><th>Mon</th><th>Tue</th><th>Wed</th><th>Thu</th><th>Fri</th></tr></thead>
+    <tbody>
+      <tr><td>Cookies</td><td>12</td><td>8</td><td>15</td><td>10</td><td>22</td></tr>
+      <tr><td>Chips</td><td>6</td><td>14</td><td>9</td><td>11</td><td>18</td></tr>
+      <tr><td>Fruit</td><td>20</td><td>18</td><td>22</td><td>19</td><td>15</td></tr>
+      <tr><td>Coffee</td><td>45</td><td>52</td><td>48</td><td>55</td><td>60</td></tr>
+    </tbody>
+  </table>
+
+  <script>
+    new Chart(document.getElementById('barChart'), {
+      type: 'bar',
+      data: {
+        labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
+        datasets: [
+          { label: 'Cookies', data: [12, 8, 15, 10, 22], backgroundColor: '#f59e0b' },
+          { label: 'Chips', data: [6, 14, 9, 11, 18], backgroundColor: '#ef4444' },
+          { label: 'Fruit', data: [20, 18, 22, 19, 15], backgroundColor: '#22c55e' },
+          { label: 'Coffee', data: [45, 52, 48, 55, 60], backgroundColor: '#6366f1' }
+        ]
+      },
+      options: { responsive: false, plugins: { title: { display: true, text: 'Daily Consumption' } } }
+    });
+
+    new Chart(document.getElementById('doughnutChart'), {
+      type: 'doughnut',
+      data: {
+        labels: ['Cookies', 'Chips', 'Fruit', 'Coffee'],
+        datasets: [{ data: [67, 58, 94, 260], backgroundColor: ['#f59e0b', '#ef4444', '#22c55e', '#6366f1'] }]
+      },
+      options: { responsive: false, plugins: { title: { display: true, text: 'Weekly Totals' } } }
+    });
+  </script>
+</body>
+</html>

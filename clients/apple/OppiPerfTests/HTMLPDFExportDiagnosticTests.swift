@@ -15,7 +15,7 @@ struct HTMLPDFExportDiagnosticTests {
     /// Load the test HTML fixture.
     private func loadTestHTML() throws -> String {
         let bundle = Bundle(for: BundleAnchor.self)
-        guard let url = bundle.url(forResource: "test-iran-war", withExtension: "html") else {
+        guard let url = bundle.url(forResource: "chartjs-test-fixture", withExtension: "html") else {
             throw HTMLPDFTestError.fixtureNotFound
         }
         return try String(contentsOf: url, encoding: .utf8)
