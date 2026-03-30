@@ -1,7 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
-  <rect x="405.5" y="177.6" width="99.1" height="99.1" rx="23.8" fill="#e0c0b0" opacity="0.811"/>
-  <rect x="519.4" y="177.6" width="99.1" height="99.1" rx="23.8" fill="#e0ccc0" opacity="0.875"/>
-  <rect x="291.6" y="405.5" width="99.1" height="99.1" rx="23.8" fill="#e0c0b0" opacity="0.895"/>
-  <rect x="291.6" y="519.4" width="99.1" height="99.1" rx="23.8" fill="#e0c0b0" opacity="0.879"/>
-</svg>
