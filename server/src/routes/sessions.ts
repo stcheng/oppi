@@ -939,7 +939,12 @@ export function createSessionRoutes(ctx: RouteContext, helpers: RouteHelpers): R
     return view === "full" ? "full" : "context";
   }
 
-  async function handleGetSession(sessionId: string, url: URL, res: ServerResponse): Promise<void> {
+  async function handleGetSession(
+    req: IncomingMessage,
+    sessionId: string,
+    url: URL,
+    res: ServerResponse,
+  ): Promise<void> {
     const session = ctx.storage.getSession(sessionId);
     if (!session) {
       helpers.error(res, 404, "Session not found");
@@ -972,7 +977,7 @@ export function createSessionRoutes(ctx: RouteContext, helpers: RouteHelpers): R
 
     const latestSession = ctx.storage.getSession(sessionId) || hydratedSession;
     const hydratedLatest = ctx.ensureSessionContextWindow(latestSession);
-    helpers.json(res, { session: hydratedLatest, trace: trace || [] });
+    helpers.compressedJson(req, res, { session: hydratedLatest, trace: trace || [] });
   }
 
   async function handleDeleteSession(sessionId: string, res: ServerResponse): Promise<void> {
@@ -1098,7 +1103,7 @@ export function createSessionRoutes(ctx: RouteContext, helpers: RouteHelpers): R
     const wsSessionMatch = path.match(/^\/workspaces\/([^/]+)\/sessions\/([^/]+)$/);
     if (wsSessionMatch) {
       if (method === "GET") {
-        await handleGetSession(wsSessionMatch[2], url, res);
+        await handleGetSession(req, wsSessionMatch[2], url, res);
         return true;
       }
       if (method === "DELETE") {

@@ -390,6 +390,15 @@ final class ChatSessionManager {
                 ])
 
                 log.info("Loaded \(cached.eventCount) cached events for \(self.sessionId)")
+
+                // Record fresh content lag now — user sees cached content.
+                // Background history refresh may run later but the user is no
+                // longer staring at an empty screen.
+                telemetry.recordFreshContentLagIfNeeded(
+                    reason: "cache_hit",
+                    sessionId: sessionId,
+                    workspaceId: resolveWorkspaceId(from: sessionStore)
+                )
             } else {
                 log.info("Skipped cache load — reducer has \(self.reducer.items.count) live items for \(self.sessionId)")
             }

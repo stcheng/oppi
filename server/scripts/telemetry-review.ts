@@ -22,6 +22,15 @@ import { join, resolve } from "node:path";
 // ─── SLO Reference Thresholds ───
 // These are reference targets, not hard limits. They help spot regressions.
 
+// Metrics where only status=ok samples count toward the SLO.
+// Error samples measure "time spent failing", not user-perceived latency.
+const STATUS_FILTERED_METRICS = new Set([
+  "chat.queue_sync_ms",
+  "chat.subscribe_ack_ms",
+  "chat.message_queue_ack_ms",
+  "chat.connected_dispatch_ms",
+]);
+
 const SLO_THRESHOLDS = {
   // UX quality — how fast does the user see stuff?
   "chat.ttft_ms":              { p95: 10_000, label: "Time to first token",       group: "UX Quality" },
@@ -32,11 +41,11 @@ const SLO_THRESHOLDS = {
   "chat.reducer_load_ms":      { p95: 200,    label: "Timeline rebuild",          group: "UX Quality" },
 
   // Network health — is connectivity reliable?
-  "chat.subscribe_ack_ms":     { p95: 1_500,  label: "Subscribe ack",             group: "Network" },
+  "chat.subscribe_ack_ms":     { p95: 1_500,  label: "Subscribe ack (ok only)",   group: "Network" },
   "chat.ws_connect_ms":        { p95: 5_000,  label: "WS connect (legacy)",       group: "Network" },
-  "chat.queue_sync_ms":        { p95: 1_500,  label: "Queue sync",                group: "Network" },
-  "chat.connected_dispatch_ms":{ p95: 200,    label: "Connected dispatch",        group: "Network" },
-  "chat.message_queue_ack_ms": { p95: 500,    label: "Message queue ack",         group: "Network" },
+  "chat.queue_sync_ms":        { p95: 1_500,  label: "Queue sync (ok only)",      group: "Network" },
+  "chat.connected_dispatch_ms":{ p95: 200,    label: "Connected dispatch (ok only)", group: "Network" },
+  "chat.message_queue_ack_ms": { p95: 500,    label: "Message queue ack (ok only)", group: "Network" },
 
   // Render health
   "chat.timeline_apply_ms":    { p95: 16,     label: "Timeline apply (>4ms only)",group: "Render" },
@@ -144,6 +153,13 @@ function loadSamples() {
 
         const metric = sample.metric;
         const unit = sample.unit ?? "ms";
+
+        // For status-filtered metrics, only include status=ok samples.
+        // Error samples measure failure duration, not user-perceived latency.
+        if (STATUS_FILTERED_METRICS.has(metric)) {
+          const status = sample.tags?.status;
+          if (status && status !== "ok") continue;
+        }
 
         // Global
         if (!values[metric]) values[metric] = { vals: [], unit };
