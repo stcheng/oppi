@@ -18,7 +18,7 @@ server/scripts/*
 !server/scripts/check-testing-policy.ts
 !server/scripts/telemetry-review.ts
 clients/apple/scripts/
-!clients/apple/scripts/testflight.sh
+!clients/apple/scripts/testflight.ts
 !clients/apple/scripts/release-mac.sh
 !clients/apple/scripts/check-duplication.sh
 !server/docker/entrypoint.sh
