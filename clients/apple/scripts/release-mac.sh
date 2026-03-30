@@ -26,8 +26,8 @@ PROJECT_YML="$APPLE_DIR/project.yml"
 BUN_VERSION_PIN="1.3.11"
 
 # Read version from project.yml (OppiMac target)
-VERSION=$(grep -A20 'OppiMac:' "$PROJECT_YML" | grep 'MARKETING_VERSION:' | head -1 | awk -F'"' '{print $2}')
-BUILD_NUMBER=$(grep -A20 'OppiMac:' "$PROJECT_YML" | grep 'CURRENT_PROJECT_VERSION:' | head -1 | awk '{print $2}')
+VERSION=$(grep -A40 'OppiMac:' "$PROJECT_YML" | grep 'MARKETING_VERSION:' | head -1 | awk -F'"' '{print $2}')
+BUILD_NUMBER=$(grep -A40 'OppiMac:' "$PROJECT_YML" | grep 'CURRENT_PROJECT_VERSION:' | head -1 | awk '{print $2}')
 
 BUILD_DIR="$APPLE_DIR/build/release-mac-${VERSION}"
 SIGNING_IDENTITY="Developer ID Application: Da Chen (AZAQMY4SPZ)"
