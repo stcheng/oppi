@@ -150,7 +150,10 @@ if [[ ! -f "$BUN_ZIP" ]]; then
     echo "Verifying SHA-256 checksum..."
     SHASUMS_URL="https://github.com/oven-sh/bun/releases/download/bun-v${BUN_VERSION_PIN}/SHASUMS256.txt"
     curl -fsSL "$SHASUMS_URL" -o "$BUN_CACHE_DIR/SHASUMS256.txt"
-    (cd "$BUN_CACHE_DIR" && grep "bun-darwin-aarch64.zip" SHASUMS256.txt | shasum -a 256 -c) || {
+    # SHASUMS file references "bun-darwin-aarch64.zip" but our cached file has versioned name
+    EXPECTED_SHA=$(grep "bun-darwin-aarch64.zip" "$BUN_CACHE_DIR/SHASUMS256.txt" | awk '{print $1}')
+    ACTUAL_SHA=$(shasum -a 256 "$BUN_ZIP" | awk '{print $1}')
+    [[ "$EXPECTED_SHA" == "$ACTUAL_SHA" ]] || {
         echo "ERROR: SHA-256 checksum verification failed!"
         rm -f "$BUN_ZIP"
         exit 1
