@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0.2" y2="1">
+      <stop offset="0" stop-color="#111118"/>
+      <stop offset="1" stop-color="#0a0a0e"/>
+    </linearGradient>
+  </defs>
+  <rect width="1024" height="1024" fill="url(#bg)"/>
+  <!-- Layer 1: Scatter -->
+  <rect x="177.6" y="63.7" width="99.1" height="99.1" rx="23.8" fill="#f0f0f0" opacity="0.109"/>
+  <rect x="291.6" y="63.7" width="99.1" height="99.1" rx="23.8" fill="#e8e5e0" opacity="0.088"/>
+  <rect x="63.7" y="519.4" width="99.1" height="99.1" rx="23.8" fill="#e8e5e0" opacity="0.091"/>
+  <rect x="177.6" y="861.2" width="99.1" height="99.1" rx="23.8" fill="#ebebeb" opacity="0.122"/>
+  <rect x="861.2" y="861.2" width="99.1" height="99.1" rx="23.8" fill="#e0e0e0" opacity="0.105"/>
+  <!-- Layer 2: Growth -->
+  <rect x="747.2" y="63.7" width="99.1" height="99.1" rx="23.8" fill="#f0f0f0" opacity="0.372"/>
+  <rect x="63.7" y="177.6" width="99.1" height="99.1" rx="23.8" fill="#e0e0e0" opacity="0.309"/>
+  <rect x="63.7" y="291.6" width="99.1" height="99.1" rx="23.8" fill="#ebebeb" opacity="0.404"/>
+  <rect x="633.3" y="405.5" width="99.1" height="99.1" rx="23.8" fill="#e0e0e0" opacity="0.391"/>
+  <rect x="861.2" y="747.2" width="99.1" height="99.1" rx="23.8" fill="#e0e0e0" opacity="0.298"/>
+  <rect x="633.3" y="861.2" width="99.1" height="99.1" rx="23.8" fill="#e8e5e0" opacity="0.332"/>
+  <!-- Layer 3: Pi mono -->
+  <rect x="177.6" y="177.6" width="99.1" height="99.1" rx="23.8" fill="#f0f0f0" opacity="0.953"/>
+  <rect x="291.6" y="177.6" width="99.1" height="99.1" rx="23.8" fill="#ebebeb" opacity="0.978"/>
+  <rect x="405.5" y="177.6" width="99.1" height="99.1" rx="23.8" fill="#e8e5e0" opacity="0.858"/>
+  <rect x="519.4" y="177.6" width="99.1" height="99.1" rx="23.8" fill="#ebebeb" opacity="0.908"/>
+  <rect x="633.3" y="177.6" width="99.1" height="99.1" rx="23.8" fill="#f0f0f0" opacity="0.829"/>
+  <rect x="747.2" y="177.6" width="99.1" height="99.1" rx="23.8" fill="#ebebeb" opacity="0.948"/>
+  <rect x="291.6" y="291.6" width="99.1" height="99.1" rx="23.8" fill="#e0e0e0" opacity="0.870"/>
+  <rect x="291.6" y="405.5" width="99.1" height="99.1" rx="23.8" fill="#e0e0e0" opacity="0.825"/>
+  <rect x="291.6" y="519.4" width="99.1" height="99.1" rx="23.8" fill="#e0e0e0" opacity="0.999"/>
+  <rect x="633.3" y="519.4" width="99.1" height="99.1" rx="23.8" fill="#d0d0d0" opacity="0.998"/>
+  <rect x="291.6" y="633.3" width="99.1" height="99.1" rx="23.8" fill="#f0f0f0" opacity="0.851"/>
+  <rect x="633.3" y="633.3" width="99.1" height="99.1" rx="23.8" fill="#d0d0d0" opacity="0.873"/>
+  <rect x="291.6" y="747.2" width="99.1" height="99.1" rx="23.8" fill="#e0e0e0" opacity="0.898"/>
+  <rect x="633.3" y="747.2" width="99.1" height="99.1" rx="23.8" fill="#d0d0d0" opacity="0.944"/>
+  <rect x="747.2" y="747.2" width="99.1" height="99.1" rx="23.8" fill="#e0e0e0" opacity="0.881"/>
+  <!-- Layer 4: Sparks -->
+  <rect x="633.3" y="291.6" width="99.1" height="99.1" rx="23.8" fill="#e8445a" opacity="0.950"/>
+</svg>

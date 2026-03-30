@@ -258,9 +258,10 @@ struct FileShareArtifactTests {
                 Issue.record("\(name): expected PDF")
                 continue
             }
-            // 8KB is the minimum for a PDF with actual rendered content.
-            // Blank embed-image PDFs are ~6KB (just the PDF wrapper + empty image).
-            #expect(data.count > 8000, "\(name): PDF suspiciously small (\(data.count) bytes) — likely blank")
+            // PDF byte size is only a weak smoke test here — valid vector PDFs
+            // (especially mermaid) can be quite small. The stronger validation
+            // is below: open with CGPDFDocument and rasterize the first page.
+            #expect(data.count > 1024, "\(name): PDF suspiciously small (\(data.count) bytes)")
             let header = String(data: data.prefix(5), encoding: .ascii)
             #expect(header == "%PDF-", "\(name): invalid PDF header")
 

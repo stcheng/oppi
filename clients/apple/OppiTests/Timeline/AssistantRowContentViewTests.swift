@@ -99,7 +99,7 @@ struct AssistantTimelineRowContentViewTests {
         let containerWidth: CGFloat = 300
 
         let mdView = AssistantMarkdownContentView()
-        mdView.apply(configuration: .init(content: text, isStreaming: false, themeID: ThemeRuntimeState.currentThemeID()))
+        mdView.apply(configuration: .make(content: text, isStreaming: false, themeID: ThemeRuntimeState.currentThemeID()))
         _ = fittedTimelineSize(for: mdView, width: containerWidth)
 
         let codeBlockView = try #require(timelineFirstView(ofType: NativeCodeBlockView.self, in: mdView))
@@ -133,7 +133,7 @@ struct AssistantTimelineRowContentViewTests {
         let containerWidth: CGFloat = 300
 
         let mdView = AssistantMarkdownContentView()
-        mdView.apply(configuration: .init(content: text, isStreaming: false, themeID: ThemeRuntimeState.currentThemeID()))
+        mdView.apply(configuration: .make(content: text, isStreaming: false, themeID: ThemeRuntimeState.currentThemeID()))
         _ = fittedTimelineSize(for: mdView, width: containerWidth)
 
         let codeBlockView = try #require(timelineFirstView(ofType: NativeCodeBlockView.self, in: mdView))
@@ -155,7 +155,7 @@ struct AssistantTimelineRowContentViewTests {
         let containerWidth: CGFloat = 370
 
         let mdView = AssistantMarkdownContentView()
-        mdView.apply(configuration: .init(content: text, isStreaming: false, themeID: ThemeRuntimeState.currentThemeID()))
+        mdView.apply(configuration: .make(content: text, isStreaming: false, themeID: ThemeRuntimeState.currentThemeID()))
         _ = fittedTimelineSize(for: mdView, width: containerWidth)
 
         let codeBlockView = try #require(timelineFirstView(ofType: NativeCodeBlockView.self, in: mdView))
@@ -179,7 +179,7 @@ struct AssistantTimelineRowContentViewTests {
         let containerWidth: CGFloat = 300
 
         let mdView = AssistantMarkdownContentView()
-        mdView.apply(configuration: .init(content: text, isStreaming: false, themeID: ThemeRuntimeState.currentThemeID()))
+        mdView.apply(configuration: .make(content: text, isStreaming: false, themeID: ThemeRuntimeState.currentThemeID()))
         _ = fittedTimelineSize(for: mdView, width: containerWidth)
 
         let codeBlockView = try #require(timelineFirstView(ofType: NativeCodeBlockView.self, in: mdView))
@@ -221,7 +221,7 @@ struct AssistantTimelineRowContentViewTests {
         """
 
         let mdView = AssistantMarkdownContentView()
-        mdView.apply(configuration: .init(content: phase1, isStreaming: true, themeID: ThemeRuntimeState.currentThemeID()))
+        mdView.apply(configuration: .make(content: phase1, isStreaming: true, themeID: ThemeRuntimeState.currentThemeID()))
         _ = fittedTimelineSize(for: mdView, width: 370)
 
         let tableAfterPhase1 = timelineFirstView(ofType: NativeTableBlockView.self, in: mdView)
@@ -261,7 +261,7 @@ struct AssistantTimelineRowContentViewTests {
         let phase1 = "Results:"
 
         let mdView = AssistantMarkdownContentView()
-        mdView.apply(configuration: .init(content: phase1, isStreaming: true, themeID: ThemeRuntimeState.currentThemeID()))
+        mdView.apply(configuration: .make(content: phase1, isStreaming: true, themeID: ThemeRuntimeState.currentThemeID()))
         _ = fittedTimelineSize(for: mdView, width: 370)
 
         let tableBeforeTable = timelineFirstView(ofType: NativeTableBlockView.self, in: mdView)
@@ -274,7 +274,7 @@ struct AssistantTimelineRowContentViewTests {
         | Name | Value |
         | --- | --- |
         """
-        mdView.apply(configuration: .init(content: phase2, isStreaming: true, themeID: ThemeRuntimeState.currentThemeID()))
+        mdView.apply(configuration: .make(content: phase2, isStreaming: true, themeID: ThemeRuntimeState.currentThemeID()))
         _ = fittedTimelineSize(for: mdView, width: 370)
 
         let tableAfterHeader = timelineFirstView(ofType: NativeTableBlockView.self, in: mdView)
@@ -333,7 +333,7 @@ struct AssistantTimelineRowContentViewTests {
     @Test func selectedTextEditMenuPrependsPiSubmenu() throws {
         let markdownView = AssistantMarkdownContentView()
         let router = SelectedTextPiActionRouter { _ in }
-        markdownView.apply(configuration: .init(
+        markdownView.apply(configuration: .make(
             content: "Alpha beta gamma",
             isStreaming: false,
             themeID: .light,
@@ -361,7 +361,7 @@ struct AssistantTimelineRowContentViewTests {
     @Test func selectedAssistantCodeBlockEditMenuPrependsPiSubmenu() throws {
         let markdownView = AssistantMarkdownContentView()
         let router = SelectedTextPiActionRouter { _ in }
-        markdownView.apply(configuration: .init(
+        markdownView.apply(configuration: .make(
             content: "```swift\nlet answer = 42\n```",
             isStreaming: false,
             themeID: .light,
@@ -386,7 +386,7 @@ struct AssistantTimelineRowContentViewTests {
     @Test func selectedAssistantTableEditMenuPrependsPiSubmenu() throws {
         let markdownView = AssistantMarkdownContentView()
         let router = SelectedTextPiActionRouter { _ in }
-        markdownView.apply(configuration: .init(
+        markdownView.apply(configuration: .make(
             content: "| A | B |\n| --- | --- |\n| 1 | 2 |",
             isStreaming: false,
             themeID: .light,
@@ -410,10 +410,10 @@ struct AssistantTimelineRowContentViewTests {
     @MainActor
     @Test func selectedTextEditMenuFallsBackToSystemMenuWithoutRouter() throws {
         let markdownView = AssistantMarkdownContentView()
-        markdownView.apply(configuration: .init(
+        markdownView.apply(configuration: .make(
             content: "Alpha beta gamma",
             isStreaming: false,
-            themeID: .light,
+            themeID: .light
         ))
 
         let textView = try #require(timelineFirstTextView(in: markdownView))
@@ -432,10 +432,10 @@ struct AssistantTimelineRowContentViewTests {
     @MainActor
     private func makeMarkdownView() -> AssistantMarkdownContentView {
         let mdView = AssistantMarkdownContentView()
-        mdView.apply(configuration: .init(
+        mdView.apply(configuration: .make(
             content: "Test content",
             isStreaming: false,
-            themeID: .light,
+            themeID: .light
         ))
         return mdView
     }

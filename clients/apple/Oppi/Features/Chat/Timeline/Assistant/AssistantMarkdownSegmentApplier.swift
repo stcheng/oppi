@@ -187,7 +187,9 @@ final class AssistantMarkdownSegmentApplier {
         if config.isStreaming, let lastIdx = segments.lastIndex(where: {
             if case .text = $0 { return true } else { return false }
         }), let tv = textViews[lastIdx] {
-            textRevealer.setFullyVisibleCount(tv.attributedText?.length ?? 0)
+            let fullText = tv.attributedText ?? NSAttributedString()
+            cachedStreamingTailNS = NSMutableAttributedString(attributedString: fullText)
+            textRevealer.setFullyVisibleCount(fullText.length)
         }
     }
 
@@ -336,7 +338,9 @@ final class AssistantMarkdownSegmentApplier {
         // The rebuilt tail starts fully visible.
         let lastTextIndex = segments.lastIndex(where: { if case .text = $0 { return true } else { return false } })
         if let lastIdx = lastTextIndex, let tv = textViews[lastIdx] {
-            textRevealer.setFullyVisibleCount(tv.attributedText?.length ?? 0)
+            let fullText = tv.attributedText ?? NSAttributedString()
+            cachedStreamingTailNS = NSMutableAttributedString(attributedString: fullText)
+            textRevealer.setFullyVisibleCount(fullText.length)
         }
     }
 

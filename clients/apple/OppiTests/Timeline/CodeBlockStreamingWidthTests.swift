@@ -51,7 +51,7 @@ struct CodeBlockStreamingWidthTests {
         let mdView = AssistantMarkdownContentView()
 
         // Phase 1: text only (streaming)
-        mdView.apply(configuration: .init(
+        mdView.apply(configuration: .make(
             content: "So to answer your question directly: **yes, we ARE mounting it.** Line 299 of `sdk-backend.ts`:",
             isStreaming: true,
             themeID: ThemeRuntimeState.currentThemeID()
@@ -60,7 +60,7 @@ struct CodeBlockStreamingWidthTests {
 
         // Phase 2: code fence opens (streaming, unclosed)
         let phase2 = "So to answer your question directly: **yes, we ARE mounting it.** Line 299 of `sdk-backend.ts`:\n\n```typescript\n// Mount agentDir so AGENTS.md, extensions,\nreadonlyMounts.push(agentDir);"
-        mdView.apply(configuration: .init(
+        mdView.apply(configuration: .make(
             content: phase2,
             isStreaming: true,
             themeID: ThemeRuntimeState.currentThemeID()
@@ -72,7 +72,7 @@ struct CodeBlockStreamingWidthTests {
 
         // Phase 3: code fence closes, more text follows (streaming)
         let phase3 = "So to answer your question directly: **yes, we ARE mounting it.** Line 299 of `sdk-backend.ts`:\n\n```typescript\n// Mount agentDir so AGENTS.md, extensions,\nreadonlyMounts.push(agentDir);\n```\n\nThat's production code, not my test."
-        mdView.apply(configuration: .init(
+        mdView.apply(configuration: .make(
             content: phase3,
             isStreaming: true,
             themeID: ThemeRuntimeState.currentThemeID()
@@ -83,7 +83,7 @@ struct CodeBlockStreamingWidthTests {
         let closedCodeBlockWidth = codeBlockAfterClose?.frame.width ?? 0
 
         // Phase 4: streaming ends
-        mdView.apply(configuration: .init(
+        mdView.apply(configuration: .make(
             content: phase3,
             isStreaming: false,
             themeID: ThemeRuntimeState.currentThemeID()
@@ -95,7 +95,7 @@ struct CodeBlockStreamingWidthTests {
 
         // Phase 5: fresh render (simulates re-entering chat)
         let freshView = AssistantMarkdownContentView()
-        freshView.apply(configuration: .init(
+        freshView.apply(configuration: .make(
             content: phase3,
             isStreaming: false,
             themeID: ThemeRuntimeState.currentThemeID()
@@ -138,7 +138,7 @@ struct CodeBlockStreamingWidthTests {
 
         // Streaming with unclosed code fence
         let content = "Some text before:\n\n```typescript\n// Mount agentDir so AGENTS.md, extensions,\nreadonlyMounts.push(agentDir);"
-        mdView.apply(configuration: .init(
+        mdView.apply(configuration: .make(
             content: content,
             isStreaming: true,
             themeID: ThemeRuntimeState.currentThemeID()
@@ -178,7 +178,7 @@ struct CodeBlockStreamingWidthTests {
         let mdView = AssistantMarkdownContentView()
 
         let content = "Some text:\n\n```typescript\n// Mount agentDir so AGENTS.md, extensions,\nreadonlyMounts.push(agentDir);\n```\n\nDone."
-        mdView.apply(configuration: .init(
+        mdView.apply(configuration: .make(
             content: content,
             isStreaming: true,
             themeID: ThemeRuntimeState.currentThemeID()
@@ -286,7 +286,7 @@ struct CodeBlockStreamingWidthTests {
         for i in 1...lines.count {
             let partial = lines[0..<i].joined(separator: "\n")
             let isLast = i == lines.count
-            streamView.apply(configuration: .init(
+            streamView.apply(configuration: .make(
                 content: partial,
                 isStreaming: !isLast,
                 themeID: ThemeRuntimeState.currentThemeID()
@@ -296,7 +296,7 @@ struct CodeBlockStreamingWidthTests {
 
         // Fresh render (simulating re-enter)
         let freshView = AssistantMarkdownContentView()
-        freshView.apply(configuration: .init(
+        freshView.apply(configuration: .make(
             content: content,
             isStreaming: false,
             themeID: ThemeRuntimeState.currentThemeID()

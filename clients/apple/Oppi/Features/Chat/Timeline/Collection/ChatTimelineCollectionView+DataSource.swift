@@ -20,7 +20,10 @@ import UIKit
 /// ourselves (via `contentView.systemLayoutSizeFitting`) and clamp the result,
 /// completely bypassing the assertion path in `UICollectionViewCell`.
 private final class SafeSizingCell: UICollectionViewCell {
-    private static let maxValidHeight: CGFloat = 10_000
+    /// High ceiling that still protects against bogus/non-finite layout output
+    /// while allowing legitimately massive timeline rows (for example, a very
+    /// long assistant markdown reply) to self-size correctly.
+    private static let maxValidHeight: CGFloat = 1_000_000
     private static let fallbackHeight: CGFloat = 44
 
     /// When true, `preferredLayoutAttributesFitting` uses a cached height on

@@ -225,7 +225,7 @@ enum FileShareService {
         case .plainText:
             return ContentExportSpec(
                 defaultFormat: .source,
-                formats: [.source, .pdf, .image],
+                formats: [.source],
                 sourceLabel: "Text File",
                 sourceBaseName: "text",
                 sourceExtension: "txt",

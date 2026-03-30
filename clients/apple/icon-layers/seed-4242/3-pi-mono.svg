@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <rect x="291.6" y="519.4" width="99.1" height="99.1" rx="23.8" fill="#ebebeb" opacity="0.491"/>
+  <rect x="633.3" y="519.4" width="99.1" height="99.1" rx="23.8" fill="#ebebeb" opacity="0.451"/>
+  <rect x="291.6" y="747.2" width="99.1" height="99.1" rx="23.8" fill="#ebebeb" opacity="0.560"/>
+  <rect x="177.6" y="177.6" width="99.1" height="99.1" rx="23.8" fill="#e8e5e0" opacity="0.754"/>
+  <rect x="405.5" y="177.6" width="99.1" height="99.1" rx="23.8" fill="#d0d0d0" opacity="0.656"/>
+  <rect x="519.4" y="177.6" width="99.1" height="99.1" rx="23.8" fill="#e8e5e0" opacity="0.715"/>
+  <rect x="291.6" y="291.6" width="99.1" height="99.1" rx="23.8" fill="#ebebeb" opacity="0.775"/>
+  <rect x="291.6" y="633.3" width="99.1" height="99.1" rx="23.8" fill="#e8e5e0" opacity="0.794"/>
+  <rect x="633.3" y="633.3" width="99.1" height="99.1" rx="23.8" fill="#e0e0e0" opacity="0.655"/>
+  <rect x="633.3" y="747.2" width="99.1" height="99.1" rx="23.8" fill="#d0d0d0" opacity="0.722"/>
+  <rect x="747.2" y="747.2" width="99.1" height="99.1" rx="23.8" fill="#e8e5e0" opacity="0.761"/>
+</svg>

@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Seed Comparison</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #111; color: #ccc; font-family: system-ui; padding: 24px; }
+  h1 { font-size: 18px; margin-bottom: 16px; }
+  .grid { display: flex; flex-wrap: wrap; gap: 24px; }
+  .card { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+  .card img {
+    width: 200px; height: 200px;
+    border-radius: 45px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+  }
+  .card .small-row { display: flex; gap: 6px; }
+  .card .small-row img { width: 52px; height: 52px; border-radius: 12px; }
+  .label { font-size: 12px; color: #666; }
+  .layers { display: flex; gap: 24px; margin-top: 32px; flex-wrap: wrap; }
+  .layer-card { text-align: center; }
+  .layer-card img {
+    width: 180px; height: 180px;
+    border-radius: 40px;
+    background-image:
+      linear-gradient(45deg, #222 25%, transparent 25%),
+      linear-gradient(-45deg, #222 25%, transparent 25%),
+      linear-gradient(45deg, transparent 75%, #222 75%),
+      linear-gradient(-45deg, transparent 75%, #222 75%);
+    background-size: 12px 12px;
+    background-position: 0 0, 0 6px, 6px -6px, -6px 0px;
+    background-color: #333;
+  }
+  .layer-card .label { margin-top: 4px; }
+  .section { font-size: 14px; color: #888; margin-top: 28px; margin-bottom: 10px;
+    border-bottom: 1px solid #222; padding-bottom: 4px; }
+</style>
+</head>
+<body>
+<h1>Seed Comparison — Warm Palette</h1>
+<div class="grid" id="grid"></div>
+
+<div class="section" id="layer-section">Individual Layers (click a seed above to show)</div>
+<div class="layers" id="layers"></div>
+
+<script>
+const seeds = [7, 13, 21, 42, 55, 77, 99, 128, 256, 314];
+const grid = document.getElementById('grid');
+
+seeds.forEach(seed => {
+  const card = document.createElement('div');
+  card.className = 'card';
+  card.style.cursor = 'pointer';
+  card.onclick = () => showLayers(seed);
+
+  const img = document.createElement('img');
+  img.src = `seed-${seed}/preview-combined.svg`;
+  card.appendChild(img);
+
+  const sm = document.createElement('div');
+  sm.className = 'small-row';
+  const sm1 = document.createElement('img');
+  sm1.src = `seed-${seed}/preview-combined.svg`;
+  const sm2 = document.createElement('img');
+  sm2.src = `seed-${seed}/preview-combined.svg`;
+  sm2.style.width = '32px';
+  sm2.style.height = '32px';
+  sm2.style.borderRadius = '7px';
+  sm.appendChild(sm1);
+  sm.appendChild(sm2);
+  card.appendChild(sm);
+
+  const label = document.createElement('div');
+  label.className = 'label';
+  label.textContent = `seed ${seed}`;
+  card.appendChild(label);
+
+  grid.appendChild(card);
+});
+
+function showLayers(seed) {
+  const container = document.getElementById('layers');
+  container.innerHTML = '';
+  document.getElementById('layer-section').textContent = `Layers — seed ${seed}`;
+
+  const layerFiles = [
+    ['1-scatter.svg', 'Scatter (experiments)'],
+    ['2-growth.svg', 'Growth (bleed)'],
+    ['3-pi-mono.svg', 'Pi (dimmed edges)'],
+    ['4-almost-sparks.svg', 'Almost (forming)'],
+    ['5-sparks.svg', 'Sparks (brilliant)'],
+    ['preview-combined.svg', 'Combined'],
+  ];
+
+  layerFiles.forEach(([file, name]) => {
+    const card = document.createElement('div');
+    card.className = 'layer-card';
+    const img = document.createElement('img');
+    img.src = `seed-${seed}/${file}`;
+    if (file === 'preview-combined.svg') {
+      img.style.backgroundImage = 'none';
+      img.style.backgroundColor = 'transparent';
+    }
+    card.appendChild(img);
+    const label = document.createElement('div');
+    label.className = 'label';
+    label.textContent = name;
+    card.appendChild(label);
+    container.appendChild(card);
+  });
+}
+
+showLayers(42);
+</script>
+</body>
+</html>

@@ -146,11 +146,11 @@ struct HTMLPDFExportDiagnosticTests {
                 "At least one chart should render via toBase64Image")
     }
 
-    // MARK: - Full Image Pipeline (default for HTML)
+    // MARK: - Full Image Pipeline
 
     @Test func fullHTMLImageExport() async throws {
         let html = try loadTestHTML()
-        let item = await FileShareService.renderDefault(.html(html))
+        let item = await FileShareService.render(.html(html), as: .image)
         guard case .image(let image) = item else {
             Issue.record("Expected image, got \(item)")
             return

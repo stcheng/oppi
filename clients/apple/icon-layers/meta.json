@@ -1,0 +1,27 @@
+{
+  "seed": 42,
+  "palette": "warm",
+  "grid": 8,
+  "canvas": 1024,
+  "cells": {
+    "pi": 15,
+    "growth": 6,
+    "scatter": 5,
+    "sparks": [
+      "2,5"
+    ]
+  },
+  "layers": [
+    "1-scatter.svg — faint debris (Icon Composer: low opacity, maybe blur)",
+    "2-growth.svg — medium cells bleeding from pi (translucency)",
+    "3-pi-mono.svg — main pi body, monochrome white/gray",
+    "4-sparks.svg — rare bright cells (keep vivid, maybe slight glow)"
+  ],
+  "iconComposerNotes": [
+    "Background: use Icon Composer fill — gradient or solid dark (#111118)",
+    "Import layers 1-4 as separate layers in a group",
+    "Or: group scatter+growth in one group, pi+sparks in another",
+    "Adjust translucency per group in Icon Composer",
+    "The system adds specular highlights automatically"
+  ]
+}
