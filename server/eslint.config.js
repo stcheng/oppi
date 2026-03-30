@@ -16,8 +16,7 @@ const serverRoot = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(serverRoot, "..");
 
 function isConsoleLogCall(node) {
-  const callee =
-    node.callee.type === "ChainExpression" ? node.callee.expression : node.callee;
+  const callee = node.callee.type === "ChainExpression" ? node.callee.expression : node.callee;
 
   if (callee.type !== "MemberExpression" || callee.computed) {
     return false;
@@ -99,8 +98,7 @@ const localPlugin = {
       meta: {
         type: "suggestion",
         docs: {
-          description:
-            "Warn when console.log uses template strings or concatenation",
+          description: "Warn when console.log uses template strings or concatenation",
         },
         schema: [],
         messages: {
@@ -146,7 +144,9 @@ const localPlugin = {
               return;
             }
 
-            const relativePath = normalizeRepoPath(path.relative(repoRoot, context.physicalFilename));
+            const relativePath = normalizeRepoPath(
+              path.relative(repoRoot, context.physicalFilename),
+            );
             if (!relativePath.startsWith("server/src/") || !relativePath.endsWith(".ts")) {
               return;
             }
@@ -182,10 +182,10 @@ export default tseslint.config(
   ...tseslint.configs.recommended,
   prettier,
   {
-    ignores: ["dist/", "node_modules/", "extensions/"],
+    ignores: ["dist/", "node_modules/"],
   },
   {
-    files: ["src/**/*.ts"],
+    files: ["src/**/*.ts", "extensions/**/*.ts"],
     plugins: {
       local: localPlugin,
     },
@@ -230,14 +230,11 @@ export default tseslint.config(
         },
       ],
       "@typescript-eslint/no-non-null-assertion": "warn",
-      "@typescript-eslint/consistent-type-imports": [
-        "error",
-        { prefer: "type-imports" },
-      ],
+      "@typescript-eslint/consistent-type-imports": ["error", { prefer: "type-imports" }],
     },
   },
   {
-    files: ["src/**/*.test.ts", "src/**/__tests__/**/*.ts"],
+    files: ["src/**/*.test.ts", "src/**/__tests__/**/*.ts", "extensions/**/*.test.ts"],
     rules: {
       "@typescript-eslint/no-non-null-assertion": "off",
     },

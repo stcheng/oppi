@@ -8,6 +8,8 @@ import { existsSync, readdirSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { extname, join } from "node:path";
 
+import { isManagedExtensionName } from "../extensions/first-party.js";
+
 const HOST_EXTENSIONS_DIR = join(homedir(), ".pi", "agent", "extensions");
 
 const EXTENSION_NAME_RE = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/;
@@ -44,7 +46,7 @@ export function isValidExtensionName(name: string): boolean {
  * List host extensions available for workspace selection.
  *
  * Scans ~/.pi/agent/extensions and returns discoverable entries.
- * Managed extensions (permission-gate) are excluded.
+ * Managed first-party extensions are excluded.
  */
 export function listHostExtensions(): HostExtensionInfo[] {
   if (!existsSync(HOST_EXTENSIONS_DIR)) {
@@ -78,7 +80,7 @@ export function listHostExtensions(): HostExtensionInfo[] {
       continue;
     }
 
-    if (name === "permission-gate") {
+    if (isManagedExtensionName(name)) {
       continue;
     }
 
@@ -120,15 +122,15 @@ export function resolveWorkspaceExtensions(
       continue;
     }
 
-    const ext = resolveByName(requested);
-    if (!ext) {
-      warnings.push(`Extension not found: ${requested}`);
+    const normalized = normalizeName(requested);
+    if (isManagedExtensionName(normalized)) {
+      warnings.push(`Ignoring managed extension in explicit list: ${requested}`);
       continue;
     }
 
-    // Permission gate is managed by oppi-server and loaded separately.
-    if (ext.name === "permission-gate") {
-      warnings.push(`Ignoring managed extension in explicit list: ${requested}`);
+    const ext = resolveByName(normalized);
+    if (!ext) {
+      warnings.push(`Extension not found: ${requested}`);
       continue;
     }
 

@@ -3,8 +3,8 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
 
-import { createSpawnAgentFactory, type SpawnAgentContext } from "./spawn-agent-extension.js";
-import type { Session, ServerMessage } from "./types.js";
+import { createSpawnAgentFactory, type SpawnAgentContext } from "./spawn-agent.js";
+import type { Session, ServerMessage } from "../src/types.js";
 
 // ---------------------------------------------------------------------------
 // Test helpers

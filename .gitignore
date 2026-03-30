@@ -61,6 +61,8 @@ server/coverage/
 ScreenRecording_*.mov
 
 server/extensions/
+!server/extensions/
+!server/extensions/**
 
 # Autoresearch session artifacts (regenerated each run)
 **/autoresearch.md

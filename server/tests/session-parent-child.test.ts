@@ -8,7 +8,7 @@
  * - Session lifecycle with children (idle guard gap)
  *
  * Note: spawnChildSession/spawnDetachedSession require a full GateServer + SDK
- * process and are tested via spawn-agent-extension.test.ts (64 tests through
+ * process and are tested via extensions/spawn-agent.test.ts (64 tests through
  * the mock context). These tests focus on the storage + query layer.
  */
 
@@ -135,7 +135,10 @@ function makeManager(storage: Storage): SessionManager {
  * Seed sessions directly into storage (bypasses startSession which needs GateServer).
  * Use this when you need specific parent-child relationships without SDK processes.
  */
-function seedSessions(storage: Storage & { _sessions: Map<string, Session> }, ...sessions: Session[]) {
+function seedSessions(
+  storage: Storage & { _sessions: Map<string, Session> },
+  ...sessions: Session[]
+) {
   for (const s of sessions) {
     storage._sessions.set(s.id, { ...s });
   }
@@ -212,7 +215,11 @@ describe("session parent-child relationships", () => {
     it("includes children regardless of status", () => {
       const parent = makeSession({ id: "parent" });
       const active = makeSession({ id: "c-active", parentSessionId: "parent", status: "busy" });
-      const stopped = makeSession({ id: "c-stopped", parentSessionId: "parent", status: "stopped" });
+      const stopped = makeSession({
+        id: "c-stopped",
+        parentSessionId: "parent",
+        status: "stopped",
+      });
       const error = makeSession({ id: "c-error", parentSessionId: "parent", status: "error" });
       const ready = makeSession({ id: "c-ready", parentSessionId: "parent", status: "ready" });
       seedSessions(storage, parent, active, stopped, error, ready);
@@ -384,7 +391,8 @@ describe("session parent-child relationships", () => {
 
       const childIds = manager.listChildSessions("parent").map((c) => c.id);
       const aggregate =
-        (pendingCounts["parent"] ?? 0) + childIds.reduce((sum, id) => sum + (pendingCounts[id] ?? 0), 0);
+        (pendingCounts["parent"] ?? 0) +
+        childIds.reduce((sum, id) => sum + (pendingCounts[id] ?? 0), 0);
 
       expect(aggregate).toBe(3);
     });
@@ -397,7 +405,8 @@ describe("session parent-child relationships", () => {
       const pendingCounts: Record<string, number> = { parent: 0, child: 3 };
       const childIds = manager.listChildSessions("parent").map((c) => c.id);
       const aggregate =
-        (pendingCounts["parent"] ?? 0) + childIds.reduce((sum, id) => sum + (pendingCounts[id] ?? 0), 0);
+        (pendingCounts["parent"] ?? 0) +
+        childIds.reduce((sum, id) => sum + (pendingCounts[id] ?? 0), 0);
 
       expect(aggregate).toBe(3);
     });
@@ -411,7 +420,8 @@ describe("session parent-child relationships", () => {
       const pendingCounts: Record<string, number> = { parent: 0, child: 0, gc: 5 };
       const childIds = manager.listChildSessions("parent").map((c) => c.id);
       const aggregate =
-        (pendingCounts["parent"] ?? 0) + childIds.reduce((sum, id) => sum + (pendingCounts[id] ?? 0), 0);
+        (pendingCounts["parent"] ?? 0) +
+        childIds.reduce((sum, id) => sum + (pendingCounts[id] ?? 0), 0);
 
       // Grandchild's 5 not included — only direct children
       expect(aggregate).toBe(0);
@@ -542,9 +552,7 @@ describe("session parent-child relationships", () => {
       }
 
       // Verify all stopped
-      const allStopped = manager
-        .listChildSessions("parent")
-        .every((c) => c.status === "stopped");
+      const allStopped = manager.listChildSessions("parent").every((c) => c.status === "stopped");
       expect(allStopped).toBe(true);
     });
   });
@@ -607,7 +615,7 @@ describe("session parent-child relationships", () => {
       const gc1 = makeSession({ id: "gc1", parentSessionId: "c1", cost: 0.2 });
       seedSessions(storage, root, child1, child2, gc1);
 
-      // Recursive cost aggregation pattern (used by spawn-agent-extension computeTreeCost)
+      // Recursive cost aggregation pattern (used by extensions/spawn-agent computeTreeCost)
       function treeCost(sessionId: string): number {
         const session = storage.getSession(sessionId);
         if (!session) return 0;

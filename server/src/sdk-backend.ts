@@ -37,6 +37,7 @@ import type {
   PiStateSnapshot,
   SessionBackendEvent,
 } from "./pi-events.js";
+import { isManagedExtensionName } from "../extensions/first-party.js";
 import type { ServerMetricCollector } from "./server-metric-collector.js";
 import type { Storage } from "./storage.js";
 import type { Session, Workspace } from "./types.js";
@@ -58,6 +59,12 @@ function resolveRegistryModel(
   }
 
   return modelRegistry.find(parsed.provider, parsed.model);
+}
+
+function getExtensionName(ext: { path: string; resolvedPath: string }): string {
+  const file = basename(ext.resolvedPath || ext.path);
+  const suffix = extname(file);
+  return suffix ? file.slice(0, -suffix.length) : file;
 }
 
 /**
@@ -221,25 +228,22 @@ export class SdkBackend {
       appendSystemPrompt:
         workspaceSystemPromptMode === "append" ? workspace?.systemPrompt : undefined,
       extensionsOverride: (base) => {
-        // 1. Always filter out pi's built-in permission-gate (oppi uses its own policy engine)
+        // 1. Filter out extensions managed directly by oppi-server.
+        //    ask and spawn_agent are injected as first-party factory extensions,
+        //    and permission-gate is replaced by oppi's own policy engine.
         let filtered = base.extensions.filter(
-          (ext) =>
-            !ext.path.includes("permission-gate") && !ext.resolvedPath.includes("permission-gate"),
+          (ext) => !isManagedExtensionName(getExtensionName(ext)),
         );
 
-        // 2. If workspace specifies an extensions list, only load those.
-        //    Always keep inline factory extensions (path "<inline:N>") — they're
-        //    injected programmatically via extraExtensionFactories and shouldn't
-        //    be subject to workspace allowlist filtering.
+        // 2. If the workspace specifies an extensions allowlist, that allowlist is
+        //    authoritative. Always keep inline factory extensions (path "<inline:N>")
+        //    because they're injected programmatically by the server.
         const allowedNames = workspace?.extensions;
-        if (allowedNames && allowedNames.length > 0) {
+        if (allowedNames !== undefined) {
           const allowed = new Set(allowedNames);
           filtered = filtered.filter((ext) => {
             if (ext.path.startsWith("<inline:")) return true;
-            const file = basename(ext.resolvedPath || ext.path);
-            const ext2 = extname(file);
-            const name = ext2 ? file.slice(0, -ext2.length) : file;
-            return allowed.has(name);
+            return allowed.has(getExtensionName(ext));
           });
         }
 

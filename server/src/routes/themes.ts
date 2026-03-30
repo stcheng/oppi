@@ -12,10 +12,10 @@ export function createThemeRoutes(ctx: RouteContext, helpers: RouteHelpers): Rou
   }
 
   function bundledThemesDir(): string {
-    // Source: src/routes/themes.ts → compiled: dist/routes/themes.js
-    // import.meta.dirname = dist/routes/, so go up two levels to reach server/themes/
+    // Source: src/routes/themes.ts → compiled: dist/src/routes/themes.js
+    // import.meta.dirname = dist/src/routes/, so go up three levels to reach server/themes/
     // (tsc does not copy JSON files to dist/)
-    return join(import.meta.dirname, "..", "..", "themes");
+    return join(import.meta.dirname, "..", "..", "..", "themes");
   }
 
   function piThemesDir(): string {

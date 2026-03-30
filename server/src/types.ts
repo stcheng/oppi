@@ -25,7 +25,7 @@ export interface Workspace {
   hostMount?: string; // Host directory to mount as /work (e.g. "~/workspace/oppi")
 
   // Extensions
-  extensions?: string[]; // Extension names from ~/.pi/agent/extensions
+  extensions?: string[]; // Extension allowlist (host extensions + first-party names like ask/spawn_agent)
 
   // Git status
   gitStatusEnabled?: boolean; // Show git status context bar (default: true)

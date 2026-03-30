@@ -12,7 +12,7 @@ import { join } from "node:path";
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import type { Session, ServerMessage } from "../src/types.js";
-import { createSpawnAgentFactory, type SpawnAgentContext } from "../src/spawn-agent-extension.js";
+import { createSpawnAgentFactory, type SpawnAgentContext } from "../extensions/spawn-agent.js";
 
 // ---------------------------------------------------------------------------
 // Helpers

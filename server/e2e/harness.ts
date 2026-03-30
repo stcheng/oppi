@@ -121,26 +121,22 @@ async function startDockerServer(): Promise<void> {
   writeFileSync(tmpModels, JSON.stringify(modelsConfig, null, 2));
   dockerModelsJson = tmpModels;
 
-  execSync(
-    `docker compose -f ${composeFile} up -d --build --wait --wait-timeout 120`,
-    {
-      cwd: SERVER_DIR,
-      stdio: "inherit",
-      env: {
-        ...process.env,
-        E2E_PORT: String(E2E_PORT),
-        E2E_MODELS_JSON: tmpModels,
-      },
+  execSync(`docker compose -f ${composeFile} up -d --build --wait --wait-timeout 120`, {
+    cwd: SERVER_DIR,
+    stdio: "inherit",
+    env: {
+      ...process.env,
+      E2E_PORT: String(E2E_PORT),
+      E2E_MODELS_JSON: tmpModels,
     },
-  );
+  });
 
   await waitForHealth();
 
   // Set the server's defaultModel to the MLX model (replaces the Dockerfile default)
-  execSync(
-    `docker exec oppi-e2e node dist/cli.js config set defaultModel "${E2E_MODEL}"`,
-    { stdio: "pipe" },
-  );
+  execSync(`docker exec oppi-e2e node dist/src/cli.js config set defaultModel "${E2E_MODEL}"`, {
+    stdio: "pipe",
+  });
   console.log(`[e2e] Docker server healthy, defaultModel=${E2E_MODEL}`);
 }
 
@@ -171,7 +167,7 @@ async function startNativeServer(): Promise<void> {
   nativeDataDir = mkdtempSync(join(tmpdir(), "oppi-e2e-native-"));
 
   // Pre-configure
-  const { Storage } = await import(join(SERVER_DIR, "dist/storage.js"));
+  const { Storage } = await import(join(SERVER_DIR, "dist/src/storage.js"));
   const storage = new Storage(nativeDataDir);
   storage.updateConfig({
     host: "127.0.0.1",
@@ -192,7 +188,7 @@ async function startNativeServer(): Promise<void> {
   const logPath = join(nativeDataDir, "server.log");
   const logFd = openSync(logPath, "w");
 
-  serverProcess = spawn("node", ["dist/cli.js", "serve"], {
+  serverProcess = spawn("node", ["dist/src/cli.js", "serve"], {
     cwd: SERVER_DIR,
     env: {
       ...process.env,
@@ -292,8 +288,8 @@ export async function generateTestInvite(): Promise<{
 }> {
   if (process.env.E2E_NATIVE === "1") {
     // Native mode: access storage directly
-    const { Storage } = await import(join(SERVER_DIR, "dist/storage.js"));
-    const { generateInvite } = await import(join(SERVER_DIR, "dist/invite.js"));
+    const { Storage } = await import(join(SERVER_DIR, "dist/src/storage.js"));
+    const { generateInvite } = await import(join(SERVER_DIR, "dist/src/invite.js"));
 
     const storage = new Storage(nativeDataDir!);
     const invite = generateInvite(
@@ -325,8 +321,8 @@ export async function generateTestInvite(): Promise<{
 
   // Docker mode: write script to temp file, copy into container, execute
   const scriptContent = [
-    'import { Storage } from "./dist/storage.js";',
-    'import { generateInvite } from "./dist/invite.js";',
+    'import { Storage } from "./dist/src/storage.js";',
+    'import { generateInvite } from "./dist/src/invite.js";',
     "const storage = new Storage(process.env.OPPI_DATA_DIR);",
     "const invite = generateInvite(",
     '  storage, () => "host.docker.internal", () => "e2e-server",',
@@ -350,10 +346,9 @@ export async function generateTestInvite(): Promise<{
 
   try {
     execSync(`docker cp ${tmpScript} oppi-e2e:/opt/oppi-server/gen-invite.mjs`, { stdio: "pipe" });
-    const raw = execSync(
-      "docker exec -w /opt/oppi-server oppi-e2e node gen-invite.mjs",
-      { encoding: "utf-8" },
-    ).trim();
+    const raw = execSync("docker exec -w /opt/oppi-server oppi-e2e node gen-invite.mjs", {
+      encoding: "utf-8",
+    }).trim();
     return JSON.parse(raw);
   } finally {
     rmSync(tmpScript, { force: true });

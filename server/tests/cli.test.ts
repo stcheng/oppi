@@ -10,7 +10,7 @@ import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
-const CLI = resolve(__dirname, "../dist/cli.js");
+const CLI = resolve(__dirname, "../dist/src/cli.js");
 let dataDir: string;
 
 let hasOpenSSL = true;

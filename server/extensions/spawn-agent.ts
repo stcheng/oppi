@@ -6,15 +6,15 @@
  *   check_agents   — poll child session status
  *   inspect_agent  — progressive-disclosure trace inspection
  *
- * Injected as an in-process factory extension (like autoresearch).
+ * Injected as an in-process first-party factory extension.
  * Uses direct SessionManager methods — no HTTP round-trip needed.
  */
 
 import type { ExtensionFactory } from "@mariozechner/pi-coding-agent";
 import * as fs from "node:fs";
 import { Type, type Static } from "@sinclair/typebox";
-import type { ServerMessage, Session, SubagentConfig } from "./types.js";
-import { defaultSubagentConfig } from "./storage/config-store.js";
+import type { ServerMessage, Session, SubagentConfig } from "../src/types.js";
+import { defaultSubagentConfig } from "../src/storage/config-store.js";
 
 // ---------------------------------------------------------------------------
 // Context interface — thin abstraction over SessionManager

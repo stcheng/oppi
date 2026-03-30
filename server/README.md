@@ -78,7 +78,7 @@ docker compose up -d --build
 
 What it does:
 
-- runs `node dist/cli.js serve` as PID 1 in container
+- runs `node dist/src/cli.js serve` as PID 1 in container
 - auto-restarts via `restart: unless-stopped`
 - binds host `${OPPI_PORT:-7750}` to the same in-container port
 - persists server state in Docker volume `oppi-data` (`/data/oppi`)
@@ -105,7 +105,7 @@ curl -s "http://127.0.0.1:${OPPI_PORT:-7750}/health"
 docker compose exec oppi-server curl -sS "$SEARXNG_URL/healthz"
 
 # Generate pairing QR/deep link explicitly
-docker compose exec oppi-server node dist/cli.js pair --host <your-lan-host-or-ip>
+docker compose exec oppi-server node dist/src/cli.js pair --host <your-lan-host-or-ip>
 
 # Force resync PI seed from host on next start
 PI_AGENT_SYNC_MODE=always docker compose up -d
@@ -132,12 +132,14 @@ npx oppi token rotate            # rotate owner bearer token
 
 ## Built-in extensions
 
-The server ships two extensions, injected into every agent session by default:
+The server ships two first-party extensions, injected into every agent session by default:
 
 - **ask** — structured Q&A between agent and user. The agent poses questions with predefined options; the iOS app renders them as interactive cards and routes answers back.
 - **spawn_agent** — multi-agent orchestration. Spawn child sessions, inspect traces, send messages mid-turn, stop or resume agents. See [docs/sub-agents.md](docs/sub-agents.md).
 
-Extensions are configurable per workspace via the `extensions` field in workspace settings.
+These first-party extensions are configurable per workspace via the `extensions` field in workspace settings. If a workspace sets an explicit allowlist, omitting `ask` or `spawn_agent` disables them for that workspace.
+
+Pi provides the core runtime and extension model. Oppi builds on top of that with the mobile client, transport, server orchestration, native rendering, and a few server-managed capabilities.
 
 ## Server stats API
 
