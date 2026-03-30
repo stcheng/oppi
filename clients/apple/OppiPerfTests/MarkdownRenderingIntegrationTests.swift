@@ -10,7 +10,7 @@ import UIKit
 ///
 /// This catches regressions that isolated unit tests miss — e.g., the segment
 /// applier receiving the right segments but failing to create/layout the right views.
-@Suite("MarkdownRenderingIntegration")
+@Suite("MarkdownRenderingIntegration", .tags(.artifact))
 @MainActor
 struct MarkdownRenderingIntegrationTests {
 

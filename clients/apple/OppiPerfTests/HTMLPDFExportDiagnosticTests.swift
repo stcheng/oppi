@@ -8,7 +8,7 @@ import WebKit
 ///
 /// Uses a real HTML file with Chart.js charts and Leaflet maps to validate
 /// the full export pipeline. Saves PDF output to /tmp for visual inspection.
-@Suite("HTML PDF Export Diagnostic")
+@Suite("HTML PDF Export Diagnostic", .tags(.artifact))
 @MainActor
 struct HTMLPDFExportDiagnosticTests {
 

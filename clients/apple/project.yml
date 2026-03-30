@@ -255,6 +255,20 @@ targets:
         CODE_SIGN_IDENTITY: ""
         CODE_SIGNING_ALLOWED: "NO"
 
+  OppiPerfTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: OppiPerfTests
+        type: group
+    dependencies:
+      - target: Oppi
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.chenda.OppiPerfTests
+        CODE_SIGN_IDENTITY: ""
+        CODE_SIGNING_ALLOWED: "NO"
+
   OppiUITests:
     type: bundle.ui-testing
     platform: iOS
@@ -347,12 +361,14 @@ schemes:
         OppiActivityExtension: all
         OppiControlWidget: all
         OppiTests: [test]
+        OppiPerfTests: [test]
         OppiUITests: [test]
         OppiE2ETests: [test]
     test:
       targets:
         - name: OppiTests
           randomExecutionOrder: true
+        - name: OppiPerfTests
         - name: OppiUITests
         - name: OppiE2ETests
 

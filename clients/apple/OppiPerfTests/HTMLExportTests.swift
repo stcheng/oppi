@@ -8,7 +8,7 @@ private final class BundleToken {}
 ///
 /// These run on the simulator (WKWebView needs a window for GPU compositing).
 /// Tests verify the full pipeline: HTML string → WKWebView → rendered output.
-@Suite("HTML Export")
+@Suite("HTML Export", .tags(.artifact))
 @MainActor
 struct HTMLExportTests {
 
