@@ -152,7 +152,7 @@ x = \frac{-b \pm \sqrt{b^2 - 4ac}}{2a}
 
 ## Remote Image (HTTPS)
 
-![Oppi architecture](https://raw.githubusercontent.com/nicklockwood/SwiftFormat/main/EditorExtension/Assets.xcassets/AppIcon.appiconset/icon_128x128.png)
+![GitHub avatar](https://avatars.githubusercontent.com/u/1?v=4)
 
 ## Workspace Relative Image
 
