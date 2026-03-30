@@ -7,7 +7,7 @@ import WebKit
 /// Converts file content into shareable formats (image, PDF, source file).
 ///
 /// **Design doc**: `.internal/designs/share-sheet.md`
-/// **Architecture**: `docs/ARCHITECTURE.md` → "Share / export system"
+/// **Architecture**: `.internal/ARCHITECTURE.md` → "Share / export system"
 ///
 /// All rendering knobs are in the "Export Configuration" section below.
 /// Three render dispatchers (`renderImage`, `renderPDF`, `renderSource`)

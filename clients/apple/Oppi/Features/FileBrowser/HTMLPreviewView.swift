@@ -78,7 +78,7 @@ final class HTMLRenderView: UIView, WKNavigationDelegate {
     private let webView: PiWKWebView
     private let contentTracker = HTMLContentTracker()
 
-    init(htmlString: String, piActionHandler: ((String, PiQuickAction) -> Void)? = nil) {
+    init(htmlString: String, piActionHandler: ((String, PiQuickAction) -> Void)? = nil, piActionStore: PiQuickActionStore? = nil) {
         let config = WKWebViewConfiguration()
         config.websiteDataStore = .nonPersistent()
         config.mediaTypesRequiringUserActionForPlayback = .all
@@ -91,6 +91,7 @@ final class HTMLRenderView: UIView, WKNavigationDelegate {
         wv.backgroundColor = .clear
         wv.scrollView.backgroundColor = .clear
         wv.piActionHandler = piActionHandler
+        wv.piActionStore = piActionStore
         self.webView = wv
 
         super.init(frame: .zero)
@@ -138,9 +139,10 @@ final class HTMLRenderView: UIView, WKNavigationDelegate {
         }
     }
 
-    /// Update the pi action handler (e.g., when SwiftUI re-renders).
-    func updatePiActionHandler(_ handler: ((String, PiQuickAction) -> Void)?) {
+    /// Update the pi action handler and store (e.g., when SwiftUI re-renders).
+    func updatePiActionHandler(_ handler: ((String, PiQuickAction) -> Void)?, actionStore: PiQuickActionStore? = nil) {
         webView.piActionHandler = handler
+        webView.piActionStore = actionStore
     }
 
     // MARK: - Private
@@ -210,13 +212,14 @@ struct HTMLWebView: UIViewRepresentable {
     let htmlString: String
     let baseFileName: String
     var piActionHandler: ((String, PiQuickAction) -> Void)?
+    var piActionStore: PiQuickActionStore?
 
     func makeUIView(context: Context) -> HTMLRenderView {
-        HTMLRenderView(htmlString: htmlString, piActionHandler: piActionHandler)
+        HTMLRenderView(htmlString: htmlString, piActionHandler: piActionHandler, piActionStore: piActionStore)
     }
 
     func updateUIView(_ view: HTMLRenderView, context: Context) {
-        view.updatePiActionHandler(piActionHandler)
+        view.updatePiActionHandler(piActionHandler, actionStore: piActionStore)
         view.load(htmlString)
     }
 }

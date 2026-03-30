@@ -296,6 +296,8 @@ extension AssistantMarkdownContentView: UITextViewDelegate {
             NotificationCenter.default.post(name: .webLinkTapped, object: normalizedURL)
         }
 
+        // Note: uses UIActivityViewController directly rather than FileSharePresenter
+        // because this shares a URL from a text interaction menu, not file content.
         let shareAction = UIAction(
             title: "Share...",
             image: UIImage(systemName: "square.and.arrow.up")

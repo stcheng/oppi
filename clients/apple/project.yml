@@ -140,7 +140,7 @@ targets:
           if command -v node >/dev/null 2>&1; then
             bun "$SRCROOT/../../server/scripts/check-architecture-boundaries.ts" --scope ios --format xcode
           else
-            echo "error: Node.js is required for architecture boundary checks (ARCHITECTURE.md#ios-layers)"
+            echo "error: Node.js is required for architecture boundary checks (.internal/ARCHITECTURE.md#ios-layers)"
             exit 1
           fi
         name: ArchitectureBoundaries

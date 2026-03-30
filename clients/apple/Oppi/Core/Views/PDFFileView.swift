@@ -1,40 +1,43 @@
+import PDFKit
 import SwiftUI
-import WebKit
 
-/// Renders PDF content using WKWebView.
+/// Renders PDF content using PDFKit's native PDFView.
 ///
-/// Accepts base64-encoded PDF data or raw content and displays it
-/// in an embedded web view with native PDF rendering.
+/// Accepts base64-encoded PDF data and displays it in an embedded
+/// PDFView with continuous vertical scrolling.
 struct PDFFileView: View {
     let content: String
 
     var body: some View {
-        PDFWebView(content: content)
-            .frame(minHeight: 300)
+        if let data = Data(base64Encoded: content),
+           let document = PDFDocument(data: data)
+        {
+            NativePDFView(document: document)
+                .frame(minHeight: 300)
+        } else {
+            ContentUnavailableView(
+                "Unable to Display PDF",
+                systemImage: "doc.questionmark",
+                description: Text("The PDF data could not be decoded.")
+            )
+        }
     }
 }
 
-private struct PDFWebView: UIViewRepresentable {
-    let content: String
+private struct NativePDFView: UIViewRepresentable {
+    let document: PDFDocument
 
-    func makeUIView(context: Context) -> WKWebView {
-        let config = WKWebViewConfiguration()
-        let webView = WKWebView(frame: .zero, configuration: config)
-        webView.scrollView.isScrollEnabled = true
-        webView.isOpaque = false
-        webView.backgroundColor = .clear
-        return webView
+    func makeUIView(context: Context) -> PDFView {
+        let view = PDFView()
+        view.autoScales = true
+        view.displayMode = .singlePageContinuous
+        view.displayDirection = .vertical
+        view.backgroundColor = .clear
+        view.document = document
+        return view
     }
 
-    private static let blankURL = URL(string: "about:blank") ?? URL(fileURLWithPath: "/")
-
-    func updateUIView(_ webView: WKWebView, context: Context) {
-        // Try base64 decode first
-        if let data = Data(base64Encoded: content) {
-            webView.load(data, mimeType: "application/pdf", characterEncodingName: "", baseURL: Self.blankURL)
-        } else if let data = content.data(using: .utf8) {
-            // Raw bytes as UTF-8 — unlikely for real PDF but handle gracefully
-            webView.load(data, mimeType: "application/pdf", characterEncodingName: "", baseURL: Self.blankURL)
-        }
+    func updateUIView(_ view: PDFView, context: Context) {
+        view.document = document
     }
 }

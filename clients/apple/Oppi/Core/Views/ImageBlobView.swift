@@ -27,6 +27,7 @@ struct ImageBlobView: View {
                         Button("Save to Photos", systemImage: "square.and.arrow.down") {
                             PhotoLibrarySaver.save(decoded)
                         }
+                        // ShareLink for simple Transferable image share; FileSharePresenter is for file export flows.
                         ShareLink(item: Image(uiImage: decoded), preview: SharePreview("Image"))
                     }
             } else if decodeFailed {
