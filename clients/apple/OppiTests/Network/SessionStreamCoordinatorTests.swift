@@ -4,8 +4,8 @@ import Testing
 
 // MARK: - Catch-Up Decision Logic
 
-@MainActor
 @Suite("SessionStreamCoordinator Catch-Up Decision")
+@MainActor
 struct SessionStreamCoordinatorCatchUpTests {
 
     @Test func noGapWhenCurrentSeqEqualsLastSeen() async {
@@ -101,8 +101,8 @@ struct SessionStreamCoordinatorCatchUpTests {
 
 // MARK: - consumeLiveSeq
 
-@MainActor
 @Suite("SessionStreamCoordinator consumeLiveSeq")
+@MainActor
 struct SessionStreamCoordinatorConsumeSeqTests {
 
     @Test func returnsTrueAndAdvancesForNewSeq() async {
@@ -199,8 +199,8 @@ struct SessionStreamCoordinatorConsumeSeqTests {
 
 // MARK: - Seq State Management
 
-@MainActor
 @Suite("SessionStreamCoordinator Seq State")
+@MainActor
 struct SessionStreamCoordinatorSeqStateTests {
 
     @Test func lastSeenSeqDefaultsToZero() async {
@@ -282,8 +282,8 @@ struct SessionStreamCoordinatorSeqStateTests {
 
 // MARK: - State Machine
 
-@MainActor
 @Suite("SessionStreamCoordinator State Machine")
+@MainActor
 struct SSCStateMachineTests {
 
     @Test func initialStateIsIdle() async {
@@ -318,8 +318,8 @@ struct SSCStateMachineTests {
 
 // MARK: - Eager Command Resolution
 
-@MainActor
 @Suite("SessionStreamCoordinator Eager Resolution")
+@MainActor
 struct SSCEagerResolutionTests {
 
     @Test func subscribeIsEager() {
@@ -360,8 +360,8 @@ struct SSCEagerResolutionTests {
 
 // MARK: - Multi-Session Isolation
 
-@MainActor
 @Suite("SessionStreamCoordinator Multi-Session Isolation")
+@MainActor
 struct SSCMultiSessionTests {
 
     @Test func lastSeenSeqIndependentPerSession() async {

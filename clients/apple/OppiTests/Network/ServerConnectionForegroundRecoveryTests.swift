@@ -3,16 +3,15 @@ import Foundation
 @testable import Oppi
 
 @Suite("ServerConnection Foreground Recovery")
+@MainActor
 struct ServerConnectionForegroundRecoveryTests {
 
-    @MainActor
     @Test func reconnectIfNeededWithoutApiClientIsNoOp() async {
         let conn = ServerConnection()
         await conn.reconnectIfNeeded()
         #expect(!conn.foregroundRecoveryInFlight)
     }
 
-    @MainActor
     @Test func reconnectIfNeededReentrancyGuard() async {
         let conn = ServerConnection()
         conn.configure(credentials: ServerCredentials(
@@ -23,7 +22,6 @@ struct ServerConnectionForegroundRecoveryTests {
         #expect(!conn.foregroundRecoveryInFlight, "Flag should be reset after completion")
     }
 
-    @MainActor
     @Test func reconnectDoesNotTouchReducerTimeline() async {
         // With per-session reducers, the connection has no reducer to touch.
         // This test verifies foreground recovery doesn't crash without one.
@@ -39,7 +37,6 @@ struct ServerConnectionForegroundRecoveryTests {
         // reducer access during foreground recovery.
     }
 
-    @MainActor
     @Test func reconnectRefreshesWithoutActiveSession() async {
         let conn = ServerConnection()
         conn.configure(credentials: ServerCredentials(
@@ -49,7 +46,6 @@ struct ServerConnectionForegroundRecoveryTests {
         #expect(!conn.foregroundRecoveryInFlight)
     }
 
-    @MainActor
     @Test func reconnectSkipsFullListRefreshWhenRecentSyncIsFresh() async {
         let conn = ServerConnection()
         conn.configure(credentials: ServerCredentials(
@@ -69,7 +65,6 @@ struct ServerConnectionForegroundRecoveryTests {
         #expect(!conn.foregroundRecoveryInFlight)
     }
 
-    @MainActor
     @Test func reconnectPerformsFullListRefreshWhenCachedDataIsStale() async {
         let conn = ServerConnection()
         conn.configure(credentials: ServerCredentials(
@@ -89,7 +84,6 @@ struct ServerConnectionForegroundRecoveryTests {
         #expect(!conn.foregroundRecoveryInFlight)
     }
 
-    @MainActor
     @Test func refreshSessionListSkipsNetworkWhenFreshAndNotForced() async {
         let conn = ServerConnection()
         conn.configure(credentials: ServerCredentials(
@@ -105,7 +99,6 @@ struct ServerConnectionForegroundRecoveryTests {
         #expect(conn.sessionStore.lastSyncFailed == false)
     }
 
-    @MainActor
     @Test func refreshSessionListSkipEmitsStructuredBreadcrumb() async {
         let conn = ServerConnection()
         conn.configure(credentials: ServerCredentials(
@@ -130,7 +123,6 @@ struct ServerConnectionForegroundRecoveryTests {
         #expect(skipMetadata["durationMs"] != nil)
     }
 
-    @MainActor
     @Test func refreshSessionListForceRefreshesEvenWhenFresh() async {
         let conn = ServerConnection()
         conn.configure(credentials: ServerCredentials(
@@ -146,7 +138,6 @@ struct ServerConnectionForegroundRecoveryTests {
         #expect(conn.sessionStore.lastSyncFailed == true)
     }
 
-    @MainActor
     @Test func refreshWorkspaceCatalogSkipsNetworkWhenFreshAndNotForced() async {
         let conn = ServerConnection()
         conn.configure(credentials: ServerCredentials(
@@ -163,7 +154,6 @@ struct ServerConnectionForegroundRecoveryTests {
         #expect(conn.workspaceStore.lastSyncFailed == false)
     }
 
-    @MainActor
     @Test func refreshWorkspaceCatalogForceEmitsEndBreadcrumbWithCounts() async {
         let conn = ServerConnection()
         conn.configure(credentials: ServerCredentials(

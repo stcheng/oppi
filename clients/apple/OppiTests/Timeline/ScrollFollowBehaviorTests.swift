@@ -4,8 +4,8 @@ import UIKit
 @testable import Oppi
 
 @Suite("Scroll follow behavior")
+@MainActor
 struct ScrollFollowBehaviorTests {
-    @MainActor
     @Test func passiveBottomPinPreventsLayoutDriftDetachment() {
         // Non-user-driven scroll events where content grew always pin to
         // the bottom. This prevents cumulative drift from self-sizing
@@ -49,7 +49,6 @@ struct ScrollFollowBehaviorTests {
                 "non-user-driven drift without content growth allows detach past exit threshold")
     }
 
-    @MainActor
     @Test func attachedIdleLayoutGrowthPinsViewportToBottom() {
         let harness = makeTimelineHarness(sessionId: "session-a")
         let metricsView = TimelineScrollMetricsCollectionView(frame: CGRect(x: 0, y: 0, width: 390, height: 500))
@@ -72,7 +71,6 @@ struct ScrollFollowBehaviorTests {
         #expect(harness.scrollController.isCurrentlyNearBottom)
     }
 
-    @MainActor
     @Test func upwardUserScrollDetachesFollowBeforeExitThreshold() {
         let harness = makeTimelineHarness(sessionId: "session-a")
         let metricsView = TimelineScrollMetricsCollectionView(frame: CGRect(x: 0, y: 0, width: 390, height: 500))
@@ -93,7 +91,6 @@ struct ScrollFollowBehaviorTests {
         #expect(!harness.scrollController.isCurrentlyNearBottom)
     }
 
-    @MainActor
     @Test func smallUpwardScrollDetachSticksUntilDragEnds() async {
         // User scrolls up just a little (50pt from bottom), within the enter
         // threshold (120pt). The detach must still stick — the user clearly
@@ -137,7 +134,6 @@ struct ScrollFollowBehaviorTests {
                 "auto-scroll must not fire while user is scrolled up")
     }
 
-    @MainActor
     @Test func busyToIdleTransitionDoesNotReattachDetachedUser() {
         // When isBusy transitions false between tool calls, the apply method's
         // updateScrollState must not re-attach a detached user — even if the
@@ -182,7 +178,6 @@ struct ScrollFollowBehaviorTests {
                 "busy->idle apply re-attached a detached user")
     }
 
-    @MainActor
     @Test func nearBottomHysteresisRequiresCloserReentryAfterDetach() {
         // Thresholds: enter=120, exit=200.
         // When detached, must get within enter threshold (120) to re-attach.
@@ -208,7 +203,6 @@ struct ScrollFollowBehaviorTests {
         #expect(harness.scrollController.isCurrentlyNearBottom)
     }
 
-    @MainActor
     @Test func detachedStreamingHintTracksOffscreenStreamingState() {
         let harness = makeTimelineHarness(sessionId: "session-a")
         let streamingConfig = makeTimelineConfiguration(

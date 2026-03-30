@@ -11,7 +11,7 @@ import UIKit
 /// measuring wall-clock time for realistic inputs. Verifies that the
 /// batch `highlightLines` API matches per-line output and that
 /// telemetry metrics are recorded.
-@Suite("Render Strategy Performance")
+@Suite("Render Strategy Performance", .tags(.perf))
 @MainActor
 struct RenderStrategyPerfTests {
 
@@ -245,7 +245,7 @@ struct RenderStrategyPerfTests {
 
 // MARK: - Telemetry Recording
 
-@Suite("Render Strategy Telemetry")
+@Suite("Render Strategy Telemetry", .tags(.perf))
 @MainActor
 struct RenderStrategyTelemetryTests {
 
@@ -287,7 +287,7 @@ struct RenderStrategyTelemetryTests {
 
 // MARK: - Batch vs Single Benchmark
 
-@Suite("Batch vs Single Highlight Benchmark")
+@Suite("Batch vs Single Highlight Benchmark", .tags(.perf))
 @MainActor
 struct BatchHighlightBenchmarkTests {
 

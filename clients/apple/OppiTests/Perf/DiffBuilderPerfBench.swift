@@ -9,7 +9,7 @@ import UIKit
 /// on the main thread in UnifiedDiffTextView.makeUIView().
 ///
 /// Outputs METRIC lines for autoresearch.sh to parse.
-@Suite("Diff Builder Perf Bench")
+@Suite("Diff Builder Perf Bench", .tags(.perf))
 @MainActor
 struct DiffBuilderPerfBench {
 

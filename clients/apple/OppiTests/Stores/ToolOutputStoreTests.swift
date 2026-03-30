@@ -1,8 +1,8 @@
 import Testing
 @testable import Oppi
 
-@MainActor
 @Suite("ToolOutputStore")
+@MainActor
 struct ToolOutputStoreTests {
 
     @Test func basicAppendAndRetrieve() {

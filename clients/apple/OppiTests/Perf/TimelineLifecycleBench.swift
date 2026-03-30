@@ -10,7 +10,7 @@ import UIKit
 ///
 /// Output format: `METRIC name=number` for autoresearch consumption.
 /// `INVARIANT name=pass|FAIL` for correctness checks.
-@Suite("TimelineLifecycleBench")
+@Suite("TimelineLifecycleBench", .tags(.perf))
 struct TimelineLifecycleBench {
 
     // MARK: - Configuration

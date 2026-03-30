@@ -2,9 +2,9 @@ import Testing
 @testable import Oppi
 
 @Suite("MessageQueueStore")
+@MainActor
 struct MessageQueueStoreTests {
 
-    @MainActor
     @Test func enqueueOptimisticItemDoesNotBumpServerVersion() {
         let store = MessageQueueStore()
         store.apply(
@@ -28,7 +28,6 @@ struct MessageQueueStoreTests {
         #expect(queue.steering.count == 1)
     }
 
-    @MainActor
     @Test func removeQueuedItemDoesNotBumpServerVersion() {
         let store = MessageQueueStore()
         store.apply(
@@ -52,7 +51,6 @@ struct MessageQueueStoreTests {
         #expect(queue.steering.isEmpty)
     }
 
-    @MainActor
     @Test func queueItemStartedRemovesOptimisticItemAtCurrentServerVersion() {
         let store = MessageQueueStore()
         store.apply(

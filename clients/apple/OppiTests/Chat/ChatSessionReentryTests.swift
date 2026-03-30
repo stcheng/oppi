@@ -26,6 +26,7 @@ import Testing
 ///   - Rapid re-entry (double appear): second generation cancels first
 ///   - WS reconnect during streaming: ring catch-up (not trace)
 @Suite("Chat Session Re-entry")
+@MainActor
 struct ChatSessionReentryTests {
 
     // MARK: - Edge 1: Re-entry with cache seeds seq from subscribe, skips ring
@@ -33,7 +34,6 @@ struct ChatSessionReentryTests {
     /// When re-entering a chat with cached history, the trace fetch should
     /// rebuild the timeline and the seq should be seeded from the subscribe
     /// ack's currentSeq — bypassing the ring catch-up entirely.
-    @MainActor
     @Test func reentryWithCacheSeedsSeqFromSubscribeSkipsRing() async {
         let sessionId = "reentry-cache-\(UUID().uuidString)"
         let workspaceId = "w1"
@@ -112,7 +112,6 @@ struct ChatSessionReentryTests {
     /// When the session is actively streaming during re-entry, events that
     /// arrive via WSS after the subscribe (seq > currentSeq) should be
     /// applied after the trace rebuild — not dropped.
-    @MainActor
     @Test func liveEventsDuringTraceFetchAreApplied() async {
         let sessionId = "reentry-live-\(UUID().uuidString)"
         let workspaceId = "w1"
@@ -198,7 +197,6 @@ struct ChatSessionReentryTests {
     /// When the server restarts, currentSeq drops to 0. The client's persisted
     /// lastSeenSeq is stale. This should trigger a full trace rebuild, not
     /// an infinite catch-up loop.
-    @MainActor
     @Test func serverRestartSeqRegressionTriggersTraceRebuild() async {
         let sessionId = "reentry-restart-\(UUID().uuidString)"
         let manager = ChatSessionManager(sessionId: sessionId)
@@ -256,7 +254,6 @@ struct ChatSessionReentryTests {
     /// Brief WS drops during active streaming should use the ring-based
     /// catch-up (fast, incremental) — NOT the full trace rebuild.
     /// This validates the ring is preserved for its designed purpose.
-    @MainActor
     @Test func wsReconnectDuringStreamingUsesRingNotTrace() async {
         let sessionId = "reentry-brief-\(UUID().uuidString)"
         let manager = ChatSessionManager(sessionId: sessionId)
@@ -323,7 +320,6 @@ struct ChatSessionReentryTests {
     /// After seeding lastSeenSeq from the subscribe ack, any live events
     /// with seq <= seeded value should be silently dropped (they're already
     /// in the trace).
-    @MainActor
     @Test func duplicateSeqEventsDroppedAfterTraceSeed() async {
         let sessionId = "reentry-dedup-\(UUID().uuidString)"
         let manager = ChatSessionManager(sessionId: sessionId)
@@ -393,7 +389,6 @@ struct ChatSessionReentryTests {
 
     /// Fresh install with no cache and no persisted seq. The trace fetch
     /// populates the timeline. currentSeq from subscribe seeds the baseline.
-    @MainActor
     @Test func freshInstallReentryPopulatesFromTrace() async {
         let sessionId = "reentry-fresh-\(UUID().uuidString)"
         let workspaceId = "w1"
@@ -459,7 +454,6 @@ struct ChatSessionReentryTests {
     /// When the user navigates away and back quickly (double appear),
     /// the second generation should cleanly cancel the first without
     /// leaving stale state.
-    @MainActor
     @Test func rapidDoubleAppearCancelsFirstGeneration() async {
         let sessionId = "reentry-rapid-\(UUID().uuidString)"
         let manager = ChatSessionManager(sessionId: sessionId)
@@ -517,7 +511,6 @@ struct ChatSessionReentryTests {
     /// If the trace fetch fails (network error, 500, etc.), the system
     /// should fall back to whatever state it has (cache or ring catch-up)
     /// rather than showing a blank timeline.
-    @MainActor
     @Test func traceFetchFailureFallsBackToCache() async {
         let sessionId = "reentry-fail-\(UUID().uuidString)"
         let workspaceId = "w1"
@@ -582,7 +575,6 @@ struct ChatSessionReentryTests {
 
     /// Stopped sessions should load the trace via REST without opening
     /// a WebSocket — the WSS subscribe would auto-resume the pi process.
-    @MainActor
     @Test func stoppedSessionReentryLoadsTraceWithoutWSS() async {
         let sessionId = "reentry-stopped-\(UUID().uuidString)"
         let workspaceId = "w1"
@@ -635,7 +627,6 @@ struct ChatSessionReentryTests {
     ///
     /// The fix: the bypass clears `loadedFromCacheAtConnect` before scheduling
     /// the reload, disabling the deferral condition in `loadHistory()`.
-    @MainActor
     @Test func busySessionReentryFillsGapNotDeferred() async {
         let sessionId = "reentry-busy-\(UUID().uuidString)"
         let workspaceId = "w1"

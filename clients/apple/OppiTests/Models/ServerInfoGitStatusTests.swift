@@ -147,4 +147,13 @@ struct GitStatusTests {
         let ext = ExtensionInfo(name: "search", path: "~/.pi/agent/extensions/search", kind: "directory")
         #expect(ext.id == "search")
     }
+
+    @Test func extensionInfoSubtitleShowsLocation() {
+        let global = ExtensionInfo(name: "search", path: "/Users/me/.pi/agent/extensions/search", kind: "directory")
+        let project = ExtensionInfo(name: "local", path: "/Users/me/workspace/oppi/.pi/extensions/local.ts", kind: "file")
+
+        #expect(global.locationLabel == "~/.pi/agent/extensions")
+        #expect(project.locationLabel == ".pi/extensions")
+        #expect(project.subtitle == ".pi/extensions · file")
+    }
 }

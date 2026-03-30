@@ -228,7 +228,6 @@ private actor TestCounter {
     var count: Int { value }
 }
 
-@MainActor
 private final class TestVoiceSession: VoiceTranscriptionSession {
     let events: AsyncThrowingStream<VoiceSessionEvent, Error>
     let audioLevels: AsyncStream<Float>

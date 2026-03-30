@@ -3,9 +3,9 @@ import Foundation
 @testable import Oppi
 
 @Suite("ServerConnection Permissions")
+@MainActor
 struct ServerConnectionPermissionTests {
 
-    @MainActor
     @Test func routePermissionRequest() {
         let (conn, pipe) = makeTestConnection()
         let perm = PermissionRequest(
@@ -22,7 +22,6 @@ struct ServerConnectionPermissionTests {
         #expect(conn.permissionStore.pending[0].id == "p1")
     }
 
-    @MainActor
     @Test func routePermissionRequestUsesActiveSessionForNotificationDecision() {
         let (conn, pipe) = makeTestConnection(sessionId: "stream-s1")
         conn.sessionStore.activeSessionId = "active-s1"
@@ -71,7 +70,6 @@ struct ServerConnectionPermissionTests {
         }
     }
 
-    @MainActor
     @Test func routePermissionExpired() {
         let (conn, pipe) = makeTestConnection()
         let perm = PermissionRequest(
@@ -87,7 +85,6 @@ struct ServerConnectionPermissionTests {
         #expect(conn.permissionStore.pending.isEmpty)
     }
 
-    @MainActor
     @Test func routePermissionCancelled() {
         let (conn, pipe) = makeTestConnection()
         let perm = PermissionRequest(
@@ -103,7 +100,6 @@ struct ServerConnectionPermissionTests {
         #expect(conn.permissionStore.pending.isEmpty)
     }
 
-    @MainActor
     @Test func crossSessionPermissionAddedToStore() {
         let (conn, pipe) = makeTestConnection()
         conn._setActiveSessionIdForTesting("s1")
@@ -128,7 +124,6 @@ struct ServerConnectionPermissionTests {
         #expect(conn.permissionStore.pending.first?.id == "p2")
     }
 
-    @MainActor
     @Test func respondToCrossSessionPermissionDoesNotPolluteActiveTimeline() async throws {
         let (conn, pipe) = makeTestConnection()
         conn._setActiveSessionIdForTesting("s1")
@@ -155,7 +150,6 @@ struct ServerConnectionPermissionTests {
                 "Permission should be consumed from store after response")
     }
 
-    @MainActor
     @Test func respondToSameSessionPermissionInjectsMarker() async throws {
         let (conn, pipe) = makeTestConnection()
         conn._setActiveSessionIdForTesting("s1")

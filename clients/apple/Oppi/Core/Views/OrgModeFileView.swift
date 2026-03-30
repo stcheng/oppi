@@ -17,8 +17,20 @@ struct OrgModeFileView: View {
             filePath: filePath,
             presentation: presentation,
             fullScreenContent: .orgMode(content: content, filePath: filePath),
-            renderedViewFactory: { [content] in
+            renderedViewFactory: { [content, presentation] in
                 let markdownContent = DocumentRenderPipeline.orgToMarkdown(content)
+
+                if presentation == .document {
+                    return NativeFullScreenMarkdownBody(
+                        content: markdownContent,
+                        stream: nil,
+                        palette: ThemeRuntimeState.currentThemeID().palette,
+                        plainTextFallbackThreshold: nil,
+                        selectedTextPiRouter: nil,
+                        selectedTextSourceContext: nil
+                    )
+                }
+
                 let view = AssistantMarkdownContentView()
                 view.backgroundColor = .clear
                 view.apply(configuration: .make(
@@ -26,7 +38,7 @@ struct OrgModeFileView: View {
                     isStreaming: false,
                     themeID: ThemeRuntimeState.currentThemeID(),
                     textSelectionEnabled: true,
-                    plainTextFallbackThreshold: presentation == .document ? nil : AssistantMarkdownContentView.Configuration.defaultPlainTextFallbackThreshold
+                    plainTextFallbackThreshold: AssistantMarkdownContentView.Configuration.defaultPlainTextFallbackThreshold
                 ))
                 return view
             }

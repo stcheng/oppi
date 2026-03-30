@@ -6,6 +6,7 @@ import Testing
 // MARK: - Alert Decision (P0: phantom vibrations)
 
 @Suite("LiveActivityManager.shouldAlert")
+@MainActor
 struct LiveActivityAlertTests {
 
     // MARK: - awaitingReply must NEVER produce an alert
@@ -115,6 +116,7 @@ struct LiveActivityAlertTests {
 // MARK: - State Aggregation
 
 @Suite("LiveActivityManager state aggregation", .serialized)
+@MainActor
 struct LiveActivityStateTests {
 
     @Test("sync busy session produces working phase")
@@ -291,6 +293,7 @@ struct LiveActivityStateTests {
 // MARK: - Alert Integration (drives state machine → checks alert decision)
 
 @Suite("LiveActivityManager alert integration", .serialized)
+@MainActor
 struct LiveActivityAlertIntegrationTests {
 
     @Test("working → awaitingReply → working cycle never alerts")
@@ -341,6 +344,7 @@ struct LiveActivityAlertIntegrationTests {
 // MARK: - Lifecycle Recovery (P0: 8-hour silent death)
 
 @Suite("LiveActivityManager lifecycle recovery", .serialized)
+@MainActor
 struct LiveActivityLifecycleTests {
 
     @Test("recoverIfNeeded reattaches orphaned ActivityKit activity")
@@ -393,6 +397,7 @@ struct LiveActivityLifecycleTests {
 // MARK: - Idle Dismiss (P1: proper activity.end)
 
 @Suite("LiveActivityManager idle dismiss", .serialized)
+@MainActor
 struct LiveActivityIdleDismissTests {
 
     @Test("idle dismiss delay is 5 seconds, not 60")
@@ -416,6 +421,7 @@ struct LiveActivityIdleDismissTests {
 // MARK: - Deep Link URL (P1: widgetURL)
 
 @Suite("Live Activity deep links")
+@MainActor
 struct LiveActivityDeepLinkTests {
 
     @Test("session deep link parses oppi://session/<id>")
@@ -463,7 +469,6 @@ struct LiveActivityDeepLinkTests {
 
 // MARK: - Helpers
 
-@MainActor
 private func endAllLiveActivitiesImmediately() async {
     let finalState = makeState(phase: .ended, approvals: 0)
 

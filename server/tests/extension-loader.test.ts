@@ -1,3 +1,7 @@
+import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 import { describe, it, expect } from "vitest";
 
 import {
@@ -128,5 +132,37 @@ describe("listHostExtensions", () => {
     const extensions = listHostExtensions();
     // Mobile renderers are in a separate directory, so they should never appear here
     expect(extensions.every((e) => !e.name.includes("mobile"))).toBe(true);
+  });
+
+  it("includes project-local .pi/extensions when cwd is provided", () => {
+    const root = mkdtempSync(join(tmpdir(), "oppi-ext-"));
+    const globalDir = join(root, "global");
+    const cwd = join(root, "workspace");
+    const localDir = join(cwd, ".pi", "extensions");
+
+    mkdirSync(globalDir, { recursive: true });
+    mkdirSync(localDir, { recursive: true });
+    writeFileSync(join(globalDir, "global-only.ts"), "export default function() {}\n");
+    writeFileSync(join(localDir, "local-only.ts"), "export default function() {}\n");
+
+    const extensions = listHostExtensions({ cwd, globalDir });
+    expect(extensions.map((e) => e.name)).toContain("global-only");
+    expect(extensions.map((e) => e.name)).toContain("local-only");
+  });
+
+  it("prefers project-local extension names over global duplicates", () => {
+    const root = mkdtempSync(join(tmpdir(), "oppi-ext-"));
+    const globalDir = join(root, "global");
+    const cwd = join(root, "workspace");
+    const localDir = join(cwd, ".pi", "extensions");
+
+    mkdirSync(globalDir, { recursive: true });
+    mkdirSync(localDir, { recursive: true });
+    writeFileSync(join(globalDir, "shared.ts"), "export default function() {}\n");
+    writeFileSync(join(localDir, "shared.ts"), "export default function() {}\n");
+
+    const extensions = listHostExtensions({ cwd, globalDir });
+    const shared = extensions.find((e) => e.name === "shared");
+    expect(shared?.path).toBe(join(localDir, "shared.ts"));
   });
 });

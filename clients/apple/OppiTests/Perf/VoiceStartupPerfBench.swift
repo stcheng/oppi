@@ -10,7 +10,7 @@ import Testing
 /// from Apple's Speech framework.
 ///
 /// Output format: `METRIC name=number` for autoresearch consumption.
-@Suite("VoiceStartupPerfBench")
+@Suite("VoiceStartupPerfBench", .tags(.perf))
 @MainActor
 struct VoiceStartupPerfBench {
 

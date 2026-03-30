@@ -195,6 +195,7 @@ struct ServerConnectionNetworkPathChangeTests {
 // MARK: - Reconnect Delay Sanity (complements WebSocketClientReconnectBackoffTests)
 
 @Suite("Network Path Change — Reconnect Delay Sanity")
+@MainActor
 struct PathChangeReconnectDelaySanityTests {
 
     @Test func totalReconnectWindowIsReasonable() {
@@ -474,6 +475,7 @@ struct ConnectionCoordinatorPathChangeTests {
 // MARK: - Reconnect Backoff Curve Tests (delay verification)
 
 @Suite("WebSocket Reconnect Delay Curve")
+@MainActor
 struct ReconnectDelayCurveTests {
 
     @Test func firstThreeAttemptsAreSubSecond() {

@@ -2,7 +2,6 @@ import Testing
 @testable import Oppi
 
 @Suite("HTMLContentTracker")
-@MainActor
 struct HTMLContentTrackerTests {
 
     // MARK: - Deferred loading (not ready)

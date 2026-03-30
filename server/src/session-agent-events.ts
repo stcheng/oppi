@@ -140,7 +140,7 @@ export class SessionAgentEventCoordinator {
     this.deps.eventProcessor.updateSessionFromEvent(key, active, event);
 
     if (event.type === "agent_end") {
-      this.deps.stopCoordinator.finishPendingAbortWithSuccess(key, active);
+      this.deps.stopCoordinator.finishPendingStopOnAgentEnd(key, active);
     }
 
     if (event.type === "message_end") {

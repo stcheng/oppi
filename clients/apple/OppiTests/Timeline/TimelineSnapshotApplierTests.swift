@@ -3,11 +3,11 @@ import Testing
 @testable import Oppi
 
 @Suite("TimelineSnapshotApplier")
+@MainActor
 struct TimelineSnapshotApplierTests {
 
     private let timestamp = Date(timeIntervalSince1970: 0)
 
-    @MainActor
     @Test func largeTimelineReconfigureIDsAreStableAndVisibleOnly() {
         let timelineIDs = (0..<620).map { "item-\($0)" }
         let nextIDs = [ChatTimelineCollectionHost.loadMoreID] + timelineIDs
@@ -71,7 +71,6 @@ struct TimelineSnapshotApplierTests {
 
     // MARK: - Streaming assistant gating
 
-    @MainActor
     @Test func streamingAssistantSkippedWhenContentUnchanged() {
         let ids = ["tool-1", "assistant-1"]
         let item = ChatItem.assistantMessage(id: "assistant-1", text: "hello", timestamp: timestamp)
@@ -95,7 +94,6 @@ struct TimelineSnapshotApplierTests {
         #expect(result.isEmpty)
     }
 
-    @MainActor
     @Test func streamingAssistantReconfiguredWhenContentChanged() {
         let ids = ["assistant-1"]
         let prev = ChatItem.assistantMessage(id: "assistant-1", text: "hel", timestamp: timestamp)
@@ -116,7 +114,6 @@ struct TimelineSnapshotApplierTests {
         #expect(result == ["assistant-1"])
     }
 
-    @MainActor
     @Test func streamingAssistantNewRowAlwaysReconfigured() {
         // First appearance of the assistant row — no previous entry.
         let ids = ["assistant-1"]
@@ -138,7 +135,6 @@ struct TimelineSnapshotApplierTests {
         #expect(result == ["assistant-1"])
     }
 
-    @MainActor
     @Test func previousStreamingAssistantStillReconfiguredOnTransition() {
         let ids = ["assistant-1", "assistant-2"]
         let a1 = ChatItem.assistantMessage(id: "assistant-1", text: "done", timestamp: timestamp)
@@ -162,7 +158,6 @@ struct TimelineSnapshotApplierTests {
         #expect(result.contains("assistant-2"))
     }
 
-    @MainActor
     @Test func toolChangeDetectedWhileStreamingAssistantUnchanged() {
         let ids = ["tool-1", "assistant-1"]
         let assistant = ChatItem.assistantMessage(id: "assistant-1", text: "thinking...", timestamp: timestamp)
@@ -185,7 +180,6 @@ struct TimelineSnapshotApplierTests {
         #expect(result == ["tool-1"])
     }
 
-    @MainActor
     @Test func permissionChangeDetectedWhileStreamingAssistantUnchanged() {
         let ids = ["permission-1", "assistant-1"]
         let assistant = ChatItem.assistantMessage(id: "assistant-1", text: "thinking...", timestamp: timestamp)
@@ -222,7 +216,6 @@ struct TimelineSnapshotApplierTests {
 
     // MARK: - Animated reconfigure filtering
 
-    @MainActor
     @Test func loadMoreFilteredFromReconfigureWhenAnimating() {
         let changedIDs = ["item-1", ChatTimelineCollectionHost.loadMoreID, "item-2"]
 
@@ -234,7 +227,6 @@ struct TimelineSnapshotApplierTests {
         #expect(filtered == ["item-1", "item-2"])
     }
 
-    @MainActor
     @Test func loadMoreKeptInReconfigureWhenNotAnimating() {
         let changedIDs = ["item-1", ChatTimelineCollectionHost.loadMoreID, "item-2"]
 

@@ -3,9 +3,9 @@ import Foundation
 @testable import Oppi
 
 @Suite("ServerConnection Send ACK")
+@MainActor
 struct ServerConnectionSendAckTests {
 
-    @MainActor
     @Test func sendAckSuccessForPromptSteerAndFollowUp() async throws {
         for command in EventFlowAckCommand.allCases {
             let (conn, pipe) = makeEventFlowAckTestConnection()
@@ -39,7 +39,6 @@ struct ServerConnectionSendAckTests {
         }
     }
 
-    @MainActor
     @Test func sendAckUsesTurnAckStages() async throws {
         let (conn, pipe) = makeEventFlowAckTestConnection()
 
@@ -76,7 +75,6 @@ struct ServerConnectionSendAckTests {
         try await conn.sendPrompt("hello")
     }
 
-    @MainActor
     @Test func sendAckStageCallbackReceivesProgressStages() async throws {
         let (conn, pipe) = makeEventFlowAckTestConnection()
 
@@ -133,7 +131,6 @@ struct ServerConnectionSendAckTests {
         })
     }
 
-    @MainActor
     @Test func sendRetryReusesClientTurnId() async throws {
         let (conn, pipe) = makeEventFlowAckTestConnection()
 
@@ -178,7 +175,6 @@ struct ServerConnectionSendAckTests {
         #expect(seenRequestIds[0] == seenRequestIds[1])
     }
 
-    @MainActor
     @Test func sendPromptChurnAlwaysResolvesWithoutSilentDrop() async {
         let (conn, pipe) = makeEventFlowAckTestConnection(timeout: .milliseconds(160))
 
@@ -269,7 +265,6 @@ struct ServerConnectionSendAckTests {
         #expect(delivered == 7)
     }
 
-    @MainActor
     @Test func sendAckRejectedForPromptSteerAndFollowUp() async {
         for command in EventFlowAckCommand.allCases {
             let (conn, pipe) = makeEventFlowAckTestConnection()
@@ -312,7 +307,6 @@ struct ServerConnectionSendAckTests {
         }
     }
 
-    @MainActor
     @Test func sendAckTimeoutForPromptSteerAndFollowUp() async {
         for command in EventFlowAckCommand.allCases {
             let (conn, pipe) = makeEventFlowAckTestConnection(timeout: .milliseconds(120))
@@ -337,7 +331,6 @@ struct ServerConnectionSendAckTests {
 
     // MARK: - Fork
 
-    @MainActor
     @Test func forkFromTimelineEntryUsesGetForkMessagesThenFork() async throws {
         let (conn, pipe) = makeTestConnection()
         var sentTypes: [String] = []
@@ -390,7 +383,6 @@ struct ServerConnectionSendAckTests {
         #expect(forkEntryId == "entry-123")
     }
 
-    @MainActor
     @Test func forkFromTimelineEntryParsesForkMessageIdField() async throws {
         let (conn, pipe) = makeTestConnection()
         var sentTypes: [String] = []
@@ -443,7 +435,6 @@ struct ServerConnectionSendAckTests {
         #expect(forkEntryId == "fork-entry-123")
     }
 
-    @MainActor
     @Test func forkFromTimelineEntryNormalizesTraceSyntheticIDs() async throws {
         let (conn, pipe) = makeTestConnection()
         var sentTypes: [String] = []
@@ -496,7 +487,6 @@ struct ServerConnectionSendAckTests {
         #expect(forkEntryId == "entry-123")
     }
 
-    @MainActor
     @Test func forkFromTimelineEntryRejectsNonForkableEntry() async {
         let (conn, pipe) = makeTestConnection()
         var sentTypes: [String] = []

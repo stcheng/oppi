@@ -8,7 +8,7 @@ export type FirstPartyExtensionName = Exclude<ManagedExtensionName, "permission-
 const MANAGED_EXTENSION_NAME_SET = new Set<string>(MANAGED_EXTENSION_NAMES);
 
 /**
- * Managed by oppi-server itself, not loaded from ~/.pi/agent/extensions.
+ * Managed by oppi-server itself, not loaded from pi host extension directories.
  *
  * - permission-gate is replaced by the server's policy engine
  * - ask is a first-party factory extension so iOS AskCard behavior stays aligned

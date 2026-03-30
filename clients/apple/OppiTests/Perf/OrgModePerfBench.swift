@@ -14,7 +14,7 @@ import Foundation
 /// - org-manual.org: 23715 lines, 854KB, 424 headings (org-mode official manual)
 ///
 /// Output format: METRIC name=number (microseconds)
-@Suite("OrgModePerfBench")
+@Suite("OrgModePerfBench", .tags(.perf))
 struct OrgModePerfBench {
 
     // MARK: - Configuration

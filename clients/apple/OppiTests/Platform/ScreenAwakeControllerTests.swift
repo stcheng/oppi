@@ -3,10 +3,10 @@ import Foundation
 import Testing
 
 @Suite("ScreenAwakeController", .serialized)
+@MainActor
 struct ScreenAwakeControllerTests {
 
     @Test("active session immediately prevents sleep")
-    @MainActor
     func activeSessionDisablesIdleTimer() {
         var idleTimerUpdates: [Bool] = []
 
@@ -23,7 +23,6 @@ struct ScreenAwakeControllerTests {
     }
 
     @Test("idle timeout releases prevention after activity ends")
-    @MainActor
     func releasesAfterTimeout() async {
         var idleTimerUpdates: [Bool] = []
 
@@ -45,7 +44,6 @@ struct ScreenAwakeControllerTests {
     }
 
     @Test("off timeout releases immediately when activity stops")
-    @MainActor
     func offTimeoutReleasesImmediately() {
         var idleTimerUpdates: [Bool] = []
 

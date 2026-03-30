@@ -716,6 +716,24 @@ struct APIClientTests {
         #expect(extensions[0].kind == "file")
     }
 
+    @Test func listExtensionsWithCwdAddsQueryParam() async throws {
+        let client = makeClient()
+        defer { cleanup() }
+
+        MockURLProtocol.handler = { request in
+            #expect(request.url?.path == "/extensions")
+            let components = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)
+            let cwd = components?.queryItems?.first(where: { $0.name == "cwd" })?.value
+            #expect(cwd == "~/workspace/oppi")
+            return self.mockResponse(json: """
+            {"extensions":[]}
+            """)
+        }
+
+        let extensions = try await client.listExtensions(cwd: "~/workspace/oppi")
+        #expect(extensions.isEmpty)
+    }
+
     // MARK: - Files + Query Paths
 
     @Test func getSkillFileUsesQueryString() async throws {

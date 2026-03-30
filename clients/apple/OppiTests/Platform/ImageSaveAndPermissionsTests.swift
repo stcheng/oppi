@@ -4,8 +4,8 @@ import UIKit
 
 @testable import Oppi
 
-@MainActor
 @Suite("PhotoLibrarySaver")
+@MainActor
 struct PhotoLibrarySaverTests {
     @Test("save routes through injected writer")
     func saveRoutesThroughInjectedWriter() {
@@ -29,6 +29,7 @@ struct PhotoLibrarySaverTests {
 }
 
 @Suite("Image save permissions")
+@MainActor
 struct ImageSavePermissionsTests {
     private var iosRoot: URL {
         URL(fileURLWithPath: #filePath)

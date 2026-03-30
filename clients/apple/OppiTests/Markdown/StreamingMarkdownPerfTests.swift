@@ -99,7 +99,6 @@ struct ParseCommonMarkWithLastLineTests {
 /// does:  find the prefix boundary, parse prefix blocks, parse tail blocks,
 /// combine, build segments.
 @Suite("Incremental Parse Correctness")
-@MainActor
 struct IncrementalParseCorrectnessTests {
 
     // Helper: simulate one incremental parse tick given a known prefix byte count.
@@ -226,8 +225,7 @@ struct IncrementalParseCorrectnessTests {
 ///
 /// Note: These are wall-clock measurements — CI timing variance is expected.
 /// The assertions use conservative multipliers (3× threshold) to avoid flakes.
-@Suite("Streaming Parse Performance Benchmarks")
-@MainActor
+@Suite("Streaming Parse Performance Benchmarks", .tags(.perf))
 struct StreamingMarkdownPerfBenchmarks {
 
     // MARK: - Document generation

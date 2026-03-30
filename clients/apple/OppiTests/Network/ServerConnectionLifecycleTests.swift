@@ -3,9 +3,9 @@ import Foundation
 @testable import Oppi
 
 @Suite("ServerConnection Lifecycle")
+@MainActor
 struct ServerConnectionLifecycleTests {
 
-    @MainActor
     @Test func configureWithValidCredentials() {
         let conn = ServerConnection()
         let result = conn.configure(credentials: ServerCredentials(
@@ -17,7 +17,6 @@ struct ServerConnectionLifecycleTests {
         #expect(conn.credentials?.host == "192.168.1.10")
     }
 
-    @MainActor
     @Test func disconnectSessionClearsActiveId() {
         let scenario = EventFlowServerConnectionScenario()
         let conn = scenario.connection
@@ -29,7 +28,6 @@ struct ServerConnectionLifecycleTests {
         #expect(conn.sessionStore.sessions.isEmpty)
     }
 
-    @MainActor
     @Test func flushAndSuspendDelivers() {
         let scenario = EventFlowServerConnectionScenario()
 
@@ -41,7 +39,6 @@ struct ServerConnectionLifecycleTests {
         #expect(scenario.timelineItemCount(of: .assistantMessage) == 1)
     }
 
-    @MainActor
     @Test func requestStateUsesDispatchSendHook() async throws {
         let conn = ServerConnection()
         var sawGetState = false
@@ -56,13 +53,11 @@ struct ServerConnectionLifecycleTests {
         #expect(sawGetState)
     }
 
-    @MainActor
     @Test func isConnectedDefaultFalse() {
         let conn = ServerConnection()
         #expect(!conn.isConnected)
     }
 
-    @MainActor
     @Test func switchServerConfiguresNewServer() {
         let conn = ServerConnection()
         let creds = ServerCredentials(
@@ -80,7 +75,6 @@ struct ServerConnectionLifecycleTests {
         #expect(conn.apiClient != nil)
     }
 
-    @MainActor
     @Test func switchServerSkipsIfAlreadyTargeting() {
         let conn = ServerConnection()
         let creds = ServerCredentials(
@@ -98,7 +92,6 @@ struct ServerConnectionLifecycleTests {
         #expect(conn.currentServerId == "sha256:same-fp")
     }
 
-    @MainActor
     @Test func switchServerChangesTarget() {
         let conn = ServerConnection()
         let creds1 = ServerCredentials(
@@ -123,7 +116,6 @@ struct ServerConnectionLifecycleTests {
         #expect(conn.currentServerId == "sha256:fp-b")
     }
 
-    @MainActor
     @Test func currentServerIdNilByDefault() {
         let conn = ServerConnection()
         #expect(conn.currentServerId == nil)

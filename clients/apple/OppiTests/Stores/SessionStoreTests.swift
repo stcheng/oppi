@@ -3,11 +3,11 @@ import Foundation
 @testable import Oppi
 
 @Suite("SessionStore Partitioning")
+@MainActor
 struct SessionStorePartitioningTests {
 
     // MARK: - Server partitioning
 
-    @MainActor
     @Test func sessionsPartitionedByServer() {
         let store = SessionStore()
         store.switchServer(to: "srv1")
@@ -24,7 +24,6 @@ struct SessionStorePartitioningTests {
         #expect(store.sessions[0].id == "s1")
     }
 
-    @MainActor
     @Test func sessionsForSpecificServer() {
         let store = SessionStore()
         store.switchServer(to: "srv1")
@@ -37,7 +36,6 @@ struct SessionStorePartitioningTests {
         #expect(store.sessions(forServer: "nonexistent").isEmpty)
     }
 
-    @MainActor
     @Test func allSessionsSpansServers() {
         let store = SessionStore()
         store.switchServer(to: "srv1")
@@ -50,7 +48,6 @@ struct SessionStorePartitioningTests {
         #expect(all[0].id == "s2")
     }
 
-    @MainActor
     @Test func findSessionAcrossServers() {
         let store = SessionStore()
         store.switchServer(to: "srv1")
@@ -66,7 +63,6 @@ struct SessionStorePartitioningTests {
 
     // MARK: - Upsert
 
-    @MainActor
     @Test func upsertReturnsFalseWhenUnchanged() {
         let store = SessionStore()
         store.switchServer(to: "srv1")
@@ -75,7 +71,6 @@ struct SessionStorePartitioningTests {
         #expect(store.upsert(s) == false)
     }
 
-    @MainActor
     @Test func upsertPreservesContextUsageWhenIncomingUpdateOmitsIt() {
         let store = SessionStore()
         store.switchServer(to: "srv1")
@@ -95,7 +90,6 @@ struct SessionStorePartitioningTests {
 
     // MARK: - Remove
 
-    @MainActor
     @Test func removeClearsActiveSessionId() {
         let store = SessionStore()
         store.switchServer(to: "srv1")
@@ -109,7 +103,6 @@ struct SessionStorePartitioningTests {
 
     // MARK: - Server removal
 
-    @MainActor
     @Test func removeServerClearsPartition() {
         let store = SessionStore()
         store.switchServer(to: "srv1")
@@ -120,7 +113,6 @@ struct SessionStorePartitioningTests {
         #expect(store.sessions(forServer: "srv1").isEmpty)
     }
 
-    @MainActor
     @Test func removeActiveServerClearsId() {
         let store = SessionStore()
         store.switchServer(to: "srv1")
@@ -130,7 +122,6 @@ struct SessionStorePartitioningTests {
 
     // MARK: - Snapshot merge
 
-    @MainActor
     @Test func snapshotReplacesData() {
         let store = SessionStore()
         store.switchServer(to: "srv1")
@@ -151,7 +142,6 @@ struct SessionStorePartitioningTests {
         #expect(store.sessions[0].id == "new1")
     }
 
-    @MainActor
     @Test func snapshotPreservesActiveSessions() {
         let store = SessionStore()
         store.switchServer(to: "srv1")
@@ -164,7 +154,6 @@ struct SessionStorePartitioningTests {
         #expect(ids.contains("local-active"))
     }
 
-    @MainActor
     @Test func snapshotPreservesRecentStopped() {
         let store = SessionStore()
         store.switchServer(to: "srv1")
@@ -176,7 +165,6 @@ struct SessionStorePartitioningTests {
         #expect(ids.contains("recent"))
     }
 
-    @MainActor
     @Test func snapshotDropsOldStopped() {
         let store = SessionStore()
         store.switchServer(to: "srv1")
@@ -194,7 +182,6 @@ struct SessionStorePartitioningTests {
 
     // MARK: - Freshness
 
-    @MainActor
     @Test func freshnessPerServer() {
         let store = SessionStore()
         store.switchServer(to: "srv1")
@@ -207,7 +194,6 @@ struct SessionStorePartitioningTests {
         #expect(store.lastSuccessfulSyncAt != nil)
     }
 
-    @MainActor
     @Test func syncLifecycle() {
         let store = SessionStore()
         store.switchServer(to: "srv1")
@@ -221,7 +207,6 @@ struct SessionStorePartitioningTests {
         #expect(store.lastSuccessfulSyncAt != nil)
     }
 
-    @MainActor
     @Test func syncFailure() {
         let store = SessionStore()
         store.switchServer(to: "srv1")
@@ -233,7 +218,6 @@ struct SessionStorePartitioningTests {
 
     // MARK: - Convenience
 
-    @MainActor
     @Test func activeSessionLookup() {
         let store = SessionStore()
         store.switchServer(to: "srv1")
@@ -242,7 +226,6 @@ struct SessionStorePartitioningTests {
         #expect(store.activeSession?.id == "s1")
     }
 
-    @MainActor
     @Test func workspaceIdForSession() {
         let store = SessionStore()
         store.switchServer(to: "srv1")
@@ -251,7 +234,6 @@ struct SessionStorePartitioningTests {
         #expect(store.workspaceId(for: "missing") == nil)
     }
 
-    @MainActor
     @Test func sortByLastActivity() {
         let store = SessionStore()
         store.switchServer(to: "srv1")
@@ -265,9 +247,9 @@ struct SessionStorePartitioningTests {
 // MARK: - Turn-ended tracking (stable sort key)
 
 @Suite("SessionStore Turn-Ended Tracking")
+@MainActor
 struct SessionStoreTurnEndedTests {
 
-    @MainActor
     @Test func recordAndReadTurnEndedDate() {
         let store = SessionStore()
         store.switchServer(to: "srv1")
@@ -278,7 +260,6 @@ struct SessionStoreTurnEndedTests {
         #expect(store.turnEndedDate(for: "s1") == date)
     }
 
-    @MainActor
     @Test func turnEndedDateNilForUnknownSession() {
         let store = SessionStore()
         store.switchServer(to: "srv1")
@@ -286,7 +267,6 @@ struct SessionStoreTurnEndedTests {
         #expect(store.turnEndedDate(for: "missing") == nil)
     }
 
-    @MainActor
     @Test func turnEndedDatePartitionedByServer() {
         let store = SessionStore()
 
@@ -306,7 +286,6 @@ struct SessionStoreTurnEndedTests {
         #expect(store.turnEndedDate(for: "s1") == date1)
     }
 
-    @MainActor
     @Test func removeClearsTurnEndedDate() {
         let store = SessionStore()
         store.switchServer(to: "srv1")
@@ -317,7 +296,6 @@ struct SessionStoreTurnEndedTests {
         #expect(store.turnEndedDate(for: "s1") == nil)
     }
 
-    @MainActor
     @Test func removeServerClearsTurnEndedDates() {
         let store = SessionStore()
         store.switchServer(to: "srv1")
@@ -332,7 +310,6 @@ struct SessionStoreTurnEndedTests {
         #expect(store.turnEndedDate(for: "s2") == nil)
     }
 
-    @MainActor
     @Test func laterTurnEndedOverwritesEarlier() {
         let store = SessionStore()
         store.switchServer(to: "srv1")
@@ -350,9 +327,9 @@ struct SessionStoreTurnEndedTests {
 // MARK: - Context summary clearing
 
 @Suite("SessionStore Context Summary")
+@MainActor
 struct SessionStoreContextSummaryTests {
 
-    @MainActor
     @Test func clearContextSummaryRemovesFromSession() {
         let store = SessionStore()
         store.switchServer(to: "srv1")
@@ -369,7 +346,6 @@ struct SessionStoreContextSummaryTests {
         #expect(store.session(id: "s1")?.contextSummary == nil)
     }
 
-    @MainActor
     @Test func clearContextSummaryNoopForMissingSession() {
         let store = SessionStore()
         store.switchServer(to: "srv1")
@@ -378,7 +354,6 @@ struct SessionStoreContextSummaryTests {
         store.clearContextSummary(for: "nonexistent")
     }
 
-    @MainActor
     @Test func clearContextSummaryNoopWhenAlreadyNil() {
         let store = SessionStore()
         store.switchServer(to: "srv1")

@@ -3,11 +3,11 @@ import Foundation
 @testable import Oppi
 
 @Suite("ServerConnection Stream")
+@MainActor
 struct ServerConnectionStreamTests {
 
     // MARK: - connectStream idempotency
 
-    @MainActor
     @Test func connectStreamIsIdempotentWhileActive() {
         let (conn, _) = makeTestConnection()
 
@@ -21,7 +21,6 @@ struct ServerConnectionStreamTests {
                 "Should not cancel existing task when one is active and WS is connected")
     }
 
-    @MainActor
     @Test func connectStreamSkipsWhenWSAlreadyConnectedAndNoTask() {
         let (conn, _) = makeTestConnection()
         conn.wsClient?._setStatusForTesting(.connected)
@@ -36,7 +35,6 @@ struct ServerConnectionStreamTests {
                 "connectStream should not tear down a healthy WS")
     }
 
-    @MainActor
     @Test func connectStreamRestartsWhenTaskExistsButWSDisconnected() {
         let (conn, _) = makeTestConnection()
 
@@ -49,7 +47,6 @@ struct ServerConnectionStreamTests {
                 "Should create new task when WS is disconnected")
     }
 
-    @MainActor
     @Test func connectStreamCreatesTaskWhenNil() {
         let (conn, _) = makeTestConnection()
 
@@ -63,7 +60,6 @@ struct ServerConnectionStreamTests {
 
     // MARK: - streamConsumptionTask self-cleanup
 
-    @MainActor
     @Test func consumptionTaskNilsItselfWhenStreamEnds() async {
         let (conn, _) = makeTestConnection()
 
@@ -88,7 +84,6 @@ struct ServerConnectionStreamTests {
 
     // MARK: - disconnectStream cleanup
 
-    @MainActor
     @Test func disconnectStreamCleansUpEverything() {
         let (conn, _) = makeTestConnection()
         conn.streamConsumptionTask = Task { }
@@ -106,7 +101,6 @@ struct ServerConnectionStreamTests {
 
     // MARK: - handleStreamReconnected re-subscribes
 
-    @MainActor
     @Test func streamConnectedMessageTriggersResubscribe() {
         let (conn, _) = makeTestConnection()
         conn._setActiveSessionIdForTesting("s1")
@@ -137,7 +131,6 @@ struct ServerConnectionStreamTests {
 
     // MARK: - routeStreamMessage routing
 
-    @MainActor
     @Test func routeStreamMessageYieldsToSessionContinuation() async {
         let (conn, _) = makeTestConnection()
         conn._setActiveSessionIdForTesting("s1")
@@ -179,7 +172,6 @@ struct ServerConnectionStreamTests {
 
     // MARK: - reconnectIfNeeded restarts dead stream
 
-    @MainActor
     @Test func reconnectIfNeededRestartsDeadStream() async {
         let (conn, _) = makeTestConnection()
 
@@ -194,7 +186,6 @@ struct ServerConnectionStreamTests {
                 "reconnectIfNeeded should restart a dead stream")
     }
 
-    @MainActor
     @Test func reconnectIfNeededSkipsAliveStream() async {
         let (conn, _) = makeTestConnection()
 
@@ -210,7 +201,6 @@ struct ServerConnectionStreamTests {
 
     // MARK: - routeStreamMessage resolves subscribe waiter eagerly
 
-    @MainActor
     @Test func routeStreamMessageResolvesSubscribeWaiterBeforePerSessionRouting() async {
         let (conn, _) = makeTestConnection()
         conn._setActiveSessionIdForTesting("s1")
@@ -238,7 +228,6 @@ struct ServerConnectionStreamTests {
         #expect(result != nil, "Subscribe waiter should be resolved eagerly by routeStreamMessage")
     }
 
-    @MainActor
     @Test func routeStreamMessageResolvesGetQueueWaiterEagerly() async {
         let (conn, _) = makeTestConnection()
         conn._setActiveSessionIdForTesting("s1")
@@ -268,7 +257,6 @@ struct ServerConnectionStreamTests {
         #expect(result != nil, "get_queue waiter should be resolved eagerly by routeStreamMessage")
     }
 
-    @MainActor
     @Test func routeStreamMessageDoesNotEagerlyResolveNonSetupCommands() {
         let (conn, _) = makeTestConnection()
         conn._setActiveSessionIdForTesting("s1")
@@ -306,7 +294,6 @@ struct ServerConnectionStreamTests {
     ///
     /// The mock simulates instant server responses — any delay beyond a
     /// few hundred ms means the setup path is blocking on something it shouldn't.
-    @MainActor
     @Test func streamSessionCompletesWithinTimeBudget() async {
         let (conn, _) = makeTestConnection()
         conn.wsClient?._setStatusForTesting(.connected)
@@ -359,7 +346,6 @@ struct ServerConnectionStreamTests {
     /// Regression gate: if get_queue never returns command_result (older server
     /// behavior during full-subscription races), streamSession must remain
     /// non-blocking and return quickly while queue sync retries in background.
-    @MainActor
     @Test func streamSessionDoesNotBlockOnMissingGetQueueAck() async {
         let (conn, _) = makeTestConnection()
         conn.wsClient?._setStatusForTesting(.connected)
@@ -415,7 +401,6 @@ struct ServerConnectionStreamTests {
 
     // MARK: - Pending unsubscribe cancelled on resubscribe
 
-    @MainActor
     @Test func pendingUnsubscribeCancelledWhenReenteringSameSession() {
         let (conn, _) = makeTestConnection()
         conn._setActiveSessionIdForTesting("s1")
@@ -434,7 +419,6 @@ struct ServerConnectionStreamTests {
                 "Pending unsubscribe should be cancelled before resubscribe")
     }
 
-    @MainActor
     @Test func disconnectStreamCancelsPendingUnsubscribes() {
         let (conn, _) = makeTestConnection()
         conn._setActiveSessionIdForTesting("s1")
@@ -450,7 +434,6 @@ struct ServerConnectionStreamTests {
 
     // MARK: - Pre-track subscription for inbound meta
 
-    @MainActor
     @Test func subscribePreTracksActiveSubscriptionSynchronously() throws {
         let (conn, _) = makeTestConnection()
         let ws = try #require(conn.wsClient)
@@ -469,7 +452,6 @@ struct ServerConnectionStreamTests {
         )
     }
 
-    @MainActor
     @Test func subscribePreTrackRolledBackOnFailure() throws {
         let (conn, _) = makeTestConnection()
         let ws = try #require(conn.wsClient)
@@ -489,7 +471,6 @@ struct ServerConnectionStreamTests {
         )
     }
 
-    @MainActor
     @Test func preTrackIsNoOpForNonSubscribeMessages() throws {
         let (conn, _) = makeTestConnection()
         let ws = try #require(conn.wsClient)

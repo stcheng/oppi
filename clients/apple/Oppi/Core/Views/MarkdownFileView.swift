@@ -43,7 +43,22 @@ struct MarkdownFileView: View {
                 filePath: filePath,
                 workspaceContext: fullScreenWorkspaceContext
             ),
-            renderedViewFactory: { [content, filePath, workspaceID, serverBaseURL, fetchWorkspaceFile] in
+            renderedViewFactory: { [content, filePath, workspaceID, serverBaseURL, fetchWorkspaceFile, presentation] in
+                if presentation == .document {
+                    return NativeFullScreenMarkdownBody(
+                        content: content,
+                        stream: nil,
+                        palette: ThemeRuntimeState.currentThemeID().palette,
+                        plainTextFallbackThreshold: nil,
+                        selectedTextPiRouter: nil,
+                        selectedTextSourceContext: nil,
+                        workspaceID: workspaceID,
+                        serverBaseURL: serverBaseURL,
+                        sourceFilePath: filePath,
+                        fetchWorkspaceFile: fetchWorkspaceFile
+                    )
+                }
+
                 let view = AssistantMarkdownContentView()
                 view.backgroundColor = .clear
                 view.fetchWorkspaceFile = fetchWorkspaceFile
@@ -52,7 +67,7 @@ struct MarkdownFileView: View {
                     isStreaming: false,
                     themeID: ThemeRuntimeState.currentThemeID(),
                     textSelectionEnabled: true,
-                    plainTextFallbackThreshold: presentation == .document ? nil : AssistantMarkdownContentView.Configuration.defaultPlainTextFallbackThreshold,
+                    plainTextFallbackThreshold: AssistantMarkdownContentView.Configuration.defaultPlainTextFallbackThreshold,
                     workspaceID: workspaceID,
                     serverBaseURL: serverBaseURL,
                     sourceFilePath: filePath

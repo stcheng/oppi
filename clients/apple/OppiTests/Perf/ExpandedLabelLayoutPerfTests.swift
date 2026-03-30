@@ -11,7 +11,7 @@ import UIKit
 /// ALL lines) upfront, while UITextView with TextKit defers layout for
 /// off-screen content. For a 300-line file in a 500pt viewport showing
 /// ~30 lines, UITextView should be dramatically faster.
-@Suite("Expanded Label Layout Perf")
+@Suite("Expanded Label Layout Perf", .tags(.perf))
 @MainActor
 struct ExpandedLabelLayoutPerfTests {
 

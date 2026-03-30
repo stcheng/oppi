@@ -8,11 +8,11 @@ import Foundation
 /// re-scheduling after resubscription, recovery queue refresh, and
 /// transition table acceptance of streamConnected in mid-recovery states.
 @Suite("ServerConnection Reconnect")
+@MainActor
 struct ServerConnectionReconnectTests {
 
     // MARK: - handleStreamReconnected cancels deferred queue sync
 
-    @MainActor
     @Test func reconnectCancelsDeferredQueueSync() async {
         let (conn, pipe) = makeTestConnection()
 
@@ -53,7 +53,6 @@ struct ServerConnectionReconnectTests {
 
     // MARK: - Resubscription schedules new queue sync
 
-    @MainActor
     @Test func reconnectSchedulesQueueSyncAfterResubscription() async {
         let (conn, pipe) = makeTestConnection()
         let getQueueCounter = MessageCounter()
@@ -103,7 +102,6 @@ struct ServerConnectionReconnectTests {
 
     // MARK: - Transition table: streamConnected accepted in resubscribing
 
-    @MainActor
     @Test func coordinatorAcceptsStreamConnectedWhileResubscribing() async {
         let (conn, pipe) = makeTestConnection()
         let subscribeCounter = MessageCounter()
@@ -165,7 +163,6 @@ struct ServerConnectionReconnectTests {
     /// original streamSession() would survive a WS reconnect and send get_queue
     /// on the new WS before resubscription completed — hitting the server's
     /// "not subscribed at level=full" error.
-    @MainActor
     @Test func staleQueueSyncDoesNotRaceAheadOfResubscribe() async {
         let (conn, pipe) = makeTestConnection()
         let commandOrder = CommandOrderTracker()

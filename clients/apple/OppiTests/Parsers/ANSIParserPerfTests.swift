@@ -10,8 +10,7 @@ private final class _ANSIParserPerfBundle {}
 ///
 /// Uses real `npm test` output (~316KB, vitest with heavy ANSI coloring)
 /// as the benchmark input. Prints METRIC lines for autoresearch.
-@Suite("ANSIParserPerf")
-@MainActor
+@Suite("ANSIParserPerf", .tags(.perf))
 struct ANSIParserPerfTests {
 
     /// Load the real npm test output fixture.

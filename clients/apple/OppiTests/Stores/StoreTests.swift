@@ -5,9 +5,9 @@ import Foundation
 // MARK: - SessionStore
 
 @Suite("SessionStore")
+@MainActor
 struct SessionStoreTests {
 
-    @MainActor
     @Test func upsertInsertsNew() {
         let store = SessionStore()
         let session = makeTestSession(id: "s1")
@@ -18,7 +18,6 @@ struct SessionStoreTests {
         #expect(store.sessions[0].id == "s1")
     }
 
-    @MainActor
     @Test func upsertUpdatesExisting() {
         let store = SessionStore()
         let session1 = makeTestSession(id: "s1", status: .ready)
@@ -32,7 +31,6 @@ struct SessionStoreTests {
         #expect(store.sessions[0].status == .busy)
     }
 
-    @MainActor
     @Test func upsertIdenticalSessionIsNoOp() {
         let store = SessionStore()
         let session = makeTestSession(id: "s1", status: .ready)
@@ -45,7 +43,6 @@ struct SessionStoreTests {
         #expect(store.sessions[0] == session)
     }
 
-    @MainActor
     @Test func upsertInsertsAtFront() {
         let store = SessionStore()
         store.upsert(makeTestSession(id: "s1"))
@@ -56,7 +53,6 @@ struct SessionStoreTests {
         #expect(store.sessions[1].id == "s1")
     }
 
-    @MainActor
     @Test func removeById() {
         let store = SessionStore()
         store.upsert(makeTestSession(id: "s1"))
@@ -68,7 +64,6 @@ struct SessionStoreTests {
         #expect(store.sessions[0].id == "s2")
     }
 
-    @MainActor
     @Test func removeClearsActiveSessionId() {
         let store = SessionStore()
         store.upsert(makeTestSession(id: "s1"))
@@ -79,7 +74,6 @@ struct SessionStoreTests {
         #expect(store.activeSessionId == nil)
     }
 
-    @MainActor
     @Test func removeNonActiveDoesNotClearActive() {
         let store = SessionStore()
         store.upsert(makeTestSession(id: "s1"))
@@ -91,7 +85,6 @@ struct SessionStoreTests {
         #expect(store.activeSessionId == "s1")
     }
 
-    @MainActor
     @Test func activeSession() {
         let store = SessionStore()
         store.upsert(makeTestSession(id: "s1"))
@@ -106,7 +99,6 @@ struct SessionStoreTests {
         #expect(store.activeSession == nil)
     }
 
-    @MainActor
     @Test func sortByLastActivity() {
         let store = SessionStore()
         let now = Date()
@@ -119,7 +111,6 @@ struct SessionStoreTests {
         #expect(store.sessions.map(\.id) == ["recent", "mid", "old"])
     }
 
-    @MainActor
     @Test func removeNonexistentIdIsNoOp() {
         let store = SessionStore()
         store.upsert(makeTestSession(id: "s1"))
@@ -133,6 +124,7 @@ struct SessionStoreTests {
 // MARK: - PermissionStore
 
 @Suite("PermissionStore")
+@MainActor
 struct PermissionStoreTests {
 
     private func makePerm(id: String, sessionId: String = "s1") -> PermissionRequest {
@@ -144,7 +136,6 @@ struct PermissionStoreTests {
         )
     }
 
-    @MainActor
     @Test func addAndCount() {
         let store = PermissionStore()
 
@@ -155,7 +146,6 @@ struct PermissionStoreTests {
         #expect(store.pending.count == 2)
     }
 
-    @MainActor
     @Test func addRejectsDuplicates() {
         let store = PermissionStore()
 
@@ -165,7 +155,6 @@ struct PermissionStoreTests {
         #expect(store.count == 1)
     }
 
-    @MainActor
     @Test func removeById() {
         let store = PermissionStore()
         store.add(makePerm(id: "p1"))
@@ -177,7 +166,6 @@ struct PermissionStoreTests {
         #expect(store.pending[0].id == "p2")
     }
 
-    @MainActor
     @Test func takeRemovesAndReturnsFromPending() {
         let store = PermissionStore()
         store.add(makePerm(id: "p1"))
@@ -188,14 +176,12 @@ struct PermissionStoreTests {
         #expect(store.pending.isEmpty)
     }
 
-    @MainActor
     @Test func takeReturnsNilForMissing() {
         let store = PermissionStore()
         let taken = store.take(id: "nonexistent")
         #expect(taken == nil)
     }
 
-    @MainActor
     @Test func removeRemovesFromPending() {
         let store = PermissionStore()
         store.add(makePerm(id: "p1"))
@@ -205,7 +191,6 @@ struct PermissionStoreTests {
         #expect(store.pending.isEmpty)
     }
 
-    @MainActor
     @Test func pendingForSession() {
         let store = PermissionStore()
         store.add(makePerm(id: "p1", sessionId: "s1"))
@@ -222,7 +207,6 @@ struct PermissionStoreTests {
         #expect(s2Perms[0].id == "p2")
     }
 
-    @MainActor
     @Test func pendingForNonexistentSessionReturnsEmpty() {
         let store = PermissionStore()
         store.add(makePerm(id: "p1", sessionId: "s1"))
@@ -230,7 +214,6 @@ struct PermissionStoreTests {
         #expect(store.pending(for: "s99").isEmpty)
     }
 
-    @MainActor
     @Test func removeNonexistentIdIsNoOp() {
         let store = PermissionStore()
         store.add(makePerm(id: "p1"))
@@ -244,9 +227,9 @@ struct PermissionStoreTests {
 // MARK: - WorkspaceStore
 
 @Suite("WorkspaceStore")
+@MainActor
 struct WorkspaceStoreTests {
 
-    @MainActor
     @Test func upsertInsertsNew() {
         let store = WorkspaceStore()
 
@@ -256,7 +239,6 @@ struct WorkspaceStoreTests {
         #expect(store.workspaces[0].id == "w1")
     }
 
-    @MainActor
     @Test func upsertUpdatesExisting() {
         let store = WorkspaceStore()
         store.upsert(makeTestWorkspace(id: "w1", name: "Original"))
@@ -267,7 +249,6 @@ struct WorkspaceStoreTests {
         #expect(store.workspaces[0].name == "Updated")
     }
 
-    @MainActor
     @Test func removeById() {
         let store = WorkspaceStore()
         store.upsert(makeTestWorkspace(id: "w1"))
@@ -279,7 +260,6 @@ struct WorkspaceStoreTests {
         #expect(store.workspaces[0].id == "w2")
     }
 
-    @MainActor
     @Test func removeNonexistentIsNoOp() {
         let store = WorkspaceStore()
         store.upsert(makeTestWorkspace(id: "w1"))
@@ -289,13 +269,11 @@ struct WorkspaceStoreTests {
         #expect(store.workspaces.count == 1)
     }
 
-    @MainActor
     @Test func isLoadedStartsFalse() {
         let store = WorkspaceStore()
         #expect(!store.isLoaded)
     }
 
-    @MainActor
     @Test func skillsStartEmpty() {
         let store = WorkspaceStore()
         #expect(store.skills.isEmpty)

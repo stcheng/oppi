@@ -14,8 +14,9 @@ export function createSkillRoutes(ctx: RouteContext, helpers: RouteHelpers): Rou
     helpers.json(res, { skills: ctx.skillRegistry.list(), changed: event });
   }
 
-  function handleListExtensions(res: ServerResponse): void {
-    helpers.json(res, { extensions: listHostExtensions() });
+  function handleListExtensions(url: URL, res: ServerResponse): void {
+    const cwd = url.searchParams.get("cwd") ?? undefined;
+    helpers.json(res, { extensions: listHostExtensions({ cwd }) });
   }
 
   function handleGetSkillDetail(name: string, res: ServerResponse): void {
@@ -142,7 +143,7 @@ export function createSkillRoutes(ctx: RouteContext, helpers: RouteHelpers): Rou
     }
 
     if (path === "/extensions" && method === "GET") {
-      handleListExtensions(res);
+      handleListExtensions(url, res);
       return true;
     }
 

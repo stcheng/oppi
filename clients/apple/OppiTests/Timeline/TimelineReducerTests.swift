@@ -3,9 +3,9 @@ import Foundation
 @testable import Oppi
 
 @Suite("TimelineReducer")
+@MainActor
 struct TimelineReducerTests {
 
-    @MainActor
     @Test func thinkingThenText() {
         let reducer = TimelineReducer()
 
@@ -23,7 +23,6 @@ struct TimelineReducerTests {
         #expect(preview.contains("I need to think"))
     }
 
-    @MainActor
     @Test func thinkingStreamingShowsPreviewBeforeFinalization() {
         let reducer = TimelineReducer()
 
@@ -53,7 +52,6 @@ struct TimelineReducerTests {
         #expect(finalDone)
     }
 
-    @MainActor
     @Test func toolCallSequence() {
         let reducer = TimelineReducer()
         let toolId = "tool-1"
@@ -81,7 +79,6 @@ struct TimelineReducerTests {
         #expect(isDone)
     }
 
-    @MainActor
     @Test func duplicateToolStartDoesNotCreateDuplicateRows() {
         let reducer = TimelineReducer()
         let toolId = "call_1|fc_1"
@@ -104,7 +101,6 @@ struct TimelineReducerTests {
         #expect(!isDone)
     }
 
-    @MainActor
     @Test func messageEndDoesNotDuplicateTraceAssistantAfterReload() {
         let reducer = TimelineReducer()
 
@@ -145,7 +141,6 @@ struct TimelineReducerTests {
         #expect(text == "Love you, man. Wrapped clean.")
     }
 
-    @MainActor
     @Test func duplicateLiveToolStartUpdatesHistoryRowInPlace() {
         let reducer = TimelineReducer()
         let toolId = "call_2|fc_2"
@@ -176,7 +171,6 @@ struct TimelineReducerTests {
         #expect(!isDone)
     }
 
-    @MainActor
     @Test func assistantTextIsSplitAroundToolCall() {
         let reducer = TimelineReducer()
         let toolId = "tool-1"
@@ -208,7 +202,6 @@ struct TimelineReducerTests {
         #expect(after == "after")
     }
 
-    @MainActor
     @Test func whitespaceOnlyTextBeforeToolDiscarded() {
         let reducer = TimelineReducer()
 
@@ -235,7 +228,6 @@ struct TimelineReducerTests {
         #expect(text == "Done!")
     }
 
-    @MainActor
     @Test func permissionRequestSkipsTimeline() {
         let reducer = TimelineReducer()
         let perm = PermissionRequest(
@@ -261,7 +253,6 @@ struct TimelineReducerTests {
         #expect(tool == "bash")
     }
 
-    @MainActor
     @Test func retryStartRendersAsSystemEvent() {
         let reducer = TimelineReducer()
         reducer.process(.retryStart(sessionId: "s1", attempt: 1, maxAttempts: 3, delayMs: 2000, errorMessage: "rate limit"))
@@ -275,7 +266,6 @@ struct TimelineReducerTests {
         #expect(msg.contains("1/3"))
     }
 
-    @MainActor
     @Test func realErrorRendersAsError() {
         let reducer = TimelineReducer()
         reducer.process(.error(sessionId: "s1", message: "Something went wrong"))
@@ -291,7 +281,6 @@ struct TimelineReducerTests {
 
     // MARK: - Edge Cases
 
-    @MainActor
     @Test func doubleAgentStartPreservesFirstTurnItems() {
         let reducer = TimelineReducer()
 
@@ -321,7 +310,6 @@ struct TimelineReducerTests {
         #expect(second == "fresh response")
     }
 
-    @MainActor
     @Test func resetThenReconnectProducesCleanTimeline() {
         let reducer = TimelineReducer()
 
@@ -344,7 +332,6 @@ struct TimelineReducerTests {
         #expect(text == "fresh")
     }
 
-    @MainActor
     @Test func agentEndWithoutContentProducesNoItems() {
         let reducer = TimelineReducer()
 
@@ -355,7 +342,6 @@ struct TimelineReducerTests {
         #expect(reducer.items.isEmpty)
     }
 
-    @MainActor
     @Test func toolEndForUnknownIdIsIgnored() {
         let reducer = TimelineReducer()
 
@@ -368,7 +354,6 @@ struct TimelineReducerTests {
         #expect(reducer.items.isEmpty)
     }
 
-    @MainActor
     @Test func toolOutputForUnknownIdIsStoredButNoItemCreated() {
         let reducer = TimelineReducer()
 
@@ -387,7 +372,6 @@ struct TimelineReducerTests {
         #expect(reducer.toolOutputStore.fullOutput(for: "orphan") == "data")
     }
 
-    @MainActor
     @Test func eventsAfterSessionEndedStillAppend() {
         let reducer = TimelineReducer()
 
@@ -404,7 +388,6 @@ struct TimelineReducerTests {
         #expect(reducer.items.count == 3)
     }
 
-    @MainActor
     @Test func resetClearsEverything() {
         let reducer = TimelineReducer()
 
@@ -431,7 +414,6 @@ struct TimelineReducerTests {
         #expect(reducer.renderVersion > preResetVersion)
     }
 
-    @MainActor
     @Test func memoryWarningClearsTransientStores() {
         let reducer = TimelineReducer()
         let toolID = "tool-1"
@@ -460,7 +442,6 @@ struct TimelineReducerTests {
         #expect(!reducer.items.isEmpty)
     }
 
-    @MainActor
     @Test func memoryWarningStripsImageAttachments() {
         let reducer = TimelineReducer()
 
@@ -481,7 +462,6 @@ struct TimelineReducerTests {
         }
     }
 
-    @MainActor
     @Test func markdownSegmentCacheSkipsOversizedEntries() {
         let cache = MarkdownSegmentCache.shared
         cache.clearAll()
@@ -496,7 +476,6 @@ struct TimelineReducerTests {
         #expect(stats.totalSourceBytes == 0)
     }
 
-    @MainActor
     @Test func markdownSegmentCacheEvictsToBudget() {
         let cache = MarkdownSegmentCache.shared
         cache.clearAll()
@@ -513,7 +492,6 @@ struct TimelineReducerTests {
         #expect(stats.totalSourceBytes <= 1024 * 1024)
     }
 
-    @MainActor
     @Test func markdownSegmentCacheSeparatesEntriesByTheme() {
         let cache = MarkdownSegmentCache.shared
         cache.clearAll()
@@ -530,7 +508,6 @@ struct TimelineReducerTests {
         #expect(stats.entries == 2)
     }
 
-    @MainActor
     @Test func processBatchMixedEvents() {
         let reducer = TimelineReducer()
 
@@ -577,7 +554,6 @@ struct TimelineReducerTests {
         #expect(text2 == "Done.")
     }
 
-    @MainActor
     @Test func orphanedToolIsClosedOnAgentEnd() {
         let reducer = TimelineReducer()
 
@@ -593,7 +569,6 @@ struct TimelineReducerTests {
         #expect(isDone, "Orphaned tool should be marked done on agentEnd")
     }
 
-    @MainActor
     @Test func appendSystemEvent() {
         let reducer = TimelineReducer()
 
@@ -607,7 +582,6 @@ struct TimelineReducerTests {
         #expect(msg == "Session force-stopped")
     }
 
-    @MainActor
     @Test func multipleAgentTurns() {
         let reducer = TimelineReducer()
 
@@ -636,7 +610,6 @@ struct TimelineReducerTests {
         #expect(t2 == "Second")
     }
 
-    @MainActor
     @Test func permissionExpiredIsNoOpInReducer() {
         // In new flow, permissionExpired is handled by ServerConnection
         // (via PermissionStore.take + resolvePermission), not by the reducer's
@@ -658,7 +631,6 @@ struct TimelineReducerTests {
 
     // MARK: - loadSession
 
-    @MainActor
     @Test func loadSessionUserAndAssistant() {
         let reducer = TimelineReducer()
         let events = [
@@ -685,7 +657,6 @@ struct TimelineReducerTests {
         #expect(assistantText == "Hi there!")
     }
 
-    @MainActor
     @Test func loadSessionUnchangedTraceUsesIncrementalNoOp() {
         let reducer = TimelineReducer()
         let events = [
@@ -709,7 +680,6 @@ struct TimelineReducerTests {
         #expect(reducer.items == baselineItems)
     }
 
-    @MainActor
     @Test func loadSessionAppendedTraceUsesIncrementalAppend() {
         let reducer = TimelineReducer()
         let base = [
@@ -742,7 +712,6 @@ struct TimelineReducerTests {
         #expect(tailText == "Incremental tail")
     }
 
-    @MainActor
     @Test func loadSessionForcesFullRebuildAfterOutOfBandMutation() {
         let reducer = TimelineReducer()
         let base = [
@@ -775,7 +744,6 @@ struct TimelineReducerTests {
         #expect(text == "Server canonical")
     }
 
-    @MainActor
     @Test func loadSessionToolCallAndResult() {
         let reducer = TimelineReducer()
         let events = [
@@ -802,7 +770,6 @@ struct TimelineReducerTests {
         #expect(reducer.toolOutputStore.fullOutput(for: "tc1") == "file1.txt\nfile2.txt")
     }
 
-    @MainActor
     @Test func loadSessionThinking() {
         let reducer = TimelineReducer()
         let events = [
@@ -823,7 +790,6 @@ struct TimelineReducerTests {
         #expect(isDone)   // Historical always done
     }
 
-    @MainActor
     @Test func loadSessionLongThinkingKeepsFullPreview() {
         let reducer = TimelineReducer()
         let longThinking = String(repeating: "x", count: 600) // > maxPreviewLength
@@ -843,7 +809,6 @@ struct TimelineReducerTests {
         #expect(preview == longThinking)
     }
 
-    @MainActor
     @Test func loadSessionSystemAndCompaction() {
         let reducer = TimelineReducer()
         let events = [
@@ -870,7 +835,6 @@ struct TimelineReducerTests {
         #expect(msg2 == "Context compacted")
     }
 
-    @MainActor
     @Test func loadSessionCompactionPrefersTraceSummaryText() {
         let reducer = TimelineReducer()
         let events = [
@@ -889,7 +853,6 @@ struct TimelineReducerTests {
         #expect(message == "Context compacted (12,345 tokens): ## Goal\n1. Keep calm")
     }
 
-    @MainActor
     @Test func streamingCompactionEndRetainsFullSummaryAndTokenCount() {
         let reducer = TimelineReducer()
         let summary = "## Goal\n1. Continue UIKit-native timeline migration\n2. Keep it calm"
@@ -912,7 +875,6 @@ struct TimelineReducerTests {
         #expect(message == "Context compacted (123,456 tokens): \(summary)")
     }
 
-    @MainActor
     @Test func loadSessionToolResultErrorFlag() {
         let reducer = TimelineReducer()
         let events = [
@@ -932,7 +894,6 @@ struct TimelineReducerTests {
         #expect(isError)
     }
 
-    @MainActor
     @Test func loadSessionToolArgsStored() {
         let reducer = TimelineReducer()
         let events = [
@@ -948,7 +909,6 @@ struct TimelineReducerTests {
 
     // MARK: - appendUserMessage
 
-    @MainActor
     @Test func appendUserMessage() {
         let reducer = TimelineReducer()
         reducer.appendUserMessage("Hello from user")
@@ -963,7 +923,6 @@ struct TimelineReducerTests {
 
     // MARK: - processBatch tool output coalescing
 
-    @MainActor
     @Test func processBatchCoalescesMultipleToolOutputs() {
         let reducer = TimelineReducer()
 
@@ -981,7 +940,6 @@ struct TimelineReducerTests {
         #expect(fullOutput == "line1\nline2\nline3\n")
     }
 
-    @MainActor
     @Test func processBatchToolOutputWithError() {
         let reducer = TimelineReducer()
 
@@ -1002,7 +960,6 @@ struct TimelineReducerTests {
 
     // MARK: - Thinking finalization keeps full text inline
 
-    @MainActor
     @Test func longThinkingStaysInThinkingPreviewOnAgentEnd() {
         let reducer = TimelineReducer()
         let longThinking = String(repeating: "y", count: 600) // > maxPreviewLength
@@ -1020,7 +977,6 @@ struct TimelineReducerTests {
         #expect(preview == longThinking)
     }
 
-    @MainActor
     @Test func thinkingOverflowContinuesUpdatingPreview() {
         let reducer = TimelineReducer()
 
@@ -1060,7 +1016,6 @@ struct TimelineReducerTests {
 
     // MARK: - Tool args stored on toolStart
 
-    @MainActor
     @Test func toolStartStoresArgs() {
         let reducer = TimelineReducer()
         let args: [String: JSONValue] = ["command": .string("echo hello")]
@@ -1072,7 +1027,6 @@ struct TimelineReducerTests {
         #expect(stored?["command"] == .string("echo hello"))
     }
 
-    @MainActor
     @Test func toolStartEmptyArgsNotStored() {
         let reducer = TimelineReducer()
 
@@ -1083,7 +1037,6 @@ struct TimelineReducerTests {
         #expect(stored == nil, "Empty args should not be stored")
     }
 
-    @MainActor
     @Test func toolEndStoresDetails() {
         let reducer = TimelineReducer()
 
@@ -1111,7 +1064,6 @@ struct TimelineReducerTests {
 
     // MARK: - ChatItem preview truncation
 
-    @MainActor
     @Test func previewTruncatesLongText() {
         let long = String(repeating: "x", count: 600)
         let preview = ChatItem.preview(long)
@@ -1119,7 +1071,6 @@ struct TimelineReducerTests {
         #expect(preview.hasSuffix("…"))
     }
 
-    @MainActor
     @Test func previewKeepsShortText() {
         let short = "hello"
         #expect(ChatItem.preview(short) == "hello")
@@ -1127,7 +1078,6 @@ struct TimelineReducerTests {
 
     // MARK: - ChatItem timestamps
 
-    @MainActor
     @Test func chatItemTimestamps() {
         let now = Date()
         let user = ChatItem.userMessage(id: "1", text: "hi", timestamp: now)
@@ -1163,7 +1113,6 @@ struct TimelineReducerTests {
 
     // MARK: - ToolArgsStore
 
-    @MainActor
     @Test func toolArgsStoreClearAll() {
         let store = ToolArgsStore()
         store.set(["key": .string("val")], for: "t1")
@@ -1179,7 +1128,6 @@ struct TimelineReducerTests {
     /// `loadSession` does a full canonical rebuild instead of an incremental
     /// no-op/append. If any path forgets, stale or duplicate items appear.
 
-    @MainActor
     @Test func processBatchBreaksIncrementalMode() {
         let reducer = TimelineReducer()
         let events = makeBaseTrace()
@@ -1198,7 +1146,6 @@ struct TimelineReducerTests {
             "processBatch should break incremental mode")
     }
 
-    @MainActor
     @Test func processSingleEventBreaksIncrementalMode() {
         let reducer = TimelineReducer()
         let events = makeBaseTrace()
@@ -1211,7 +1158,6 @@ struct TimelineReducerTests {
             "process() should break incremental mode")
     }
 
-    @MainActor
     @Test func appendUserMessageBreaksIncrementalMode() {
         let reducer = TimelineReducer()
         let events = makeBaseTrace()
@@ -1224,7 +1170,6 @@ struct TimelineReducerTests {
             "appendUserMessage should break incremental mode")
     }
 
-    @MainActor
     @Test func removeItemBreaksIncrementalMode() {
         let reducer = TimelineReducer()
         let events = makeBaseTrace()
@@ -1239,7 +1184,6 @@ struct TimelineReducerTests {
             "removeItem should break incremental mode")
     }
 
-    @MainActor
     @Test func appendAudioClipBreaksIncrementalMode() {
         let reducer = TimelineReducer()
         let events = makeBaseTrace()
@@ -1252,7 +1196,6 @@ struct TimelineReducerTests {
             "appendAudioClip should break incremental mode")
     }
 
-    @MainActor
     @Test func resolvePermissionBreaksIncrementalMode() {
         let reducer = TimelineReducer()
         let events = makeBaseTrace()
@@ -1267,7 +1210,6 @@ struct TimelineReducerTests {
 
     // MARK: - Incremental loadSession: edge cases
 
-    @MainActor
     @Test func resetClearsIncrementalTrackingState() {
         let reducer = TimelineReducer()
         let events = makeBaseTrace()
@@ -1285,7 +1227,6 @@ struct TimelineReducerTests {
             "reset should clear incremental tracking state")
     }
 
-    @MainActor
     @Test func tracePrefixDivergenceForcesFullRebuild() {
         let reducer = TimelineReducer()
         let original = [
@@ -1319,7 +1260,6 @@ struct TimelineReducerTests {
         #expect(text == "Compacted response")
     }
 
-    @MainActor
     @Test func shorterTraceForcesFullRebuild() {
         let reducer = TimelineReducer()
         let full = [
@@ -1346,7 +1286,6 @@ struct TimelineReducerTests {
         #expect(reducer.items.count == 1)
     }
 
-    @MainActor
     @Test func incrementalAppendWithToolCallAndResult() {
         let reducer = TimelineReducer()
         let base = makeBaseTrace()
@@ -1377,7 +1316,6 @@ struct TimelineReducerTests {
         #expect(reducer.toolArgsStore.args(for: "tc1")?["command"] == .string("echo hi"))
     }
 
-    @MainActor
     @Test func incrementalAppendWithThinkingEvent() {
         let reducer = TimelineReducer()
         let base = makeBaseTrace()
@@ -1402,7 +1340,6 @@ struct TimelineReducerTests {
         #expect(preview == longThinking)
     }
 
-    @MainActor
     @Test func consecutiveIncrementalAppendsAccumulate() {
         let reducer = TimelineReducer()
         let base = makeBaseTrace()
@@ -1433,7 +1370,6 @@ struct TimelineReducerTests {
         #expect(text == "Fourth")
     }
 
-    @MainActor
     @Test func messageEndFinalizesAssistantText() {
         let reducer = TimelineReducer()
 
@@ -1449,7 +1385,6 @@ struct TimelineReducerTests {
         #expect(text == "Final answer")
     }
 
-    @MainActor
     @Test func messageEndWithoutDeltaCreatesAssistantMessage() {
         let reducer = TimelineReducer()
 
@@ -1479,7 +1414,6 @@ struct TimelineReducerTests {
 
     // MARK: - Compaction Deduplication
 
-    @MainActor
     @Test func compactionStartEndCollapsesIntoSingleItem() {
         // A single compaction cycle (start + end) should produce exactly 1 timeline item,
         // not 2 separate items. The end message replaces the start message.
@@ -1513,7 +1447,6 @@ struct TimelineReducerTests {
         #expect(endMsg.contains("100,000"))
     }
 
-    @MainActor
     @Test func traceCompactionThenLiveCompactionDoesNotDuplicate() {
         // Simulates the race condition: loadSession rebuilds from trace (which includes
         // the compaction entry), then buffered live WS events for the SAME compaction
@@ -1562,7 +1495,6 @@ struct TimelineReducerTests {
                 "Expected at most 1 compaction item after trace + live, got \(compactionCountAfterLive)")
     }
 
-    @MainActor
     @Test func multipleCompactionCyclesShowMultipleItems() {
         // Two genuinely different compaction cycles should produce 2 items (one each).
         let reducer = TimelineReducer()
@@ -1595,7 +1527,6 @@ struct TimelineReducerTests {
         #expect(compactionItems.count == 2, "Two separate compaction cycles should produce 2 items")
     }
 
-    @MainActor
     @Test func compactionOverflowReasonShowsCorrectLabel() {
         let reducer = TimelineReducer()
 

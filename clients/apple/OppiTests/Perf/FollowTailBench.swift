@@ -12,7 +12,7 @@ import UIKit
 /// 49% in followTail per spin dump analysis).
 ///
 /// Output format: `METRIC name=number` for autoresearch consumption.
-@Suite("FollowTailBench")
+@Suite("FollowTailBench", .tags(.perf))
 struct FollowTailBench {
 
     private static let medianRuns = 5

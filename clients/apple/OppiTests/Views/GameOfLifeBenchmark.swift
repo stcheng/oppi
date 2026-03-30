@@ -5,7 +5,7 @@ import Testing
 
 /// Benchmark suite for Game of Life optimization.
 /// Outputs METRIC lines parsed by autoresearch.sh.
-@Suite("GameOfLifeBenchmark")
+@Suite("GameOfLifeBenchmark", .tags(.perf))
 struct GameOfLifeBenchmark {
 
     // MARK: - Primary: tick performance

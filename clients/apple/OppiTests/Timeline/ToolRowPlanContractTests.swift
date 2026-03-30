@@ -1,8 +1,8 @@
 import Testing
 @testable import Oppi
 
-@MainActor
 @Suite("Tool row render plan contract")
+@MainActor
 struct ToolRowPlanContractTests {
     @Test func collapsedToolPlanUsesCollapsedInteractionSpec() {
         let plan = ToolRowPlanBuilder.build(configuration: makeTimelineToolConfiguration(

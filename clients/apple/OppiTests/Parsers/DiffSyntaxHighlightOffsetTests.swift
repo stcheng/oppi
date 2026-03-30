@@ -4,7 +4,6 @@ import UIKit
 @testable import Oppi
 
 @Suite("DiffAttributedStringBuilder syntax offset")
-@MainActor
 struct DiffSyntaxHighlightOffsetTests {
 
     /// The first character of each diff line's code text must receive the correct

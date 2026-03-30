@@ -132,14 +132,16 @@ npx oppi token rotate            # rotate owner bearer token
 
 ## Built-in extensions
 
-The server ships two first-party extensions, injected into every agent session by default:
+The server provides two first-party extensions:
 
 - **ask** — structured Q&A between agent and user. The agent poses questions with predefined options; the iOS app renders them as interactive cards and routes answers back.
 - **spawn_agent** — multi-agent orchestration. Spawn child sessions, inspect traces, send messages mid-turn, stop or resume agents. See [docs/sub-agents.md](docs/sub-agents.md).
 
-These first-party extensions are configurable per workspace via the `extensions` field in workspace settings. If a workspace sets an explicit allowlist, omitting `ask` or `spawn_agent` disables them for that workspace.
+Both are enabled by default when a workspace does not set `extensions`.
 
-Pi provides the core runtime and extension model. Oppi builds on top of that with the mobile client, transport, server orchestration, native rendering, and a few server-managed capabilities.
+If a workspace sets `extensions`, that list becomes an authoritative allowlist for optional extensions. To keep first-party tools enabled in that mode, include `ask` and `spawn_agent` explicitly.
+
+Pi provides the core runtime and extension model. Oppi builds on top of that with the mobile client, transport, server orchestration, native rendering, and server-managed capabilities.
 
 ## Server stats API
 

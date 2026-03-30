@@ -1,8 +1,8 @@
 import Testing
 @testable import Oppi
 
-@MainActor
 @Suite("Tool expanded surface host")
+@MainActor
 struct ToolExpandedSurfaceHostTests {
     @Test func expandedSurfaceHostActivatesExpectedSurfaceForEachMode() {
         let markdownView = ToolTimelineRowContentView(configuration: makeTimelineToolConfiguration(

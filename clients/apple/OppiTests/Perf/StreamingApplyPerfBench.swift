@@ -13,7 +13,7 @@ import UIKit
 ///
 /// Uses a real UIWindow + UICollectionView with 80+ items to match production
 /// conditions where perf degrades.
-@Suite("StreamingApplyPerfBench")
+@Suite("StreamingApplyPerfBench", .tags(.perf))
 @MainActor
 struct StreamingApplyPerfBench {
 

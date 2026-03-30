@@ -116,4 +116,6 @@ All agents in a workspace share the same working directory. For tasks that touch
 
 ## Workspace configuration
 
-The `spawn_agent` and `ask` extensions are enabled by default. To disable them for a specific workspace, use the `extensions` field in workspace settings. When `extensions` is set, only the listed extensions are loaded — omitting `spawn_agent` or `ask` disables them for that workspace.
+`spawn_agent` and `ask` are enabled by default.
+
+If a workspace sets `extensions`, that field becomes an authoritative allowlist for optional extensions. Omitting `spawn_agent` or `ask` disables them for that workspace.

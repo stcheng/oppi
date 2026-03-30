@@ -77,14 +77,31 @@ export class SessionStopFlowCoordinator {
       }
 
       await this.deps.runtimeManager.withWorkspaceLock(active.workspaceId, async () => {
+        const wasBusy = active.session.status === "busy";
+
         if (!this.deps.stopCoordinator.beginPendingStop(key, active, "terminate", "user")) {
           this.deps.stopCoordinator.promotePendingStop(key, active, "terminate", "user");
         }
 
-        void active.sdkBackend.abort();
-        await new Promise((resolve) => setTimeout(resolve, this.stopSessionGraceMs));
+        if (!wasBusy && active.pendingStop?.mode === "terminate") {
+          this.deps.stopCoordinator.forceTerminateSessionProcess(key, active, "user");
+          return;
+        }
 
-        this.deps.stopCoordinator.forceTerminateSessionProcess(key, active, "user");
+        const waitForTerminate = this.deps.stopCoordinator.armPendingTerminateTimeout(
+          key,
+          active,
+          this.stopSessionGraceMs,
+        );
+
+        void active.sdkBackend.abort();
+        try {
+          active.sdkBackend.session.abortBash();
+        } catch {
+          // no bash running — fine
+        }
+
+        await waitForTerminate;
       });
     });
   }

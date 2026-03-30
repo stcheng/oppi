@@ -107,7 +107,7 @@ npx oppi token rotate            rotate owner auth token
 - [Server README](server/README.md) — server setup, Docker, development
 - [Config schema](server/docs/config-schema.md) — all config options
 - [Policy engine](server/docs/policy-engine.md) — permission rules and heuristics
-- [Extensions](docs/extensions.md) — writing and using pi extensions with Oppi
+- [Extensions](docs/extensions.md) — Oppi-specific extension behavior, workspace filtering, and mobile rendering gotchas
 - [Custom themes](docs/theme-system.md) — creating color themes for the iOS app
 - [Telemetry and privacy](docs/telemetry.md) — what data is collected (short answer: none)
 - [Security](SECURITY.md) — security model and privacy

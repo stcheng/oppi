@@ -16,8 +16,7 @@ import Foundation
 /// - Permission lookup per active row
 ///
 /// Output format: `METRIC name=number` for autoresearch consumption.
-@Suite("SessionListPerfBench")
-@MainActor
+@Suite("SessionListPerfBench", .tags(.perf))
 struct SessionListPerfBench {
 
     // MARK: - Configuration

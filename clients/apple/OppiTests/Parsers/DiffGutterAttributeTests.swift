@@ -4,7 +4,6 @@ import UIKit
 @testable import Oppi
 
 @Suite("DiffAttributedStringBuilder gutter attributes")
-@MainActor
 struct DiffGutterAttributeTests {
 
     private func makeHunks() -> [WorkspaceReviewDiffHunk] {

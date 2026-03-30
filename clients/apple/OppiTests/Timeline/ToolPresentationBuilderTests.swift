@@ -4,8 +4,8 @@ import Dispatch
 
 @testable import Oppi
 
-@MainActor
 @Suite("ToolPresentationBuilder")
+@MainActor
 struct ToolPresentationBuilderTests {
 
     private func emptyContext(

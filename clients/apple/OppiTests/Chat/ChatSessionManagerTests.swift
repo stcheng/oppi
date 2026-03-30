@@ -3,9 +3,9 @@ import Testing
 @testable import Oppi
 
 @Suite("ChatSessionManager")
+@MainActor
 struct ChatSessionManagerTests {
 
-    @MainActor
     @Test func initialState() {
         let manager = ChatSessionManager(sessionId: "test-123")
         #expect(manager.sessionId == "test-123")
@@ -15,7 +15,6 @@ struct ChatSessionManagerTests {
         #expect(!manager.needsInitialScroll)
     }
 
-    @MainActor
     @Test func firstAppearDoesNotBumpGeneration() {
         let manager = ChatSessionManager(sessionId: "s1")
         #expect(manager.connectionGeneration == 0)
@@ -27,7 +26,6 @@ struct ChatSessionManagerTests {
         #expect(manager.connectionGeneration == 0, "First appear should not bump generation")
     }
 
-    @MainActor
     @Test func subsequentAppearBumpsGeneration() {
         let manager = ChatSessionManager(sessionId: "s1")
         manager.markAppeared()
@@ -40,7 +38,6 @@ struct ChatSessionManagerTests {
         #expect(manager.connectionGeneration == 2, "Third appear should bump again")
     }
 
-    @MainActor
     @Test func reconnectBumpsGeneration() {
         let manager = ChatSessionManager(sessionId: "s1")
         #expect(manager.connectionGeneration == 0)
@@ -52,7 +49,6 @@ struct ChatSessionManagerTests {
         #expect(manager.connectionGeneration == 2)
     }
 
-    @MainActor
     @Test func unexpectedConnectedStreamExitSchedulesReconnect() async {
         let sessionId = "auto-reconnect"
         let manager = ChatSessionManager(sessionId: sessionId)
@@ -82,7 +78,6 @@ struct ChatSessionManagerTests {
         manager.cleanup()
     }
 
-    @MainActor
     @Test func cancelledStreamExitDoesNotScheduleReconnect() async {
         let manager = ChatSessionManager(sessionId: "cancelled-exit")
         let streams = ScriptedStreamFactory()
@@ -109,7 +104,6 @@ struct ChatSessionManagerTests {
         manager.cleanup()
     }
 
-    @MainActor
     @Test func stoppedSessionDoesNotOpenWebSocket() async {
         let sessionId = "stopped-session"
         let manager = ChatSessionManager(sessionId: sessionId)
@@ -148,7 +142,6 @@ struct ChatSessionManagerTests {
 
     /// History reload always runs on entry, even when cache is present.
     /// Cache provides instant display; reload provides ground truth.
-    @MainActor
     @Test func initialConnectAlwaysSchedulesHistoryReloadWithCache() async {
         let sessionId = "cache-reload-\(UUID().uuidString)"
         let manager = ChatSessionManager(sessionId: sessionId)
@@ -192,7 +185,6 @@ struct ChatSessionManagerTests {
 
     /// With per-session reducers, each connect() resets the reducer and
     /// loads from cache. Verify that cache loads correctly on reconnect.
-    @MainActor
     @Test func reconnectLoadsFromCache() async {
         let sessionId = "reentry-cache-\(UUID().uuidString)"
         let manager = ChatSessionManager(sessionId: sessionId)
@@ -226,7 +218,6 @@ struct ChatSessionManagerTests {
         await TimelineCache.shared.removeTrace(sessionId)
     }
 
-    @MainActor
     @Test func connectWithoutCacheTransitionsToAwaitingConnectedWithoutCachedHistory() async {
         let sessionId = "state-no-cache-\(UUID().uuidString)"
         let manager = ChatSessionManager(sessionId: sessionId)
@@ -260,7 +251,6 @@ struct ChatSessionManagerTests {
         #expect(manager.entryState == .disconnected(reason: .streamEnded))
     }
 
-    @MainActor
     @Test func generationChangeDuringStreamingTransitionsToGenerationChanged() async {
         let sessionId = "state-generation-\(UUID().uuidString)"
         let manager = ChatSessionManager(sessionId: sessionId)
@@ -298,7 +288,6 @@ struct ChatSessionManagerTests {
     /// History reload always runs to completion on first connect — it is
     /// never cancelled by catch-up outcomes or state transitions. This is
     /// the fix for blank timelines when entering a READY session without cache.
-    @MainActor
     @Test func firstConnectAlwaysCompletesHistoryReload() async {
         let sessionId = "first-connect-\(UUID().uuidString)"
         let manager = ChatSessionManager(sessionId: sessionId)
@@ -346,7 +335,6 @@ struct ChatSessionManagerTests {
 
     /// With the persisted lastSeenSeq matching server currentSeq (the exact
     /// scenario that caused blank timelines), history reload still completes.
-    @MainActor
     @Test func firstConnectNoGapStillCompletesHistoryReload() async {
         let sessionId = "nogap-\(UUID().uuidString)"
         let manager = ChatSessionManager(sessionId: sessionId)
@@ -392,7 +380,6 @@ struct ChatSessionManagerTests {
 
     /// Validates that when catch-up fails on first connect (seq regression),
     /// the scheduled full history reload is NOT cancelled.
-    @MainActor
     @Test func firstConnectSeqRegressionKeepsHistoryReload() async {
         let sessionId = "regress-\(UUID().uuidString)"
         let manager = ChatSessionManager(sessionId: sessionId)
@@ -443,7 +430,6 @@ struct ChatSessionManagerTests {
 
     // MARK: - Lifecycle race harness
 
-    @MainActor
     @Test func staleGenerationCleanupDoesNotDisconnectNewerReconnectStream() async {
         let manager = ChatSessionManager(sessionId: "s1")
         let streams = ScriptedStreamFactory()
@@ -491,7 +477,6 @@ struct ChatSessionManagerTests {
         )
     }
 
-    @MainActor
     @Test func staleCleanupSkipsDisconnectWhenSocketOwnershipMoved() async {
         let manager = ChatSessionManager(sessionId: "s1")
         let streams = ScriptedStreamFactory()
@@ -521,7 +506,6 @@ struct ChatSessionManagerTests {
         )
     }
 
-    @MainActor
     @Test func reconnectReloadUsesLatestTraceSignature() async {
         let sessionId = "sig-\(UUID().uuidString)"
         let manager = ChatSessionManager(sessionId: sessionId)
@@ -568,7 +552,6 @@ struct ChatSessionManagerTests {
         #expect(snapshot.calls[1].cachedLastEventId == "evt-200")
     }
 
-    @MainActor
     @Test func reconnectWithSequencedCatchUpSkipsFullHistoryReload() async {
         let sessionId = "seq-catchup-\(UUID().uuidString)"
         let manager = ChatSessionManager(sessionId: sessionId)
@@ -634,7 +617,6 @@ struct ChatSessionManagerTests {
         await connectTask.value
     }
 
-    @MainActor
     @Test func reconnectReloadCancelsStaleInFlightTasks() async {
         let sessionId = "cancel-\(UUID().uuidString)"
         let manager = ChatSessionManager(sessionId: sessionId)
@@ -686,7 +668,6 @@ struct ChatSessionManagerTests {
         await connectTask.value
     }
 
-    @MainActor
     @Test func stateSyncRequestedOnConnectedMessagesOnly() async {
         let sessionId = "state-\(UUID().uuidString)"
         let manager = ChatSessionManager(sessionId: sessionId)
@@ -722,7 +703,6 @@ struct ChatSessionManagerTests {
         await connectTask.value
     }
 
-    @MainActor
     @Test func busyHistoryReloadAppliesTraceAndPreservesLiveRows() async {
         let sessionId = "busy-reload-\(UUID().uuidString)"
         let workspaceId = "w-live"
@@ -803,7 +783,6 @@ struct ChatSessionManagerTests {
         await TimelineCache.shared.removeTrace(sessionId)
     }
 
-    @MainActor
     @Test func reconnectCatchUpReplaysStopConfirmedDeterministically() async {
         let sessionId = "catch-stop-ok-\(UUID().uuidString)"
         let manager = ChatSessionManager(sessionId: sessionId)
@@ -867,7 +846,6 @@ struct ChatSessionManagerTests {
         await connectTask.value
     }
 
-    @MainActor
     @Test func reconnectCatchUpStopFailedLeavesNoStuckStoppingState() async {
         let sessionId = "catch-stop-fail-\(UUID().uuidString)"
         let manager = ChatSessionManager(sessionId: sessionId)
@@ -932,7 +910,6 @@ struct ChatSessionManagerTests {
         await connectTask.value
     }
 
-    @MainActor
     @Test func reconnectCatchUpRingMissForcesFullHistoryReload() async {
         let sessionId = "catch-gap-\(UUID().uuidString)"
         let manager = ChatSessionManager(sessionId: sessionId)
@@ -997,7 +974,6 @@ struct ChatSessionManagerTests {
         await connectTask.value
     }
 
-    @MainActor
     @Test func duplicateSeqEventsAreDroppedAfterReconnect() async {
         let sessionId = "seq-dedupe-\(UUID().uuidString)"
         let manager = ChatSessionManager(sessionId: sessionId)
@@ -1052,7 +1028,6 @@ struct ChatSessionManagerTests {
     ///
     /// Fix: only defer when the reducer was previously loaded from cache — live
     /// stream items alone are not a valid reason to skip history.
-    @MainActor
     @Test func noCacheBusySessionAppliesHistoryDespiteLiveStreamItems() async {
         let sessionId = "no-cache-busy-\(UUID().uuidString)"
         let workspaceId = "w-fresh"
@@ -1122,21 +1097,18 @@ struct ChatSessionManagerTests {
         await connectTask.value
     }
 
-    @MainActor
     @Test func cleanupIsSafe() {
         let manager = ChatSessionManager(sessionId: "s1")
         manager.cleanup()
         manager.cleanup() // idempotent
     }
 
-    @MainActor
     @Test func cancelReconciliationIsSafe() {
         let manager = ChatSessionManager(sessionId: "s1")
         manager.cancelReconciliation()
         manager.cancelReconciliation() // idempotent
     }
 
-    @MainActor
     @Test func flushSnapshotPersistsTraceWhenAvailable() async {
         let manager = ChatSessionManager(sessionId: "flush-\(UUID().uuidString)")
 
@@ -1159,7 +1131,6 @@ struct ChatSessionManagerTests {
         #expect(saved.first?.count == 2)
     }
 
-    @MainActor
     @Test func flushSnapshotDebouncesBackToBackCalls() async {
         let manager = ChatSessionManager(sessionId: "flush-\(UUID().uuidString)")
 
@@ -1182,7 +1153,6 @@ struct ChatSessionManagerTests {
         #expect(saveCalls == 1)
     }
 
-    @MainActor
     @Test func flushSnapshotForceBypassesDebounceWindow() async {
         let manager = ChatSessionManager(sessionId: "flush-\(UUID().uuidString)")
 
@@ -1205,7 +1175,6 @@ struct ChatSessionManagerTests {
         #expect(saveCalls == 2)
     }
 
-    @MainActor
     @Test func flushSnapshotSkipsSaveWhenTraceMissing() async {
         let manager = ChatSessionManager(sessionId: "flush-\(UUID().uuidString)")
 
@@ -1256,7 +1225,6 @@ struct ChatSessionManagerTests {
     ///
     /// This test verifies that `.connected` is processed promptly after the stream
     /// starts, rather than being delayed by upstream blocking.
-    @MainActor
     @Test func connectedMessageIsProcessedWithoutExcessiveDispatchLag() async {
         let sessionId = "dispatch-lag-test"
         let manager = ChatSessionManager(sessionId: sessionId)
@@ -1315,7 +1283,6 @@ struct ChatSessionManagerTests {
     /// pre-tracking), catch-up is skipped. The safety net is that the pending
     /// history reload stays alive. This test ensures that safety net holds:
     /// nil `currentSeq` → history reload preserved → timeline populated.
-    @MainActor
     @Test func nilCurrentSeqPreservesHistoryReloadAsSafetyNet() async {
         let sessionId = "meta-race-\(UUID().uuidString)"
         let manager = ChatSessionManager(sessionId: sessionId)
@@ -1370,7 +1337,6 @@ struct ChatSessionManagerTests {
     /// Complement of the nil-meta test: when `currentSeq` is available (the
     /// fix working), catch-up runs and the slow history reload is cancelled.
     /// This validates that the pre-track fix provides the fast path.
-    @MainActor
     /// First connect seeds seq from the server's currentSeq. History reload
     /// runs independently and is never cancelled by the seq seeding.
     @Test func availableCurrentSeqSeedsSeqAndHistoryReloadCompletes() async {

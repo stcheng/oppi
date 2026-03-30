@@ -12,7 +12,7 @@ import UIKit
 /// to exercise the full rendering path that users experience.
 ///
 /// Output format: METRIC name=number (microseconds)
-@Suite("CollectionRenderPerfBench")
+@Suite("CollectionRenderPerfBench", .tags(.perf))
 @MainActor
 struct CollectionRenderPerfBench {
 

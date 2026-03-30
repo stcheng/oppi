@@ -16,11 +16,11 @@ import Foundation
 /// Each test asserts correctness AND measures wall-clock time against a budget.
 /// Budgets are generous (10x typical) to catch regressions, not benchmark.
 @Suite("TimelineStress")
+@MainActor
 struct TimelineStressTests {
 
     // MARK: - loadSession at scale
 
-    @MainActor
     @Test func loadSession200Events() {
         let reducer = TimelineReducer()
         let events = makeTraceEvents(count: 200)
@@ -34,7 +34,6 @@ struct TimelineStressTests {
             "loadSession(200) took \(elapsed) — budget 500ms")
     }
 
-    @MainActor
     @Test func loadSession400Events() {
         let reducer = TimelineReducer()
         let events = makeTraceEvents(count: 400)
@@ -48,7 +47,6 @@ struct TimelineStressTests {
             "loadSession(400) took \(elapsed) — budget 1s")
     }
 
-    @MainActor
     @Test func loadSession600MixedEvents() {
         let reducer = TimelineReducer()
         let events = makeMixedTraceEvents(count: 600)
@@ -76,7 +74,6 @@ struct TimelineStressTests {
 
     // MARK: - Incremental loadSession (no-op and append)
 
-    @MainActor
     @Test func incrementalNoOpIsFree() {
         let reducer = TimelineReducer()
         let events = makeTraceEvents(count: 200)
@@ -96,7 +93,6 @@ struct TimelineStressTests {
             "50x no-op reloads took \(elapsed) — budget 100ms")
     }
 
-    @MainActor
     @Test func incrementalAppend50Events() {
         let reducer = TimelineReducer()
         let base = makeTraceEvents(count: 150)
@@ -116,7 +112,6 @@ struct TimelineStressTests {
 
     // MARK: - processBatch streaming simulation
 
-    @MainActor
     @Test func processBatch100TextDeltas() {
         let reducer = TimelineReducer()
         reducer.process(.agentStart(sessionId: "s1"))
@@ -140,7 +135,6 @@ struct TimelineStressTests {
             "processBatch(100 deltas) took \(elapsed) — budget 100ms")
     }
 
-    @MainActor
     @Test func processBatchRepeated30FPS() {
         // Simulate 3 seconds of streaming at 30fps (90 batches of 5 deltas)
         let reducer = TimelineReducer()
@@ -166,7 +160,6 @@ struct TimelineStressTests {
             "90 frames x 5 deltas took \(elapsed) — budget 500ms")
     }
 
-    @MainActor
     @Test func processBatchWithToolOutputBursts() {
         let reducer = TimelineReducer()
         reducer.process(.agentStart(sessionId: "s1"))
@@ -196,7 +189,6 @@ struct TimelineStressTests {
 
     // MARK: - Session switching churn
 
-    @MainActor
     @Test func rapidSessionSwitching20Times() {
         let reducer = TimelineReducer()
 
@@ -218,7 +210,6 @@ struct TimelineStressTests {
             "20 session switches took \(elapsed) — budget 2s")
     }
 
-    @MainActor
     @Test func sessionSwitchClearsMarkdownCache() {
         let reducer = TimelineReducer()
 
@@ -239,7 +230,6 @@ struct TimelineStressTests {
 
     // MARK: - Large timeline preservation
 
-    @MainActor
     @Test func largeTimelinePreservesAllItems() {
         let reducer = TimelineReducer()
 
@@ -260,7 +250,6 @@ struct TimelineStressTests {
         #expect(last == "msg-399")
     }
 
-    @MainActor
     @Test func allToolCallsPreservedInLargeSession() {
         let reducer = TimelineReducer()
 
@@ -282,7 +271,6 @@ struct TimelineStressTests {
         #expect(toolCount == 120, "All tool calls preserved")
     }
 
-    @MainActor
     @Test func toolOutputPreservedInLargeSession() {
         let reducer = TimelineReducer()
 
@@ -311,7 +299,6 @@ struct TimelineStressTests {
 
     // MARK: - ToolOutputStore memory bounds
 
-    @MainActor
     @Test func toolOutputStorePerItemCap() {
         let store = ToolOutputStore()
         let oversized = String(repeating: "x", count: ToolOutputStore.perItemCap + 1000)
@@ -324,7 +311,6 @@ struct TimelineStressTests {
         #expect(stored.contains("output truncated"))
     }
 
-    @MainActor
     @Test func toolOutputStoreTotalCapEvicts() {
         let store = ToolOutputStore()
         let chunkSize = ToolOutputStore.totalCap / 8 // 2MB chunks
@@ -346,7 +332,6 @@ struct TimelineStressTests {
             "Most recent item should survive eviction")
     }
 
-    @MainActor
     @Test func toolOutputStoreIncrementalAppend() {
         let store = ToolOutputStore()
 
@@ -424,7 +409,6 @@ struct TimelineStressTests {
 
     // MARK: - Index integrity under mutation
 
-    @MainActor
     @Test func indexRemainsCorrectAfterInsertRemoveChurn() {
         let reducer = TimelineReducer()
 
@@ -454,7 +438,6 @@ struct TimelineStressTests {
         #expect(Set(ids).count == ids.count, "Duplicate IDs found after churn")
     }
 
-    @MainActor
     @Test func removeItemMaintainsIndex() {
         let reducer = TimelineReducer()
 
@@ -484,7 +467,6 @@ struct TimelineStressTests {
 
     // MARK: - Memory warning during heavy load
 
-    @MainActor
     @Test func memoryWarningDuringHeavyTimeline() {
         let reducer = TimelineReducer()
 
@@ -514,7 +496,6 @@ struct TimelineStressTests {
 
     // MARK: - Combined streaming + history reload
 
-    @MainActor
     @Test func streamingInterruptedByHistoryReload() {
         let reducer = TimelineReducer()
 
@@ -535,7 +516,6 @@ struct TimelineStressTests {
         #expect(reducer.items.count == 100)
     }
 
-    @MainActor
     @Test func streamingThenProcessBatchThenReload() {
         let reducer = TimelineReducer()
         let history = makeTraceEvents(count: 80)
@@ -560,7 +540,6 @@ struct TimelineStressTests {
 
     // MARK: - Concurrent-like batch patterns
 
-    @MainActor
     @Test func interleavedMultiToolBatch() {
         // Simulate multiple concurrent tool calls in a single batch
         let reducer = TimelineReducer()
@@ -590,7 +569,6 @@ struct TimelineStressTests {
 
     // MARK: - Image extraction edge cases
 
-    @MainActor
     @Test func loadSessionWithLargeBase64Images() {
         // Simulate trace events with embedded data URIs
         let fakeBase64 = String(repeating: "A", count: 10_000)
@@ -619,7 +597,6 @@ struct TimelineStressTests {
 
     // MARK: - Thinking overflow at scale
 
-    @MainActor
     @Test func thinkingOverflow10KChars() {
         let reducer = TimelineReducer()
         reducer.process(.agentStart(sessionId: "s1"))

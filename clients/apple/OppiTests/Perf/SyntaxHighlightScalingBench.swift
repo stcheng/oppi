@@ -10,7 +10,7 @@ import UIKit
 /// background thread to match the real full-screen code path.
 ///
 /// Results written to /tmp/syntax-highlight-bench.txt.
-@Suite("Syntax Highlight Scaling Bench")
+@Suite("Syntax Highlight Scaling Bench", .tags(.perf))
 @MainActor
 struct SyntaxHighlightScalingBench {
 

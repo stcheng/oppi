@@ -4,8 +4,8 @@ import UIKit
 @testable import Oppi
 
 @Suite("Tool output fetch")
+@MainActor
 struct ToolOutputFetchTests {
-    @MainActor
     @Test func sessionSwitchCancelsInFlightToolOutputLoad() async {
         let harness = makeTimelineHarness(sessionId: "session-a")
         let probe = TimelineFetchProbe()
@@ -58,7 +58,6 @@ struct ToolOutputFetchTests {
         #expect(harness.coordinator._toolOutputCanceledCountForTesting >= 1)
     }
 
-    @MainActor
     @Test func removedItemCancelsInFlightToolOutputLoad() async {
         let harness = makeTimelineHarness(sessionId: "session-a")
         let probe = TimelineFetchProbe()
@@ -112,7 +111,6 @@ struct ToolOutputFetchTests {
         #expect(harness.coordinator._toolOutputCanceledCountForTesting >= 1)
     }
 
-    @MainActor
     @Test func successfulToolOutputFetchAppendsAndClearsTaskState() async {
         let harness = makeTimelineHarness(sessionId: "session-a")
 
@@ -140,7 +138,6 @@ struct ToolOutputFetchTests {
         #expect(harness.coordinator._loadingToolOutputIDsForTesting.isEmpty)
     }
 
-    @MainActor
     @Test func previewOnlyShellOutputStillFetchesFullOutputOnExpand() async {
         let harness = makeTimelineHarness(sessionId: "session-a")
         let toolID = "tool-shell-preview"
@@ -187,7 +184,6 @@ struct ToolOutputFetchTests {
         })
     }
 
-    @MainActor
     @Test func readToolWithUnknownByteCountStillFetchesFullOutputOnExpand() async {
         let harness = makeTimelineHarness(sessionId: "session-a")
         let toolID = "tool-read-unknown-bytes"
@@ -231,7 +227,6 @@ struct ToolOutputFetchTests {
         })
     }
 
-    @MainActor
     @Test func readToolRetriesFetchWhenStreamingInitiallyReturnsEmptyOutput() async {
         actor Attempts {
             var value = 0

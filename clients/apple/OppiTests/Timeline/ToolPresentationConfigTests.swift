@@ -4,8 +4,8 @@ import UIKit
 @testable import Oppi
 
 @Suite("Tool presentation configuration")
+@MainActor
 struct ToolPresentationConfigTests {
-    @MainActor
     @Test func inlineMediaWarningHeuristicDoesNotFlagParityTools() {
         let sample = "let sample = \"data:image/png;base64,iVBORw0KGgoAAAANSUhEUg==\""
 
@@ -46,7 +46,6 @@ struct ToolPresentationConfigTests {
         )
     }
 
-    @MainActor
     @Test func inlineMediaWarningHeuristicKeepsBashPlainText() {
         #expect(
             !ToolPresentationBuilder.shouldWarnInlineMediaForToolOutput(
@@ -73,7 +72,6 @@ struct ToolPresentationConfigTests {
         )
     }
 
-    @MainActor
     @Test func inlineMediaWarningHeuristicDetectsDataURIsForNonBashTools() {
         #expect(
             ToolPresentationBuilder.shouldWarnInlineMediaForToolOutput(
@@ -92,7 +90,6 @@ struct ToolPresentationConfigTests {
         )
     }
 
-    @MainActor
     @Test func inlineMediaWarningHeuristicFlagsUnknownExtensionToolsButNotBuiltins() {
         let sample = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUg=="
 
@@ -119,7 +116,6 @@ struct ToolPresentationConfigTests {
         )
     }
 
-    @MainActor
     @Test func inlineMediaWarningHeuristicIsCaseInsensitiveForUnknownTools() {
         #expect(
             ToolPresentationBuilder.shouldWarnInlineMediaForToolOutput(
@@ -138,7 +134,6 @@ struct ToolPresentationConfigTests {
         )
     }
 
-    @MainActor
     @Test func inlineMediaToolsStayNativeAndSurfaceWarningBadge() throws {
         let harness = makeTimelineHarness(sessionId: "session-a")
         let item = ChatItem.toolCall(
@@ -155,7 +150,6 @@ struct ToolPresentationConfigTests {
         #expect(config.languageBadge == "⚠︎media")
     }
 
-    @MainActor
     @Test func collapsedParityToolsUseNativeToolConfiguration() {
         let harness = makeTimelineHarness(sessionId: "session-a")
         seedCollapsedParityToolArgs(in: harness)
@@ -165,7 +159,6 @@ struct ToolPresentationConfigTests {
         }
     }
 
-    @MainActor
     @Test func toolRowsRenderWithNativeToolConfigurationAcrossStates() throws {
         let harness = makeTimelineHarness(sessionId: "session-a")
 
@@ -195,7 +188,6 @@ struct ToolPresentationConfigTests {
         )
     }
 
-    @MainActor
     @Test func editToolWithoutDiffArgsUsesModifiedTrailingFallback() throws {
         let harness = makeTimelineHarness(sessionId: "session-a")
         let item = ChatItem.toolCall(
@@ -214,7 +206,6 @@ struct ToolPresentationConfigTests {
         #expect(config.trailing == "modified")
     }
 
-    @MainActor
     @Test func expandedEditToolUsesNativeDiffLines() throws {
         let harness = makeTimelineHarness(sessionId: "session-a")
         harness.reducer.expandedItemIDs.insert("edit-diff")
@@ -253,7 +244,6 @@ struct ToolPresentationConfigTests {
         // expandedText == nil is now implicit (content is .diff not .text)
     }
 
-    @MainActor
     @Test func expandedStreamingEditUsesCheapFileSurfaceUntilDone() throws {
         let harness = makeTimelineHarness(sessionId: "session-a")
         harness.reducer.expandedItemIDs.insert("edit-streaming")
@@ -285,7 +275,6 @@ struct ToolPresentationConfigTests {
         #expect(config.copyOutputText == "let value = 2\nlet added = true\n")
     }
 
-    @MainActor
     @Test func expandedEditToolFallbackOutputKeepsSyntaxLanguageFromPath() throws {
         let harness = makeTimelineHarness(sessionId: "session-a")
         harness.reducer.expandedItemIDs.insert("edit-fallback")
@@ -310,7 +299,6 @@ struct ToolPresentationConfigTests {
         #expect(filePath == "src/feature.ts")
     }
 
-    @MainActor
     @Test func expandedEditFallbackKeepsCodeRendererForMarkdownPaths() throws {
         let harness = makeTimelineHarness(sessionId: "session-a")
         harness.reducer.expandedItemIDs.insert("edit-md-fallback")
@@ -338,7 +326,6 @@ struct ToolPresentationConfigTests {
         #expect(filePath == "docs/README.md")
     }
 
-    @MainActor
     @Test func expandedReadToolDetectsSyntaxLanguageFromFilePath() throws {
         let harness = makeTimelineHarness(sessionId: "session-a")
         harness.reducer.expandedItemIDs.insert("read-swift")
@@ -367,7 +354,6 @@ struct ToolPresentationConfigTests {
         if case .code(_, _, _, let filePath) = config.expandedContent { #expect(filePath == "Runtime/TimelineReducer.swift") }
     }
 
-    @MainActor
     @Test func expandedReadToolFallsBackToArgsSummaryPathWhenArgsMissing() throws {
         let harness = makeTimelineHarness(sessionId: "session-a")
         harness.reducer.expandedItemIDs.insert("read-fallback")
@@ -387,7 +373,6 @@ struct ToolPresentationConfigTests {
         if case .code(_, _, _, let filePath) = config.expandedContent { #expect(filePath == "Sources/Agent.swift") }
     }
 
-    @MainActor
     @Test func collapsedReadImageToolExtractsImagePreviewFromOutput() throws {
         // End-to-end: simulates the real data flow where the server sends
         // text + data URI as tool_output, ToolOutputStore accumulates them,
@@ -414,7 +399,6 @@ struct ToolPresentationConfigTests {
         #expect(config.collapsedImageMimeType == "image/png")
     }
 
-    @MainActor
     @Test func collapsedReadImageToolWithEmptyOutputHasNoPreview() throws {
         // When the tool output hasn't arrived yet (streaming), no image preview.
         let harness = makeTimelineHarness(sessionId: "session-a")
@@ -434,7 +418,6 @@ struct ToolPresentationConfigTests {
         #expect(config.collapsedImageBase64 == nil, "No image preview before output arrives")
     }
 
-    @MainActor
     @Test func expandedWriteToolDetectsSyntaxLanguageFromPath() throws {
         let harness = makeTimelineHarness(sessionId: "session-a")
         harness.reducer.expandedItemIDs.insert("write-swift")
@@ -459,7 +442,6 @@ struct ToolPresentationConfigTests {
         #expect(filePath == "Sources/Generated.swift")
     }
 
-    @MainActor
     @Test func expandedWriteMarkdownUsesMarkdownRendererLikeRead() throws {
         let harness = makeTimelineHarness(sessionId: "session-a")
         harness.reducer.expandedItemIDs.insert("write-md")
@@ -484,7 +466,6 @@ struct ToolPresentationConfigTests {
         #expect(config.languageBadge == "Markdown")
     }
 
-    @MainActor
     @Test func expandedStreamingWriteMarkdownUsesIncrementalMarkdownPipeline() throws {
         let harness = makeTimelineHarness(sessionId: "session-a")
         harness.reducer.expandedItemIDs.insert("write-md-streaming")
@@ -512,7 +493,6 @@ struct ToolPresentationConfigTests {
         #expect(config.languageBadge == "Markdown")
     }
 
-    @MainActor
     @Test func expandedReadMarkdownUsesMarkdownRendererAndSkipsCodeLineNumbers() throws {
         let harness = makeTimelineHarness(sessionId: "session-a")
         harness.reducer.expandedItemIDs.insert("read-md")
@@ -538,7 +518,6 @@ struct ToolPresentationConfigTests {
         #expect(config.languageBadge == "Markdown")
     }
 
-    @MainActor
     @Test func expandedParityToolsUseNativeToolConfiguration() {
         let harness = makeTimelineHarness(sessionId: "session-a")
 
@@ -556,7 +535,6 @@ struct ToolPresentationConfigTests {
         }
     }
 
-    @MainActor
     @Test func expandedExtensionToolAutoDetectsStructuredJSONForExpandedOutput() throws {
         let harness = makeTimelineHarness(sessionId: "session-a")
         let itemID = "extension-list-1"
@@ -599,7 +577,6 @@ struct ToolPresentationConfigTests {
         #expect(config.trailing == nil)
     }
 
-    @MainActor
     @Test func expandedExtensionAppendUsesGenericTextOutput() throws {
         let harness = makeTimelineHarness(sessionId: "session-a")
         let itemID = "extension-append-1"
@@ -635,7 +612,6 @@ struct ToolPresentationConfigTests {
         #expect(config.copyOutputText?.contains("EXT-463187a1") == true)
     }
 
-    @MainActor
     @Test func expandedExtensionUpdateUsesGenericTextOutput() throws {
         let harness = makeTimelineHarness(sessionId: "session-a")
         let itemID = "extension-update-1"
@@ -673,7 +649,6 @@ struct ToolPresentationConfigTests {
         #expect(config.copyOutputText?.contains("status: closed") == true)
     }
 
-    @MainActor
     @Test func expandedFileAndDiffToolsRenderViaNativePathWithoutFailsafe() throws {
         let harness = makeTimelineHarness(sessionId: "session-a")
         ChatTimelinePerf.reset()
@@ -698,7 +673,6 @@ struct ToolPresentationConfigTests {
         #expect(snapshot.failsafeConfigureCount == 0)
     }
 
-    @MainActor
     @Test func collapsedParityToolsRenderViaNativeShellWithoutFailsafe() throws {
         let harness = makeTimelineHarness(sessionId: "session-a")
         ChatTimelinePerf.reset()
@@ -716,7 +690,6 @@ struct ToolPresentationConfigTests {
         #expect(snapshot.failsafeConfigureCount == 0)
     }
 
-    @MainActor
     @Test func nativeBashToolConfigurationOmitsCollapsedOutputPreview() throws {
         let harness = makeTimelineHarness(sessionId: "session-a")
         let item = ChatItem.toolCall(
@@ -737,7 +710,6 @@ struct ToolPresentationConfigTests {
         #expect(!config.title.hasPrefix("$"))
     }
 
-    @MainActor
     @Test func nativeReadToolConfigurationUsesSingleLineHeaderAndHidesCollapsedByteCount() throws {
         let harness = makeTimelineHarness(sessionId: "session-a")
         harness.toolArgsStore.set(["path": .string("src/main.swift")], for: "read-1")
@@ -757,7 +729,6 @@ struct ToolPresentationConfigTests {
         #expect(config.trailing == nil)
     }
 
-    @MainActor
     @Test func expandedReadImageToolConfigurationUsesMediaRenderer() throws {
         let harness = makeTimelineHarness(sessionId: "session-a")
         harness.reducer.expandedItemIDs.insert("read-image-1")
@@ -782,7 +753,6 @@ struct ToolPresentationConfigTests {
         // startLine is implicit in content case
     }
 
-    @MainActor
     @Test func collapsedToolRowsHideByteCountTrailingByDefault() throws {
         let harness = makeTimelineHarness(sessionId: "session-a")
         harness.toolArgsStore.set(["path": .string("src/main.swift")], for: "read-1")
@@ -824,7 +794,6 @@ struct ToolPresentationConfigTests {
         #expect(writeConfig.trailing == nil)
     }
 
-    @MainActor
     @Test func collapsedExtensionToolConfigurationOmitsPreviewForSingleLineConsistency() throws {
         let harness = makeTimelineHarness(sessionId: "session-a")
         let toolID = "extension-preview-1"
@@ -849,7 +818,6 @@ struct ToolPresentationConfigTests {
         #expect(config.preview == nil)
     }
 
-    @MainActor
     @Test func readOutputFileTypeDetectsFromRawSummaryWithLineRange() {
         let fileType = ToolPresentationBuilder.readOutputFileType(
             args: nil,
@@ -859,7 +827,6 @@ struct ToolPresentationConfigTests {
         #expect(fileType == .code(language: .swift))
     }
 
-    @MainActor
     @Test func nativeReadToolConfigurationInfersLanguageBadgeFromRawSummaryWhenArgsMissing() throws {
         let harness = makeTimelineHarness(sessionId: "session-a")
 
@@ -877,7 +844,6 @@ struct ToolPresentationConfigTests {
         #expect(config.languageBadge == "Swift")
     }
 
-    @MainActor
     @Test func expandedBashToolConfigurationPrefersUnwrappedOutput() throws {
         let harness = makeTimelineHarness(sessionId: "session-a")
         harness.reducer.expandedItemIDs.insert("bash-1")

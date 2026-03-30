@@ -646,7 +646,7 @@ snippets or exact commands, typing is still more reliable.
 Oppi sends push notifications when an agent needs your attention:
 
 - Approval requests (a tool call waiting for Allow/Deny)
-- Agent questions (the ask extension)
+- Agent questions (Ask cards)
 - Session errors
 - Session completion
 
@@ -821,16 +821,15 @@ session count.
 
 ## Extensions in the Timeline
 
-Pi extensions register custom tools that agents can call. When an
-agent calls an extension tool, the call appears in the timeline
-alongside built-in tools (`bash`, `read`, `edit`, `write`).
+Custom tools from extensions appear in the timeline alongside built-in
+tools such as `bash`, `read`, `edit`, and `write`.
 
 ![](screenshots/extension-tool-row.png)
 
 ### Collapsed Row
 
-Extension authors can provide styled segments for the collapsed
-summary line. Each segment is a text span tagged with a style:
+Some extensions provide a richer collapsed summary line instead of a
+plain tool name and argument dump. The app supports these styles:
 
 | Style   | Appearance     | Typical use              |
 |---------|----------------|--------------------------|
@@ -847,9 +846,8 @@ and plain text argument summary.
 
 ### Expanded View
 
-Tap a tool row to expand it. The expanded view shows the tool's
-full output. Extensions can control how the expanded content renders
-by setting a format in the tool result:
+Tap a tool row to expand it. The expanded view shows the tool's full
+output. Some extensions also hint how that output should render:
 
 | Format   | Rendering                                         |
 |----------|---------------------------------------------------|
@@ -866,10 +864,10 @@ renders as plain text with ANSI color support.
 
 ### Extension UI
 
-Extensions can prompt you with dialogs: text input, selection lists,
-confirmations, and editors. These are relayed from the server and
-appear as native sheets on your phone. You respond on-device and
-the result goes back to the extension running on the server.
+Extensions can also prompt you with text input, selection lists,
+confirmations, and editors. These come through as native sheets on
+your phone. You respond on-device and the result goes back to the
+server.
 
 ## Mac App
 

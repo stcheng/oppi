@@ -4,11 +4,11 @@ import UIKit
 @testable import Oppi
 
 @Suite("ChatActionHandler")
+@MainActor
 struct ChatActionHandlerTests {
 
     // MARK: - Stop State Machine
 
-    @MainActor
     @Test func initialState() {
         let handler = ChatActionHandler()
         #expect(!handler.isStopping)
@@ -19,7 +19,6 @@ struct ChatActionHandlerTests {
         #expect(handler.sendProgressText == nil)
     }
 
-    @MainActor
     @Test func resetStopStateClearsAll() {
         let handler = ChatActionHandler()
 
@@ -35,14 +34,12 @@ struct ChatActionHandlerTests {
         #expect(handler.sendProgressText == nil)
     }
 
-    @MainActor
     @Test func cleanupDoesNotCrash() {
         let handler = ChatActionHandler()
         handler.cleanup()
         handler.cleanup() // idempotent
     }
 
-    @MainActor
     @Test func stopTurnSendsStopCommandOnly() async {
         let handler = ChatActionHandler()
         let reducer = TimelineReducer()
@@ -80,7 +77,6 @@ struct ChatActionHandlerTests {
         #expect(!handler.showForceStop)
     }
 
-    @MainActor
     @Test func stopTurnNeverAutoShowsForceStop() async {
         let handler = ChatActionHandler()
         let reducer = TimelineReducer()
@@ -110,7 +106,6 @@ struct ChatActionHandlerTests {
 
     // MARK: - Send Prompt Logic
 
-    @MainActor
     @Test func sendPromptReturnsEmptyOnWhitespaceOnly() {
         let handler = ChatActionHandler()
         let reducer = TimelineReducer()
@@ -129,7 +124,6 @@ struct ChatActionHandlerTests {
         #expect(reducer.items.isEmpty, "No items should be created for whitespace prompt")
     }
 
-    @MainActor
     @Test func sendPromptCreatesUserMessage() async {
         let handler = ChatActionHandler()
         let reducer = TimelineReducer()
@@ -157,7 +151,6 @@ struct ChatActionHandlerTests {
         #expect(text == "Hello agent")
     }
 
-    @MainActor
     @Test func sendPromptDoesNotAppendOptimisticMessageBeforeTaskStarts() {
         let handler = ChatActionHandler()
         let reducer = TimelineReducer()
@@ -188,7 +181,6 @@ struct ChatActionHandlerTests {
         #expect(queuedOperation != nil, "Prompt send should enqueue an async task")
     }
 
-    @MainActor
     @Test func sendPromptIgnoresTapWhileSendInFlight() async {
         let handler = ChatActionHandler()
         let reducer = TimelineReducer()
@@ -247,7 +239,6 @@ struct ChatActionHandlerTests {
         #expect(userCount == 1)
     }
 
-    @MainActor
     @Test func sendPromptTracksAckStageProgress() async {
         let handler = ChatActionHandler()
         let reducer = TimelineReducer()
@@ -318,7 +309,6 @@ struct ChatActionHandlerTests {
         #expect(handler.sendProgressText == nil)
     }
 
-    @MainActor
     @Test func sendPromptFailureClearsAckStage() async {
         let handler = ChatActionHandler()
         let reducer = TimelineReducer()
@@ -360,7 +350,6 @@ struct ChatActionHandlerTests {
         #expect(handler.sendProgressText == nil)
     }
 
-    @MainActor
     @Test func sendPromptInBusyModeDefaultsToSteerWithoutTimelineQueueNoise() async {
         let handler = ChatActionHandler()
         let reducer = TimelineReducer()
@@ -417,7 +406,6 @@ struct ChatActionHandlerTests {
         #expect(!hasQueueSystemEvent)
     }
 
-    @MainActor
     @Test func sendPromptInBusyModeCanQueueFollowUpWithoutTimelineQueueNoise() async {
         let handler = ChatActionHandler()
         let reducer = TimelineReducer()
@@ -475,7 +463,6 @@ struct ChatActionHandlerTests {
         #expect(!hasQueueSystemEvent)
     }
 
-    @MainActor
     @Test func sendPromptInBusyModeQueuesOptimisticallyBeforeTaskRuns() {
         let handler = ChatActionHandler()
         let reducer = TimelineReducer()
@@ -504,7 +491,6 @@ struct ChatActionHandlerTests {
         #expect(reducer.items.isEmpty)
     }
 
-    @MainActor
     @Test func sendPromptInBusyModeFailureRollsBackOptimisticQueue() async {
         let handler = ChatActionHandler()
         let reducer = TimelineReducer()
@@ -534,7 +520,6 @@ struct ChatActionHandlerTests {
         #expect(queue.steering.isEmpty)
     }
 
-    @MainActor
     @Test func sendPromptInBusyModeRefreshesQueueAfterSteer() async {
         let handler = ChatActionHandler()
         let reducer = TimelineReducer()
@@ -607,7 +592,6 @@ struct ChatActionHandlerTests {
         #expect(queue.steering.count == 1)
     }
 
-    @MainActor
     @Test func sendPromptFailureRestoresInputAndImagesViaCallback() async {
         let handler = ChatActionHandler()
         let reducer = TimelineReducer()
@@ -650,7 +634,6 @@ struct ChatActionHandlerTests {
         #expect(hasError, "Failure should surface as explicit timeline error")
     }
 
-    @MainActor
     @Test func sendPromptFailureTriggersReconnectCallbackOnce() async {
         let handler = ChatActionHandler()
         let reducer = TimelineReducer()
@@ -675,7 +658,6 @@ struct ChatActionHandlerTests {
         #expect(reconnectCalls == 1)
     }
 
-    @MainActor
     @Test func sendPromptAutoTitlesUnnamedSessionFromFirstMessage() async {
         UserDefaults.standard.set(true, forKey: ChatActionHandler.autoTitleEnabledDefaultsKey)
         UserDefaults.standard.set("onDevice", forKey: ChatActionHandler.autoTitleProviderDefaultsKey)
@@ -742,7 +724,6 @@ struct ChatActionHandlerTests {
         #expect(sessionStore.sessions.first(where: { $0.id == "s1" })?.name == "Fix websocket reconnect bug")
     }
 
-    @MainActor
     @Test func sendPromptAutoTitleCapsLength() async {
         UserDefaults.standard.set(true, forKey: ChatActionHandler.autoTitleEnabledDefaultsKey)
         UserDefaults.standard.set("onDevice", forKey: ChatActionHandler.autoTitleProviderDefaultsKey)
@@ -807,7 +788,6 @@ struct ChatActionHandlerTests {
         #expect(setSessionNameValue == "Investigate websocket reconnect state drift")
     }
 
-    @MainActor
     @Test func sendPromptDoesNotAutoTitleWhenSessionAlreadyNamed() async {
         UserDefaults.standard.set(true, forKey: ChatActionHandler.autoTitleEnabledDefaultsKey)
         UserDefaults.standard.set("onDevice", forKey: ChatActionHandler.autoTitleProviderDefaultsKey)
@@ -870,7 +850,6 @@ struct ChatActionHandlerTests {
         #expect(sessionStore.sessions.first(where: { $0.id == "s1" })?.name == "Manual name")
     }
 
-    @MainActor
     @Test func sendPromptDoesNotAutoTitleWhenFeatureDisabled() async {
         UserDefaults.standard.set(false, forKey: ChatActionHandler.autoTitleEnabledDefaultsKey)
         UserDefaults.standard.set("off", forKey: ChatActionHandler.autoTitleProviderDefaultsKey)
@@ -936,7 +915,6 @@ struct ChatActionHandlerTests {
         #expect(sessionStore.sessions.first(where: { $0.id == "s1" })?.name == nil)
     }
 
-    @MainActor
     @Test func sendPromptAutoTitleSucceedsEvenWhenMessageCountGrowsFast() async {
         // Regression: fast models (codex) fire message_end events before the
         // on-device title LLM finishes, pushing messageCount past 1. The deferred
@@ -1016,7 +994,6 @@ struct ChatActionHandlerTests {
         #expect(sessionStore.sessions.first(where: { $0.id == "s1" })?.name == "Local process bridge")
     }
 
-    @MainActor
     @Test func sendPromptAutoTitleUsesFirstMessageNotCurrentPrompt() async {
         // Regression: when the ChatView is recreated (navigation away/back),
         // the auto-title guard state is lost. A second prompt send would
@@ -1092,7 +1069,6 @@ struct ChatActionHandlerTests {
         #expect(setSessionNameValue == "Fix Websocket Reconnect Drift")
     }
 
-    @MainActor
     @Test func sendPromptAutoTitleSkipsWhenNoFirstMessage() async {
         // When firstMessage is nil (e.g., server hasn't confirmed the first
         // message yet), the auto-title should not attempt generation.
@@ -1151,7 +1127,6 @@ struct ChatActionHandlerTests {
         #expect(titleGenerationCalls == 0)
     }
 
-    @MainActor
     @Test func regressionHandlerRecreationAfterCleanupStillUsesFirstMessage() async {
         // Reproduces the exact bug from session data: user sends first message,
         // navigates away (cleanup), comes back (new handler), sends a different
@@ -1265,7 +1240,6 @@ struct ChatActionHandlerTests {
         #expect(setNameValue == "Hide Context View Items")
     }
 
-    @MainActor
     @Test func regressionCleanupDoesNotCancelPendingAutoTitleTask() async {
         // Verifies that cleanup() lets pending auto-title tasks finish.
         // The old code cancelled them, causing the title to never be set
@@ -1343,7 +1317,6 @@ struct ChatActionHandlerTests {
         #expect(sessionStore.sessions.first(where: { $0.id == "s1" })?.name == "Fix Timeline Message Ordering")
     }
 
-    @MainActor
     @Test func regressionSecondHandlerSkipsWhenFirstHandlerAlreadySetName() async {
         // After a successful auto-title, a recreated handler must not
         // re-generate — the session.name guard blocks it.
@@ -1410,7 +1383,6 @@ struct ChatActionHandlerTests {
 
     // MARK: - Rename
 
-    @MainActor
     @Test func renameTrimsInputAndSendsSetSessionName() async {
         let handler = ChatActionHandler()
         let reducer = TimelineReducer()
@@ -1444,7 +1416,6 @@ struct ChatActionHandlerTests {
         #expect(sentName == "Better session name")
     }
 
-    @MainActor
     @Test func renameCollapsesWhitespaceAndLimitsLength() async {
         let handler = ChatActionHandler()
         let reducer = TimelineReducer()
@@ -1483,7 +1454,6 @@ struct ChatActionHandlerTests {
         #expect(sessionStore.sessions.first(where: { $0.id == "s1" })?.name == sentName)
     }
 
-    @MainActor
     @Test func renameIgnoresWhitespaceOnlyInput() {
         let handler = ChatActionHandler()
         let reducer = TimelineReducer()
@@ -1510,7 +1480,6 @@ struct ChatActionHandlerTests {
         #expect(reducer.items.isEmpty)
     }
 
-    @MainActor
     @Test func renameFailureRollsBackAndSurfacesError() async {
         let handler = ChatActionHandler()
         let reducer = TimelineReducer()
@@ -1550,7 +1519,6 @@ struct ChatActionHandlerTests {
 
     // MARK: - Helpers
 
-    @MainActor
     private func makePendingImage() -> PendingImage {
         let renderer = UIGraphicsImageRenderer(size: CGSize(width: 8, height: 8))
         let image = renderer.image { context in

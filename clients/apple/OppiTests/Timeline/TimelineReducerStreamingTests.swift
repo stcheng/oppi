@@ -3,9 +3,9 @@ import Foundation
 @testable import Oppi
 
 @Suite("TimelineReducer — Streaming")
+@MainActor
 struct TimelineReducerStreamingTests {
 
-    @MainActor
     @Test func processBatchMixedEvents() {
         let reducer = TimelineReducer()
 
@@ -51,7 +51,6 @@ struct TimelineReducerStreamingTests {
         #expect(text2 == "Done.")
     }
 
-    @MainActor
     @Test func processBatchCoalescesMultipleToolOutputs() {
         let reducer = TimelineReducer()
 
@@ -68,7 +67,6 @@ struct TimelineReducerStreamingTests {
         #expect(fullOutput == "line1\nline2\nline3\n")
     }
 
-    @MainActor
     @Test func processBatchToolOutputWithError() {
         let reducer = TimelineReducer()
 
@@ -87,7 +85,6 @@ struct TimelineReducerStreamingTests {
         #expect(isError, "Error flag should propagate when any chunk is error")
     }
 
-    @MainActor
     @Test func toolOutputOverflowNoOpSkipsRenderVersionBump() {
         let reducer = TimelineReducer()
         let toolID = "t-overflow"
@@ -117,7 +114,6 @@ struct TimelineReducerStreamingTests {
         #expect(reducer.toolOutputStore.fullOutput(for: toolID) == outputAfterFirstChunk)
     }
 
-    @MainActor
     @Test func longThinkingStaysInThinkingPreviewOnAgentEnd() {
         let reducer = TimelineReducer()
         let longThinking = String(repeating: "y", count: 600) // > maxPreviewLength
@@ -135,7 +131,6 @@ struct TimelineReducerStreamingTests {
         #expect(preview == longThinking)
     }
 
-    @MainActor
     @Test func thinkingOverflowContinuesUpdatingPreview() {
         let reducer = TimelineReducer()
 
@@ -173,7 +168,6 @@ struct TimelineReducerStreamingTests {
         #expect(reducer.renderVersion > afterFirst)
     }
 
-    @MainActor
     @Test func messageEndFinalizesAssistantText() {
         let reducer = TimelineReducer()
 
@@ -189,7 +183,6 @@ struct TimelineReducerStreamingTests {
         #expect(text == "Final answer")
     }
 
-    @MainActor
     @Test func messageEndWithoutDeltaCreatesAssistantMessage() {
         let reducer = TimelineReducer()
 
@@ -204,7 +197,6 @@ struct TimelineReducerStreamingTests {
         #expect(text == "Recovered final text")
     }
 
-    @MainActor
     @Test func streamingCompactionEndRetainsFullSummaryAndTokenCount() {
         let reducer = TimelineReducer()
         let summary = "## Goal\n1. Continue UIKit-native timeline migration\n2. Keep it calm"

@@ -3,6 +3,7 @@ import Foundation
 @testable import Oppi
 
 @Suite("RestorationState")
+@MainActor
 struct RestorationStateTests {
 
     // MARK: - Codable round-trip
@@ -56,7 +57,6 @@ struct RestorationStateTests {
 
     // MARK: - Save and Load
 
-    @MainActor
     @Test func saveAndLoad() {
         RestorationState.clear()
 
@@ -129,7 +129,6 @@ struct RestorationStateTests {
 
     // MARK: - Clear
 
-    @MainActor
     @Test func clearRemovesState() {
         let coordinator = ConnectionCoordinator(serverStore: ServerStore())
         let nav = AppNavigation()
@@ -159,7 +158,6 @@ struct RestorationStateTests {
 
     // MARK: - Scroll restoration
 
-    @MainActor
     @Test func saveAndLoadScrollPosition() {
         RestorationState.clear()
 
@@ -180,7 +178,6 @@ struct RestorationStateTests {
         RestorationState.clear()
     }
 
-    @MainActor
     @Test func scrollNearBottomSavedCorrectly() {
         RestorationState.clear()
 
@@ -214,7 +211,6 @@ struct RestorationStateTests {
 
     // MARK: - Server ID restoration
 
-    @MainActor
     @Test func savesAndRestoresServerId() {
         RestorationState.clear()
 
@@ -245,6 +241,7 @@ struct RestorationStateTests {
 // MARK: - AppTab serialization
 
 @Suite("AppTab serialization")
+@MainActor
 struct AppTabTests {
 
     @Test func rawStringRoundTrips() {

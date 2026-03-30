@@ -3,9 +3,9 @@ import Foundation
 @testable import Oppi
 
 @Suite("TimelineReducer — Tools")
+@MainActor
 struct TimelineReducerToolTests {
 
-    @MainActor
     @Test func toolCallSequence() {
         let reducer = TimelineReducer()
         let toolId = "tool-1"
@@ -33,7 +33,6 @@ struct TimelineReducerToolTests {
         #expect(isDone)
     }
 
-    @MainActor
     @Test func assistantTextIsSplitAroundToolCall() {
         let reducer = TimelineReducer()
         let toolId = "tool-1"
@@ -65,7 +64,6 @@ struct TimelineReducerToolTests {
         #expect(after == "after")
     }
 
-    @MainActor
     @Test func whitespaceOnlyTextBeforeToolDiscarded() {
         let reducer = TimelineReducer()
 
@@ -88,7 +86,6 @@ struct TimelineReducerToolTests {
         #expect(text == "Done!")
     }
 
-    @MainActor
     @Test func orphanedToolIsClosedOnAgentEnd() {
         let reducer = TimelineReducer()
 
@@ -104,7 +101,6 @@ struct TimelineReducerToolTests {
         #expect(isDone, "Orphaned tool should be marked done on agentEnd")
     }
 
-    @MainActor
     @Test func toolStartStoresArgs() {
         let reducer = TimelineReducer()
         let args: [String: JSONValue] = ["command": .string("echo hello")]
@@ -116,7 +112,6 @@ struct TimelineReducerToolTests {
         #expect(stored?["command"] == .string("echo hello"))
     }
 
-    @MainActor
     @Test func toolStartEmptyArgsNotStored() {
         let reducer = TimelineReducer()
 
@@ -127,7 +122,6 @@ struct TimelineReducerToolTests {
         #expect(stored == nil, "Empty args should not be stored")
     }
 
-    @MainActor
     @Test func toolEndStoresDetails() {
         let reducer = TimelineReducer()
 
@@ -151,7 +145,6 @@ struct TimelineReducerToolTests {
         #expect(stored?.objectValue?["ui"]?.arrayValue?.count == 1)
     }
 
-    @MainActor
     @Test func toolArgsStoreClearAll() {
         let store = ToolArgsStore()
         store.set(["key": .string("val")], for: "t1")
@@ -161,7 +154,6 @@ struct TimelineReducerToolTests {
         #expect(store.args(for: "t1") == nil)
     }
 
-    @MainActor
     @Test func toolOutputForUnknownIdIsStoredButNoItemCreated() {
         let reducer = TimelineReducer()
 
@@ -177,7 +169,6 @@ struct TimelineReducerToolTests {
         #expect(reducer.toolOutputStore.fullOutput(for: "orphan") == "data")
     }
 
-    @MainActor
     @Test func toolEndForUnknownIdIsIgnored() {
         let reducer = TimelineReducer()
 
@@ -188,7 +179,6 @@ struct TimelineReducerToolTests {
         #expect(reducer.items.isEmpty)
     }
 
-    @MainActor
     @Test func traceToolResultDetailsPopulatesToolDetailsStore() {
         let reducer = TimelineReducer()
         let toolId = "tc-ext-1"
@@ -226,7 +216,6 @@ struct TimelineReducerToolTests {
 
     // MARK: - Write tool args persistence
 
-    @MainActor
     @Test func writeToolArgsContentSurvivesSecondToolStart() {
         // The server sends two tool_start messages for the write tool:
         // 1. From streaming (message_update) — has full args including content
@@ -258,7 +247,6 @@ struct TimelineReducerToolTests {
         #expect(reducer.toolArgsStore.args(for: toolId)?["path"]?.stringValue == "docs/guide.md")
     }
 
-    @MainActor
     @Test func writeToolArgsContentSurvivesTraceRoundTrip() {
         // When loading a session from trace, the write tool's args (including
         // content) should be available for rendering as markdown.
@@ -311,7 +299,6 @@ struct TimelineReducerToolTests {
 
     // MARK: - Replace mode (shell preview)
 
-    @MainActor
     @Test func toolOutputReplaceModeOverwritesStore() {
         let reducer = TimelineReducer()
         let toolId = "tool-shell"
@@ -346,7 +333,6 @@ struct TimelineReducerToolTests {
         #expect(isDone)
     }
 
-    @MainActor
     @Test func toolOutputReplaceModeInBatch() {
         let reducer = TimelineReducer()
         let toolId = "tool-batch"
@@ -365,7 +351,6 @@ struct TimelineReducerToolTests {
         #expect(reducer.toolOutputStore.hasPreviewOnlyOutput(for: toolId))
     }
 
-    @MainActor
     @Test func traceToolResultWithoutDetailsLeavesStoreEmpty() {
         let reducer = TimelineReducer()
         let toolId = "tc-bash-1"

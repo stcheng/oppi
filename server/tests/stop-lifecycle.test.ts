@@ -247,4 +247,75 @@ describe("stop lifecycle", () => {
     expect(session.status).toBe("ready");
     expect(events.some((event) => event.type === "stop_failed")).toBe(false);
   });
+
+  it("stopSession waits for agent_end and aborts bash before terminating", async () => {
+    vi.useFakeTimers();
+    try {
+      const { manager, events, sdkBackend, abort, dispose } = makeManagerHarness("busy");
+      const key = "s1";
+
+      const stopPromise = manager.stopSession("s1");
+      await Promise.resolve();
+      await Promise.resolve();
+
+      (manager as unknown as { handlePiEvent: (key: string, data: unknown) => void }).handlePiEvent(
+        key,
+        { type: "agent_end" },
+      );
+
+      await Promise.resolve();
+      await stopPromise;
+
+      expect(abort).toHaveBeenCalledTimes(1);
+      expect(sdkBackend.session.abortBash).toHaveBeenCalledTimes(1);
+      expect(dispose).toHaveBeenCalledTimes(1);
+      expect(manager.isActive("s1")).toBe(false);
+      expect(events.some((event) => event.type === "session_ended")).toBe(true);
+
+      vi.advanceTimersByTime((manager as unknown as { stopSessionGraceMs: number }).stopSessionGraceMs);
+      expect(dispose).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.clearAllTimers();
+      vi.useRealTimers();
+    }
+  });
+
+  it("stopSession force terminates after timeout when agent_end never arrives", async () => {
+    vi.useFakeTimers();
+    try {
+      const { manager, events, sdkBackend, abort, dispose } = makeManagerHarness("busy");
+
+      const stopPromise = manager.stopSession("s1");
+      await Promise.resolve();
+      await Promise.resolve();
+
+      vi.advanceTimersByTime((manager as unknown as { stopSessionGraceMs: number }).stopSessionGraceMs);
+      await stopPromise;
+
+      expect(abort).toHaveBeenCalledTimes(1);
+      expect(sdkBackend.session.abortBash).toHaveBeenCalledTimes(1);
+      expect(dispose).toHaveBeenCalledTimes(1);
+      expect(manager.isActive("s1")).toBe(false);
+
+      const confirmed = events.find(
+        (event): event is Extract<ServerMessage, { type: "stop_confirmed" }> =>
+          event.type === "stop_confirmed",
+      );
+      expect(confirmed?.reason).toContain("timed out");
+    } finally {
+      vi.clearAllTimers();
+      vi.useRealTimers();
+    }
+  });
+
+  it("stopSession terminates an idle session immediately", async () => {
+    const { manager, events, abort, dispose } = makeManagerHarness("ready");
+
+    await manager.stopSession("s1");
+
+    expect(abort).not.toHaveBeenCalled();
+    expect(dispose).toHaveBeenCalledTimes(1);
+    expect(manager.isActive("s1")).toBe(false);
+    expect(events.some((event) => event.type === "session_ended")).toBe(true);
+  });
 });

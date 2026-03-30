@@ -2,7 +2,7 @@ import CoreFoundation
 import Testing
 @testable import Oppi
 
-@Suite("Word span performance")
+@Suite("Word span performance", .tags(.perf))
 struct WordSpanPerfTests {
 
     // MARK: - Micro-benchmarks

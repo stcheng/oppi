@@ -3,11 +3,11 @@ import Foundation
 @testable import Oppi
 
 @Suite("TurnSendTracking")
+@MainActor
 struct TurnSendTrackingTests {
 
     // MARK: - PendingTurnSend
 
-    @MainActor
     @Test func pendingTurnSendTracksStages() {
         var observedStages: [TurnAckStage] = []
         let turn = PendingTurnSend(
@@ -28,7 +28,6 @@ struct TurnSendTrackingTests {
         #expect(observedStages == [.accepted, .dispatched])
     }
 
-    @MainActor
     @Test func pendingTurnSendProperties() {
         let turn = PendingTurnSend(
             command: "steer",
@@ -42,7 +41,6 @@ struct TurnSendTrackingTests {
         #expect(turn.clientTurnId == "turn2")
     }
 
-    @MainActor
     @Test func resetWaiterCreatesNewWaiter() {
         let turn = PendingTurnSend(
             command: "prompt",
@@ -60,7 +58,6 @@ struct TurnSendTrackingTests {
 
     // MARK: - SendAckWaiter
 
-    @MainActor
     @Test func waiterResolvesBeforeWait() async throws {
         let waiter = SendAckWaiter()
 
@@ -71,7 +68,6 @@ struct TurnSendTrackingTests {
         try await waiter.wait()
     }
 
-    @MainActor
     @Test func waiterResolvesAfterWait() async throws {
         let waiter = SendAckWaiter()
 
@@ -90,7 +86,6 @@ struct TurnSendTrackingTests {
         try await task.value
     }
 
-    @MainActor
     @Test func waiterPropagatesError() async {
         let waiter = SendAckWaiter()
 

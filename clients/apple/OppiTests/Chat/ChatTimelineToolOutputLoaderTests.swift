@@ -2,8 +2,8 @@ import Foundation
 import Testing
 @testable import Oppi
 
-@MainActor
 @Suite("ExpandedToolOutputLoader")
+@MainActor
 struct ExpandedToolOutputLoaderTests {
 
     @Test func completionDispositionMapping() {

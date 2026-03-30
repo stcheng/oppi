@@ -16,7 +16,7 @@ import UIKit
 /// streaming, expand/collapse, and upward scroll.
 ///
 /// Output format: `METRIC name=number` for autoresearch consumption.
-@Suite("ScrollStabilityBench")
+@Suite("ScrollStabilityBench", .tags(.perf))
 struct ScrollStabilityBench {
 
     // MARK: - Configuration

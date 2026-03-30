@@ -279,7 +279,6 @@ struct SyntaxHighlighterTests {
         #expect(color == UIColor(Color.themeSyntaxPunctuation))
     }
 
-    @MainActor
     @Test func shellBlockHighlightingOnMainThreadUsesHeuristicScanner() {
         let command = "xcodebuild -scheme Oppi"
         let result = SyntaxHighlighter.highlight(command, language: .shell)

@@ -1,12 +1,12 @@
 /**
  * Workspace extension resolution.
  *
- * Resolves named extensions from ~/.pi/agent/extensions for workspace spawn/install.
+ * Resolves named extensions from pi host extension locations for workspace-related flows.
  */
 
 import { existsSync, readdirSync, statSync } from "node:fs";
 import { homedir } from "node:os";
-import { extname, join } from "node:path";
+import { extname, join, resolve } from "node:path";
 
 import { isManagedExtensionName } from "../extensions/first-party.js";
 
@@ -37,6 +37,16 @@ export interface HostExtensionInfo {
   kind: "file" | "directory";
 }
 
+export interface ListHostExtensionsOptions {
+  /**
+   * Workspace cwd/hostMount used to discover project-local `.pi/extensions`.
+   * When omitted, only global host extensions are returned.
+   */
+  cwd?: string;
+  /** Override global directory for tests. */
+  globalDir?: string;
+}
+
 /** Validate extension name accepted by workspace API. */
 export function isValidExtensionName(name: string): boolean {
   return EXTENSION_NAME_RE.test(name.trim());
@@ -45,54 +55,32 @@ export function isValidExtensionName(name: string): boolean {
 /**
  * List host extensions available for workspace selection.
  *
- * Scans ~/.pi/agent/extensions and returns discoverable entries.
- * Managed first-party extensions are excluded.
+ * Scans the global host directory (`~/.pi/agent/extensions`) and, when `cwd`
+ * is provided, the project-local directory (`<cwd>/.pi/extensions`). Managed
+ * first-party extensions are excluded.
+ *
+ * The result is deduplicated by extension name. Project-local entries win over
+ * global ones because pi loads local extensions first.
  */
-export function listHostExtensions(): HostExtensionInfo[] {
-  if (!existsSync(HOST_EXTENSIONS_DIR)) {
-    return [];
-  }
-
+export function listHostExtensions(options: ListHostExtensionsOptions = {}): HostExtensionInfo[] {
   const byName = new Map<string, HostExtensionInfo>();
+  const dirs = [
+    getProjectExtensionsDir(options.cwd),
+    options.globalDir ?? HOST_EXTENSIONS_DIR,
+  ].filter((dir): dir is string => Boolean(dir));
 
-  for (const entry of readdirSync(HOST_EXTENSIONS_DIR)) {
-    if (entry.startsWith(".")) {
-      continue;
-    }
-
-    const absPath = join(HOST_EXTENSIONS_DIR, entry);
-    const kind = detectKind(absPath);
-    if (!kind) {
-      continue;
-    }
-
-    const ext = extname(entry);
-    let name = entry;
-
-    if (kind === "file") {
-      if (ext !== ".ts" && ext !== ".js") {
+  for (const dir of dirs) {
+    for (const extension of discoverExtensionsInDir(dir)) {
+      const existing = byName.get(extension.name);
+      if (!existing) {
+        byName.set(extension.name, extension);
         continue;
       }
-      name = entry.slice(0, -ext.length);
-    }
 
-    if (!isValidExtensionName(name)) {
-      continue;
-    }
-
-    if (isManagedExtensionName(name)) {
-      continue;
-    }
-
-    const existing = byName.get(name);
-    if (!existing) {
-      byName.set(name, { name, path: absPath, kind });
-      continue;
-    }
-
-    // Prefer directory entries over files when both exist.
-    if (existing.kind === "file" && kind === "directory") {
-      byName.set(name, { name, path: absPath, kind });
+      // Prefer directory entries over files when both exist in the same scope.
+      if (existing.kind === "file" && extension.kind === "directory") {
+        byName.set(extension.name, extension);
+      }
     }
   }
 
@@ -157,6 +145,57 @@ export function extensionInstallName(extension: ResolvedExtension): string {
   }
 
   return extension.name;
+}
+
+function discoverExtensionsInDir(dir: string): HostExtensionInfo[] {
+  if (!existsSync(dir)) {
+    return [];
+  }
+
+  const byName = new Map<string, HostExtensionInfo>();
+
+  for (const entry of readdirSync(dir)) {
+    if (entry.startsWith(".")) {
+      continue;
+    }
+
+    const absPath = join(dir, entry);
+    const kind = detectKind(absPath);
+    if (!kind) {
+      continue;
+    }
+
+    const ext = extname(entry);
+    let name = entry;
+
+    if (kind === "file") {
+      if (ext !== ".ts" && ext !== ".js") {
+        continue;
+      }
+      name = entry.slice(0, -ext.length);
+    }
+
+    if (!isValidExtensionName(name) || isManagedExtensionName(name)) {
+      continue;
+    }
+
+    const existing = byName.get(name);
+    if (!existing || (existing.kind === "file" && kind === "directory")) {
+      byName.set(name, { name, path: absPath, kind });
+    }
+  }
+
+  return Array.from(byName.values());
+}
+
+function getProjectExtensionsDir(cwd: string | undefined): string | null {
+  const raw = cwd?.trim();
+  if (!raw) {
+    return null;
+  }
+
+  const expanded = raw === "~" || raw.startsWith("~/") ? raw.replace(/^~(?=\/|$)/, homedir()) : raw;
+  return join(resolve(expanded), ".pi", "extensions");
 }
 
 function resolveByName(name: string): ResolvedExtension | null {

@@ -10,6 +10,8 @@ export interface PendingStop {
   requestedAt: number;
   previousStatus: Session["status"];
   timeoutHandle?: NodeJS.Timeout;
+  completionPromise?: Promise<void>;
+  completionResolve?: () => void;
 }
 
 export interface StopSessionState {
@@ -43,8 +45,22 @@ export class SessionStopCoordinator {
       pending.timeoutHandle = undefined;
     }
 
+    const resolve = pending.completionResolve;
+    pending.completionResolve = undefined;
+    pending.completionPromise = undefined;
     active.pendingStop = undefined;
+    resolve?.();
     return pending;
+  }
+
+  private ensurePendingStopCompletion(pending: PendingStop): Promise<void> {
+    if (!pending.completionPromise) {
+      pending.completionPromise = new Promise<void>((resolve) => {
+        pending.completionResolve = resolve;
+      });
+    }
+
+    return pending.completionPromise;
   }
 
   beginPendingStop(
@@ -132,13 +148,62 @@ export class SessionStopCoordinator {
     this.deps.broadcast(key, { type: "stop_failed", source, reason });
   }
 
-  finishPendingAbortWithSuccess(key: string, active: StopSessionState): void {
-    const pending = this.clearPendingStop(active);
-    if (!pending || pending.mode !== "abort") {
+  finishPendingStopOnAgentEnd(key: string, active: StopSessionState): void {
+    const pending = active.pendingStop;
+    if (!pending) {
       return;
     }
 
-    this.deps.broadcast(key, { type: "stop_confirmed", source: pending.source });
+    if (pending.mode === "abort") {
+      this.clearPendingStop(active);
+      this.deps.broadcast(key, { type: "stop_confirmed", source: pending.source });
+      return;
+    }
+
+    queueMicrotask(() => {
+      const current = this.deps.getActiveSession(key);
+      if (!current || current.pendingStop?.mode !== "terminate") {
+        return;
+      }
+
+      this.forceTerminateSessionProcess(key, current, current.pendingStop.source);
+    });
+  }
+
+  armPendingTerminateTimeout(
+    key: string,
+    active: StopSessionState,
+    timeoutMs: number,
+  ): Promise<void> {
+    const pending = active.pendingStop;
+    if (!pending || pending.mode !== "terminate") {
+      return Promise.resolve();
+    }
+
+    const completion = this.ensurePendingStopCompletion(pending);
+
+    if (pending.timeoutHandle) {
+      clearTimeout(pending.timeoutHandle);
+    }
+
+    pending.timeoutHandle = setTimeout(() => {
+      const current = this.deps.getActiveSession(key);
+      if (!current || current.pendingStop?.mode !== "terminate") {
+        return;
+      }
+
+      console.warn(
+        `${ts()} [session] Terminate stop still pending after ${timeoutMs}ms; forcing session shutdown`,
+      );
+      this.forceTerminateSessionProcess(
+        key,
+        current,
+        current.pendingStop.source,
+        `Stop session timed out after ${timeoutMs}ms`,
+      );
+    }, timeoutMs);
+
+    return completion;
   }
 
   forceTerminateSessionProcess(

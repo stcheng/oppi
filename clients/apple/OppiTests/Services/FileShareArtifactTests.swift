@@ -362,6 +362,3 @@ struct FileShareArtifactTests {
 
 // MARK: - Tags
 
-extension Tag {
-    @Tag static var artifact: Self
-}

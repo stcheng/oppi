@@ -3,6 +3,7 @@ import Foundation
 @testable import Oppi
 
 @Suite("Permission approval policy")
+@MainActor
 struct PermissionApprovalPolicyTests {
     private func makeRequest(id: String = "p1", tool: String) -> PermissionRequest {
         PermissionRequest(
@@ -45,7 +46,6 @@ struct PermissionApprovalPolicyTests {
         #expect(options.isEmpty)
     }
 
-    @MainActor
     @Test func serverConnectionNormalizesPolicyResponsesBeforeSend() async throws {
         let connection = ServerConnection()
         _ = connection.configure(credentials: ServerCredentials(

@@ -3,9 +3,9 @@ import Testing
 @testable import Oppi
 
 @Suite("ServerConnection — Invariants")
+@MainActor
 struct ServerConnectionInvariantTests {
 
-    @MainActor
     @Test func stopLifecycleFollowsStateMachineAcrossDeterministicSequences() {
         for sequence in stopLifecycleSequences(length: 4) {
             let scenario = ServerConnectionScenario(sessionId: "s-stop")
@@ -24,7 +24,6 @@ struct ServerConnectionInvariantTests {
         }
     }
 
-    @MainActor
     @Test func nonActiveSessionMessagesDoNotMutateLocalState() {
         let scenario = ServerConnectionScenario(sessionId: "s-active")
             .givenStoredSession(id: "s-active", status: .ready)
@@ -43,7 +42,6 @@ struct ServerConnectionInvariantTests {
         // The important invariant: the per-session reducer is NOT mutated.
     }
 
-    @MainActor
     @Test func liveActivityFilterSkipsDeltaOnlyFlushes() {
         let connection = ServerConnection()
         let events: [AgentEvent] = [
@@ -56,7 +54,6 @@ struct ServerConnectionInvariantTests {
         #expect(connection.liveActivityRelevantEvents(from: events).isEmpty)
     }
 
-    @MainActor
     @Test func liveActivityFilterKeepsLifecycleEventsOnly() {
         let connection = ServerConnection()
         let permission = PermissionRequest(

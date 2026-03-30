@@ -29,8 +29,9 @@ final class NativeLatexBlockView: UIView {
         return iv
     }()
 
-    /// Height constraint for the image view, updated after rendering.
-    private var imageHeightConstraint: NSLayoutConstraint?
+    /// Active only while showing the rendered formula. A direct self-height
+    /// constraint makes stack/scroll relayout more reliable after async renders.
+    private var formulaHeightConstraint: NSLayoutConstraint?
 
     /// Cap formula height in the timeline to keep cells reasonable.
     private static let maxInlineHeight: CGFloat = 400
@@ -65,8 +66,9 @@ final class NativeLatexBlockView: UIView {
         let tapGesture = UITapGestureRecognizer(target: self, action: #selector(handleTap))
         formulaImageView.addGestureRecognizer(tapGesture)
 
-        let imgHeight = formulaImageView.heightAnchor.constraint(equalToConstant: 200)
-        imageHeightConstraint = imgHeight
+        let formulaHeight = heightAnchor.constraint(equalToConstant: 200)
+        formulaHeight.isActive = false
+        formulaHeightConstraint = formulaHeight
 
         NSLayoutConstraint.activate([
             codeBlockView.topAnchor.constraint(equalTo: topAnchor),
@@ -78,7 +80,6 @@ final class NativeLatexBlockView: UIView {
             formulaImageView.leadingAnchor.constraint(equalTo: leadingAnchor),
             formulaImageView.trailingAnchor.constraint(equalTo: trailingAnchor),
             formulaImageView.bottomAnchor.constraint(equalTo: bottomAnchor),
-            imgHeight,
         ])
     }
 
@@ -91,6 +92,7 @@ final class NativeLatexBlockView: UIView {
 
         codeBlockView.isHidden = false
         formulaImageView.isHidden = true
+        formulaHeightConstraint?.isActive = false
         isShowingFormula = false
 
         codeBlockView.apply(language: language, code: code, palette: palette, isOpen: isOpen)
@@ -205,7 +207,8 @@ final class NativeLatexBlockView: UIView {
         let scale = min(1.0, availableWidth / naturalSize.width)
         let displayHeight = min(naturalSize.height * scale, Self.maxInlineHeight)
 
-        imageHeightConstraint?.constant = displayHeight
+        formulaHeightConstraint?.constant = displayHeight
+        formulaHeightConstraint?.isActive = true
         formulaImageView.backgroundColor = UIColor(palette.bgHighlight)
         formulaImageView.image = image
 
@@ -216,11 +219,13 @@ final class NativeLatexBlockView: UIView {
         invalidateIntrinsicContentSize()
         setNeedsLayout()
         superview?.setNeedsLayout()
+        superview?.layoutIfNeeded()
     }
 
     private func showAsCodeFallback(code: String, palette: ThemePalette) {
         codeBlockView.isHidden = false
         formulaImageView.isHidden = true
+        formulaHeightConstraint?.isActive = false
         isShowingFormula = false
         codeBlockView.apply(language: "latex", code: code, palette: palette, isOpen: false)
     }

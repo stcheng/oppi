@@ -3,9 +3,9 @@ import Foundation
 @testable import Oppi
 
 @Suite("ServerConnection Routing")
+@MainActor
 struct ServerConnectionRoutingTests {
 
-    @MainActor
     @Test func routeConnected() {
         let (conn, pipe) = makeTestConnection()
         let session = makeTestSession(status: .ready)
@@ -16,7 +16,6 @@ struct ServerConnectionRoutingTests {
         #expect(conn.sessionStore.sessions[0].status == .ready)
     }
 
-    @MainActor
     @Test func routeState() {
         let (conn, pipe) = makeTestConnection()
         let session = makeTestSession(status: .busy)
@@ -27,7 +26,6 @@ struct ServerConnectionRoutingTests {
         #expect(conn.sessionStore.sessions[0].status == .busy)
     }
 
-    @MainActor
     @Test func routeQueueStateUpdatesQueueStore() {
         let (conn, pipe) = makeTestConnection()
         let state = MessageQueueState(
@@ -44,7 +42,6 @@ struct ServerConnectionRoutingTests {
         #expect(stored.followUp.count == 1)
     }
 
-    @MainActor
     @Test func routeQueueStateIgnoresStaleVersion() {
         let (conn, pipe) = makeTestConnection()
         conn.messageQueueStore.apply(
@@ -72,7 +69,6 @@ struct ServerConnectionRoutingTests {
         #expect(stored.steering.map(\.message) == ["latest"])
     }
 
-    @MainActor
     @Test func routeQueueItemStartedRemovesItemAndAppendsUserMessage() {
         let (conn, pipe) = makeTestConnection()
         let initial = MessageQueueState(
@@ -104,7 +100,6 @@ struct ServerConnectionRoutingTests {
         #expect(images.isEmpty)
     }
 
-    @MainActor
     @Test func routeGetQueueCommandResultUpdatesQueueStore() {
         let (conn, pipe) = makeTestConnection()
 
@@ -141,7 +136,6 @@ struct ServerConnectionRoutingTests {
         #expect(stored.followUp.count == 1)
     }
 
-    @MainActor
     @Test func routeGetQueueCommandResultIgnoresStaleVersion() {
         let (conn, pipe) = makeTestConnection()
         conn.messageQueueStore.apply(
@@ -179,7 +173,6 @@ struct ServerConnectionRoutingTests {
         #expect(stored.followUp.map(\.message) == ["fresh follow"])
     }
 
-    @MainActor
     @Test func routeGetQueueFailureDoesNotProduceTimelineError() {
         let (conn, pipe) = makeTestConnection()
 
@@ -202,7 +195,6 @@ struct ServerConnectionRoutingTests {
         #expect(errors.isEmpty, "Failed get_queue command_result should not leak to timeline")
     }
 
-    @MainActor
     @Test func routeSetQueueFailureDoesNotProduceTimelineError() {
         let (conn, pipe) = makeTestConnection()
 
@@ -225,7 +217,6 @@ struct ServerConnectionRoutingTests {
         #expect(errors.isEmpty, "Failed set_queue command_result should not leak to timeline")
     }
 
-    @MainActor
     @Test func routeSubscribeFailureDoesNotProduceTimelineError() {
         let (conn, pipe) = makeTestConnection()
 
@@ -248,7 +239,6 @@ struct ServerConnectionRoutingTests {
         #expect(errors.isEmpty, "Failed subscribe command_result should not leak to timeline")
     }
 
-    @MainActor
     @Test func routeUnsubscribeFailureDoesNotProduceTimelineError() {
         let (conn, pipe) = makeTestConnection()
 
@@ -271,7 +261,6 @@ struct ServerConnectionRoutingTests {
         #expect(errors.isEmpty, "Failed unsubscribe command_result should not leak to timeline")
     }
 
-    @MainActor
     @Test func routeStopRequestedMarksStopping() {
         let scenario = EventFlowServerConnectionScenario()
 
@@ -286,7 +275,6 @@ struct ServerConnectionRoutingTests {
         #expect(scenario.timelineItemCount(of: .systemEvent) == 1)
     }
 
-    @MainActor
     @Test func routeStopFailedRestoresBusyAndEmitsError() {
         let scenario = EventFlowServerConnectionScenario()
 
@@ -301,7 +289,6 @@ struct ServerConnectionRoutingTests {
         #expect(scenario.timelineItemCount(of: .error) == 1)
     }
 
-    @MainActor
     @Test func routeStopConfirmedRestoresReady() {
         let scenario = EventFlowServerConnectionScenario()
 
@@ -312,7 +299,6 @@ struct ServerConnectionRoutingTests {
         #expect(scenario.firstSessionStatus() == .ready)
     }
 
-    @MainActor
     @Test func routeStateSyncsThinkingLevelOnlyWhenChanged() {
         let (conn, pipe) = makeTestConnection()
         #expect(conn.chatState.thinkingLevel == .medium)
@@ -330,7 +316,6 @@ struct ServerConnectionRoutingTests {
         #expect(conn.chatState.thinkingLevel == .high)
     }
 
-    @MainActor
     @Test func routeConnectedRequestsSlashCommands() async {
         let (conn, pipe) = makeTestConnection()
         let counter = GetCommandsCounter()
@@ -344,7 +329,6 @@ struct ServerConnectionRoutingTests {
         #expect(await waitForTestCondition(timeoutMs: 500) { await counter.count() == 1 })
     }
 
-    @MainActor
     @Test func routeStateWorkspaceChangeRequestsSlashCommands() async {
         let (conn, pipe) = makeTestConnection()
         let counter = GetCommandsCounter()
@@ -370,7 +354,6 @@ struct ServerConnectionRoutingTests {
         #expect(await waitForTestCondition(timeoutMs: 500) { await counter.count() == 2 })
     }
 
-    @MainActor
     @Test func routeGetCommandsResultUpdatesSlashCommandCache() {
         let (conn, pipe) = makeTestConnection()
         let session = makeTestSession(status: .ready)
@@ -394,7 +377,6 @@ struct ServerConnectionRoutingTests {
         #expect(conn.chatState.slashCommands.map(\.name) == ["compact", "skill:lint"])
     }
 
-    @MainActor
     @Test func routeAgentStartAndTextAndEnd() {
         let scenario = EventFlowServerConnectionScenario()
 
@@ -417,7 +399,6 @@ struct ServerConnectionRoutingTests {
         #expect(text == "Hello")
     }
 
-    @MainActor
     @Test func routeAgentStartSetsSessionBusyWithoutStateMessage() {
         let (conn, pipe) = makeTestConnection()
         conn.sessionStore.upsert(makeTestSession(status: .ready))
@@ -427,7 +408,6 @@ struct ServerConnectionRoutingTests {
         #expect(conn.sessionStore.sessions.first?.status == .busy)
     }
 
-    @MainActor
     @Test func routeAgentEndSetsSessionReadyWithoutStateMessage() {
         let (conn, pipe) = makeTestConnection()
         conn.sessionStore.upsert(makeTestSession(status: .busy))
@@ -437,7 +417,6 @@ struct ServerConnectionRoutingTests {
         #expect(conn.sessionStore.sessions.first?.status == .ready)
     }
 
-    @MainActor
     @Test func routeThinkingDelta() {
         let scenario = EventFlowServerConnectionScenario()
 
@@ -450,7 +429,6 @@ struct ServerConnectionRoutingTests {
         #expect(scenario.timelineItemCount(of: .thinking) == 1)
     }
 
-    @MainActor
     @Test func routeToolStartOutputEnd() {
         let scenario = EventFlowServerConnectionScenario()
 
@@ -478,7 +456,6 @@ struct ServerConnectionRoutingTests {
         #expect(isDone)
     }
 
-    @MainActor
     @Test func routeSessionEnded() {
         let scenario = EventFlowServerConnectionScenario()
 
@@ -490,7 +467,6 @@ struct ServerConnectionRoutingTests {
         #expect(scenario.timelineItemCount(of: .systemEvent) == 1)
     }
 
-    @MainActor
     @Test func routeError() {
         let scenario = EventFlowServerConnectionScenario()
 
@@ -500,7 +476,6 @@ struct ServerConnectionRoutingTests {
         #expect(scenario.timelineItemCount(of: .error) == 1)
     }
 
-    @MainActor
     @Test func routeExtensionUIRequest() {
         let (conn, pipe) = makeTestConnection()
         let request = ExtensionUIRequest(
@@ -516,7 +491,6 @@ struct ServerConnectionRoutingTests {
         #expect(conn.activeExtensionDialog?.id == "ext1")
     }
 
-    @MainActor
     @Test func routeExtensionUINotification() {
         let (conn, pipe) = makeTestConnection()
 
@@ -528,7 +502,6 @@ struct ServerConnectionRoutingTests {
         #expect(conn.extensionToast == "Task complete")
     }
 
-    @MainActor
     @Test func routeUnknownIsNoOp() {
         let (conn, pipe) = makeTestConnection()
         let preCount = pipe.reducer.items.count
@@ -538,7 +511,6 @@ struct ServerConnectionRoutingTests {
         #expect(pipe.reducer.items.count == preCount)
     }
 
-    @MainActor
     @Test func staleSessionMessageIgnored() {
         let (conn, pipe) = makeTestConnection(sessionId: "s1")
 
@@ -550,7 +522,6 @@ struct ServerConnectionRoutingTests {
         #expect(conn.sessionStore.sessions.isEmpty)
     }
 
-    @MainActor
     @Test func notSubscribedErrorSuppressedFromStream() {
         let (conn, _) = makeTestConnection(sessionId: "s1")
 
@@ -596,7 +567,6 @@ struct ServerConnectionRoutingTests {
         )
     }
 
-    @MainActor
     @Test func regularErrorNotSuppressed() {
         let (conn, _) = makeTestConnection(sessionId: "s1")
 
@@ -767,7 +737,6 @@ enum EventFlowAckCommand: CaseIterable {
         }
     }
 
-    @MainActor
     func send(using connection: ServerConnection, text: String) async throws {
         switch self {
         case .prompt:
@@ -780,6 +749,7 @@ enum EventFlowAckCommand: CaseIterable {
     }
 }
 
+@MainActor
 struct EventFlowAckRequest {
     let command: String
     let requestId: String?

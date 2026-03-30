@@ -8,13 +8,13 @@ import Testing
 /// When navigating parent→child→parent, the same reducer is reset and reloaded.
 /// These tests verify the reducer state is correct at each step.
 @Suite("Parent-Child Navigation")
+@MainActor
 struct ParentChildNavigationTests {
 
     // MARK: - Shared reducer reset on session switch
 
     /// Verify that connecting to a different session resets the reducer
     /// (switchingSessions = true triggers manager.reducer.reset()).
-    @MainActor
     @Test func switchingSessionsResetsReducer() async {
         let parentId = "parent-\(UUID().uuidString)"
         let childId = "child-\(UUID().uuidString)"
@@ -115,7 +115,6 @@ struct ParentChildNavigationTests {
 
     /// After navigating parent→child→parent, the parent's timeline should
     /// be fully restored from the trace (not show child content or stale cache).
-    @MainActor
     @Test func parentReentryRebuildsFromTrace() async {
         let parentId = "parent-reentry-\(UUID().uuidString)"
         let childId = "child-reentry-\(UUID().uuidString)"
@@ -242,7 +241,6 @@ struct ParentChildNavigationTests {
     /// Verify that on re-entry (parent→child→parent), cached content IS loaded
     /// immediately for instant display. Showing slightly stale data is better
     /// than an empty timeline while the trace fetch runs.
-    @MainActor
     @Test func reentryLoadsCacheForInstantDisplay() async {
         let parentId = "parent-nocache-\(UUID().uuidString)"
         let childId = "child-nocache-\(UUID().uuidString)"
@@ -350,7 +348,6 @@ struct ParentChildNavigationTests {
     /// Verify that per-session reducers isolate parent and child items.
     /// Each ChatSessionManager owns its own reducer — child items never
     /// appear in the parent's reducer and vice versa.
-    @MainActor
     @Test func perSessionReducerIsolatesParentChildItems() async {
         let parentId = "parent-gate-\(UUID().uuidString)"
         let childId = "child-gate-\(UUID().uuidString)"
@@ -443,7 +440,6 @@ struct ParentChildNavigationTests {
     }
 
     /// Verify that stream end doesn't clear reducer items (they survive for reconnect).
-    @MainActor
     @Test func streamEndPreservesReducerItems() async {
         let sessionId = "reconnect-\(UUID().uuidString)"
 

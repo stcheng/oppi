@@ -10,11 +10,11 @@ import Foundation
 /// Bug 4: No client-side permission timeout sweep
 /// Bug 5: Optimistic user message not retracted on failed send
 @Suite("Bug Bash")
+@MainActor
 struct BugBashTests {
 
     // MARK: - Bug 3: permissionCancelled
 
-    @MainActor
     @Test func permissionCancelledResolvesInTimeline() {
         let scenario = ServerConnectionScenario()
         let perm = makeTestPermission()
@@ -53,7 +53,6 @@ struct BugBashTests {
         }
     }
 
-    @MainActor
     @Test func permissionCancelledClearsFromStore() {
         let scenario = ServerConnectionScenario()
         let perm = makeTestPermission()
@@ -65,7 +64,6 @@ struct BugBashTests {
         #expect(scenario.connection.permissionStore.isEmpty)
     }
 
-    @MainActor
     @Test func permissionCancelledForUnknownIdIsNoOp() {
         let scenario = ServerConnectionScenario()
 
@@ -78,7 +76,6 @@ struct BugBashTests {
 
     // MARK: - Bug 4: No client-side permission timeout sweep
 
-    @MainActor
     @Test func sweepExpiredRemovesStalePermissions() {
         let store = PermissionStore()
         let expired = makeTestPermission(id: "p1", timeoutOffset: -60) // 1 min ago
@@ -92,7 +89,6 @@ struct BugBashTests {
         #expect(expiredRequests[0].id == "p1")
     }
 
-    @MainActor
     @Test func sweepExpiredKeepsFreshPermissions() {
         let store = PermissionStore()
         let fresh = makeTestPermission(id: "p1", timeoutOffset: 120) // 2 min from now
@@ -104,7 +100,6 @@ struct BugBashTests {
         #expect(expiredRequests.isEmpty)
     }
 
-    @MainActor
     @Test func sweepExpiredMixedBatch() {
         let store = PermissionStore()
         store.add(makeTestPermission(id: "old", timeoutOffset: -60))
@@ -118,14 +113,12 @@ struct BugBashTests {
         #expect(store.pending[0].id == "fresh")
     }
 
-    @MainActor
     @Test func sweepExpiredEmptyStoreIsNoOp() {
         let store = PermissionStore()
         let expiredRequests = store.sweepExpired()
         #expect(expiredRequests.isEmpty)
     }
 
-    @MainActor
     @Test func sweepExpiredResolvesInTimeline() {
         let scenario = ServerConnectionScenario()
         let expiredPerm = makeTestPermission(id: "p1", timeoutOffset: -30) // Already expired
@@ -162,7 +155,6 @@ struct BugBashTests {
 
     // MARK: - Bug 5: Optimistic user message not retracted on failed send
 
-    @MainActor
     @Test func appendUserMessageReturnsId() {
         let reducer = TimelineReducer()
         let id = reducer.appendUserMessage("Hello")
@@ -177,7 +169,6 @@ struct BugBashTests {
         #expect(text == "Hello")
     }
 
-    @MainActor
     @Test func removeItemRetractsMessage() {
         let reducer = TimelineReducer()
         let id = reducer.appendUserMessage("oops")
@@ -189,7 +180,6 @@ struct BugBashTests {
         #expect(reducer.items.isEmpty, "Message should be retracted after removeItem")
     }
 
-    @MainActor
     @Test func removeItemOnlyRemovesTarget() {
         let reducer = TimelineReducer()
         let id1 = reducer.appendUserMessage("first")
@@ -207,7 +197,6 @@ struct BugBashTests {
         #expect(text == "second")
     }
 
-    @MainActor
     @Test func removeNonexistentItemIsNoOp() {
         let reducer = TimelineReducer()
         _ = reducer.appendUserMessage("keep")
@@ -217,7 +206,6 @@ struct BugBashTests {
         #expect(reducer.items.count == 1, "Should not affect existing items")
     }
 
-    @MainActor
     @Test func removeItemBumpsRenderVersion() {
         let reducer = TimelineReducer()
         let id = reducer.appendUserMessage("test")
@@ -232,7 +220,6 @@ struct BugBashTests {
     // loadFromREST removed entirely — trace is the only history path.
     // Trace preserves tool calls, thinking, and structured output.
 
-    @MainActor
     @Test func loadSessionPreservesToolCalls() {
         let reducer = TimelineReducer()
 
@@ -260,7 +247,6 @@ struct BugBashTests {
 
     // MARK: - Permission store: take() API
 
-    @MainActor
     @Test func takeReturnsAndRemovesRequest() {
         let store = PermissionStore()
         let perm = makeTestPermission(id: "p1")
@@ -273,14 +259,12 @@ struct BugBashTests {
         #expect(store.isEmpty)
     }
 
-    @MainActor
     @Test func takeReturnsNilForUnknownId() {
         let store = PermissionStore()
         let taken = store.take(id: "nonexistent")
         #expect(taken == nil)
     }
 
-    @MainActor
     @Test func takeDoesNotAffectOtherRequests() {
         let store = PermissionStore()
         store.add(makeTestPermission(id: "p1"))
@@ -295,7 +279,6 @@ struct BugBashTests {
 
     // MARK: - Permission resolved carries tool info
 
-    @MainActor
     @Test func resolvePermissionAppendsWhenNotInTimeline() {
         let reducer = TimelineReducer()
 
@@ -313,7 +296,6 @@ struct BugBashTests {
         }
     }
 
-    @MainActor
     @Test func resolvePermissionDoesNotDuplicateOnSecondCall() {
         let reducer = TimelineReducer()
 

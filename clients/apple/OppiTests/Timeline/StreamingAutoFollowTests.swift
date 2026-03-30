@@ -388,7 +388,6 @@ struct HScrollSuppressionTests {
 
 // MARK: - Shared helpers
 
-@MainActor
 private func generateLines(_ count: Int) -> String {
     (1...max(1, count)).map { "Line \($0) of streaming content" }.joined(separator: "\n")
 }

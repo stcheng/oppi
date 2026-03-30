@@ -12,6 +12,7 @@ import Foundation
 /// Fix 4: Stop reconciliation (tested indirectly — timer setup/teardown)
 /// Fix 5: Timeline item cap (bounded memory growth)
 @Suite("Reliability")
+@MainActor
 struct ReliabilityTests {
 
     // MARK: - Fix 1: Reconnect Jitter
@@ -53,7 +54,6 @@ struct ReliabilityTests {
         }
     }
 
-    @MainActor
     @Test func sendWhileConnectingHonorsConfiguredWaitTimeout() async {
         let client = WebSocketClient(
             credentials: makeTestCredentials(),
@@ -81,7 +81,6 @@ struct ReliabilityTests {
         #expect(elapsed < .seconds(1), "Send should fail fast while connecting")
     }
 
-    @MainActor
     @Test func sendWhileReconnectingHonorsConfiguredWaitTimeout() async {
         let client = WebSocketClient(
             credentials: makeTestCredentials(),
@@ -111,7 +110,6 @@ struct ReliabilityTests {
 
     // MARK: - Event-Driven Connection Waiting
 
-    @MainActor
     @Test func waitForConnectionResolvesImmediatelyWhenConnected() async {
         let client = WebSocketClient(
             credentials: makeTestCredentials(),
@@ -131,7 +129,6 @@ struct ReliabilityTests {
         #expect(elapsed < .milliseconds(100), "Should not poll when already connected (\(elapsed))")
     }
 
-    @MainActor
     @Test func waitForConnectionResolvesOnStatusTransition() async {
         let client = WebSocketClient(
             credentials: makeTestCredentials(),
@@ -159,7 +156,6 @@ struct ReliabilityTests {
         #expect(elapsed >= .milliseconds(40), "Should wait for status change (\(elapsed))")
     }
 
-    @MainActor
     @Test func waitForConnectionResolvesOnDisconnect() async {
         let client = WebSocketClient(
             credentials: makeTestCredentials(),
@@ -189,7 +185,6 @@ struct ReliabilityTests {
 
     // MARK: - Fix 2: Extension Dialog Timeout
 
-    @MainActor
     @Test func extensionDialogSetOnRequest() {
         let (conn, pipe) = makeTestConnection()
 
@@ -201,7 +196,6 @@ struct ReliabilityTests {
         #expect(conn.activeExtensionDialog?.id == "ext1")
     }
 
-    @MainActor
     @Test func extensionDialogReplacedByNewRequest() {
         let (conn, pipe) = makeTestConnection()
 
@@ -220,7 +214,6 @@ struct ReliabilityTests {
 
     // MARK: - Fix 3: Extension Dialog Cleared on Disconnect
 
-    @MainActor
     @Test func extensionDialogClearedOnDisconnect() {
         let (conn, pipe) = makeTestConnection()
 
@@ -236,7 +229,6 @@ struct ReliabilityTests {
             "Extension dialog should be cleared when session disconnects")
     }
 
-    @MainActor
     @Test func extensionDialogClearedOnSessionSwitch() {
         let (conn, pipe) = makeTestConnection()
 
@@ -254,7 +246,6 @@ struct ReliabilityTests {
             "Extension dialog should be cleared on session switch")
     }
 
-    @MainActor
     @Test func extensionDialogSurvivedWhenStreamAlive() {
         let (conn, pipe) = makeTestConnection()
 
@@ -272,7 +263,6 @@ struct ReliabilityTests {
 
     // MARK: - Thinking lifecycle recovery
 
-    @MainActor
     @Test func stopConfirmedWithoutAgentEndFinalizesThinking() {
         let (conn, pipe) = makeTestConnection()
         pipe.handle(.connected(session: makeTestSession(status: .busy)), sessionId: "s1")
@@ -300,7 +290,6 @@ struct ReliabilityTests {
         #expect(thinkingStates[0] == true)
     }
 
-    @MainActor
     @Test func stateReadyWithoutAgentEndFinalizesThinking() {
         let (conn, pipe) = makeTestConnection()
         pipe.handle(.connected(session: makeTestSession(status: .busy)), sessionId: "s1")
@@ -322,7 +311,6 @@ struct ReliabilityTests {
 
     // MARK: - Fix 5: Timeline preserves all items (no trimming)
 
-    @MainActor
     @Test func timelinePreservesAllItems() {
         let reducer = TimelineReducer()
 
@@ -345,7 +333,6 @@ struct ReliabilityTests {
         #expect(lastText == "msg-599", "Last item should be msg-599")
     }
 
-    @MainActor
     @Test func timelinePreservesToolCallsWithConversation() {
         let reducer = TimelineReducer()
 
@@ -368,7 +355,6 @@ struct ReliabilityTests {
         #expect(toolItems.count == turnCount, "All tool calls preserved")
     }
 
-    @MainActor
     @Test func loadSessionPreservesAllEvents() {
         let reducer = TimelineReducer()
 
@@ -383,7 +369,6 @@ struct ReliabilityTests {
             "loadSession should preserve all items, got \(reducer.items.count)")
     }
 
-    @MainActor
     @Test func processBatchPreservesAllEvents() {
         let reducer = TimelineReducer()
 

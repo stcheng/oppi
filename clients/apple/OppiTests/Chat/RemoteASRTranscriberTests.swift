@@ -7,6 +7,7 @@ import Testing
 /// Network-dependent tests use a local mock or are skipped in CI.
 /// Audio-path tests verify WAV encoding correctness and buffer management.
 @Suite("RemoteASRTranscriber")
+@MainActor
 struct RemoteASRTranscriberTests {
 
     // MARK: - WAV Encoder

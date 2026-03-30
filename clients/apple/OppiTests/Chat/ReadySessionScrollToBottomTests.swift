@@ -15,6 +15,7 @@ import UIKit
 /// - Without an explicit post-mount retry, a re-entered session can start at
 ///   the top instead of the bottom.
 @Suite("Ready Session Scroll to Bottom")
+@MainActor
 struct ReadySessionScrollToBottomTests {
 
     @MainActor

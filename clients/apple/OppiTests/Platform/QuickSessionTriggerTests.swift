@@ -155,6 +155,7 @@ struct QuickSessionTriggerTests {
 // MARK: - ThinkingLevelEnum (Intent type)
 
 @Suite("ThinkingLevelEnum")
+@MainActor
 struct ThinkingLevelEnumTests {
 
     @Test func allCasesHaveDisplayRepresentations() {
@@ -205,6 +206,7 @@ struct ThinkingLevelEnumTests {
 // MARK: - WorkspaceEntity
 
 @Suite("WorkspaceEntity")
+@MainActor
 struct WorkspaceEntityTests {
 
     @Test func construction() {
@@ -236,6 +238,7 @@ struct WorkspaceEntityTests {
 // MARK: - QuickSessionDefaults
 
 @Suite("QuickSessionDefaults")
+@MainActor
 struct QuickSessionDefaultsTests {
 
     @Test func workspaceIdRoundTrip() {
@@ -308,6 +311,7 @@ struct QuickSessionDefaultsTests {
 // MARK: - StartQuickSessionIntent (static properties)
 
 @Suite("StartQuickSessionIntent")
+@MainActor
 struct StartQuickSessionIntentTests {
 
     @Test func openAppWhenRunIsTrue() {
@@ -318,6 +322,7 @@ struct StartQuickSessionIntentTests {
 // MARK: - AskOppiIntent (static properties)
 
 @Suite("AskOppiIntent")
+@MainActor
 struct AskOppiIntentTests {
 
     @Test func openAppWhenRunIsFalse() {
@@ -336,6 +341,7 @@ struct AskOppiIntentTests {
 // MARK: - OppiShortcutsProvider
 
 @Suite("OppiShortcutsProvider")
+@MainActor
 struct OppiShortcutsProviderTests {
 
     @Test func providesShortcuts() {

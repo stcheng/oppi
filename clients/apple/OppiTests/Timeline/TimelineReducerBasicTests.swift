@@ -3,9 +3,9 @@ import Foundation
 @testable import Oppi
 
 @Suite("TimelineReducer — Basic")
+@MainActor
 struct TimelineReducerBasicTests {
 
-    @MainActor
     @Test func basicAgentTurn() {
         let reducer = TimelineReducer()
 
@@ -22,7 +22,6 @@ struct TimelineReducerBasicTests {
         #expect(text == "Hello world!")
     }
 
-    @MainActor
     @Test func thinkingThenText() {
         let reducer = TimelineReducer()
 
@@ -40,7 +39,6 @@ struct TimelineReducerBasicTests {
         #expect(preview.contains("I need to think"))
     }
 
-    @MainActor
     @Test func thinkingStreamingShowsPreviewBeforeFinalization() {
         let reducer = TimelineReducer()
 
@@ -70,7 +68,6 @@ struct TimelineReducerBasicTests {
         #expect(finalDone)
     }
 
-    @MainActor
     @Test func multipleAgentTurns() {
         let reducer = TimelineReducer()
 
@@ -99,7 +96,6 @@ struct TimelineReducerBasicTests {
         #expect(t2 == "Second")
     }
 
-    @MainActor
     @Test func agentEndWithoutContentProducesNoItems() {
         let reducer = TimelineReducer()
 
@@ -110,7 +106,6 @@ struct TimelineReducerBasicTests {
         #expect(reducer.items.isEmpty)
     }
 
-    @MainActor
     @Test func appendUserMessage() {
         let reducer = TimelineReducer()
         reducer.appendUserMessage("Hello from user")
@@ -123,7 +118,6 @@ struct TimelineReducerBasicTests {
         #expect(text == "Hello from user")
     }
 
-    @MainActor
     @Test func appendSystemEvent() {
         let reducer = TimelineReducer()
 
@@ -137,7 +131,6 @@ struct TimelineReducerBasicTests {
         #expect(msg == "Session force-stopped")
     }
 
-    @MainActor
     @Test func retryStartRendersAsSystemEvent() {
         let reducer = TimelineReducer()
         reducer.process(.retryStart(sessionId: "s1", attempt: 1, maxAttempts: 3, delayMs: 2000, errorMessage: "rate limit"))
@@ -151,7 +144,6 @@ struct TimelineReducerBasicTests {
         #expect(msg.contains("1/3"))
     }
 
-    @MainActor
     @Test func realErrorRendersAsError() {
         let reducer = TimelineReducer()
         reducer.process(.error(sessionId: "s1", message: "Something went wrong"))

@@ -31,8 +31,9 @@ final class NativeMermaidBlockView: UIView {
         return iv
     }()
 
-    /// Height constraint for the image view, updated after rendering.
-    private var imageHeightConstraint: NSLayoutConstraint?
+    /// Active only while showing the rendered diagram. A direct self-height
+    /// constraint makes stack/scroll relayout more reliable after async renders.
+    private var diagramHeightConstraint: NSLayoutConstraint?
 
     /// Cap diagram height in the timeline to keep cells reasonable.
     private static let maxInlineHeight: CGFloat = 400
@@ -68,8 +69,9 @@ final class NativeMermaidBlockView: UIView {
         let tapGesture = UITapGestureRecognizer(target: self, action: #selector(handleTap))
         diagramImageView.addGestureRecognizer(tapGesture)
 
-        let imgHeight = diagramImageView.heightAnchor.constraint(equalToConstant: 200)
-        imageHeightConstraint = imgHeight
+        let diagramHeight = heightAnchor.constraint(equalToConstant: 200)
+        diagramHeight.isActive = false
+        diagramHeightConstraint = diagramHeight
 
         NSLayoutConstraint.activate([
             // Code block fills self
@@ -78,12 +80,12 @@ final class NativeMermaidBlockView: UIView {
             codeBlockView.trailingAnchor.constraint(equalTo: trailingAnchor),
             codeBlockView.bottomAnchor.constraint(equalTo: bottomAnchor),
 
-            // Image view fills self width, height set dynamically
+            // Image view fills self while the container height is driven by
+            // `diagramHeightConstraint` when the rendered diagram is visible.
             diagramImageView.topAnchor.constraint(equalTo: topAnchor),
             diagramImageView.leadingAnchor.constraint(equalTo: leadingAnchor),
             diagramImageView.trailingAnchor.constraint(equalTo: trailingAnchor),
             diagramImageView.bottomAnchor.constraint(equalTo: bottomAnchor),
-            imgHeight,
         ])
     }
 
@@ -96,6 +98,7 @@ final class NativeMermaidBlockView: UIView {
 
         codeBlockView.isHidden = false
         diagramImageView.isHidden = true
+        diagramHeightConstraint?.isActive = false
         isShowingDiagram = false
 
         codeBlockView.apply(language: language, code: code, palette: palette, isOpen: isOpen)
@@ -212,7 +215,8 @@ final class NativeMermaidBlockView: UIView {
         let scale = min(1.0, availableWidth / naturalSize.width)
         let displayHeight = min(naturalSize.height * scale, Self.maxInlineHeight)
 
-        imageHeightConstraint?.constant = displayHeight
+        diagramHeightConstraint?.constant = displayHeight
+        diagramHeightConstraint?.isActive = true
         diagramImageView.backgroundColor = UIColor(palette.bgHighlight)
         diagramImageView.image = image
 
@@ -223,11 +227,13 @@ final class NativeMermaidBlockView: UIView {
         invalidateIntrinsicContentSize()
         setNeedsLayout()
         superview?.setNeedsLayout()
+        superview?.layoutIfNeeded()
     }
 
     private func showAsCodeFallback(code: String, palette: ThemePalette) {
         codeBlockView.isHidden = false
         diagramImageView.isHidden = true
+        diagramHeightConstraint?.isActive = false
         isShowingDiagram = false
         codeBlockView.apply(language: "mermaid", code: code, palette: palette, isOpen: false)
     }

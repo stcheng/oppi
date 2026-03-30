@@ -3,11 +3,11 @@ import Foundation
 @testable import Oppi
 
 @Suite("ToolCallCorrelator")
+@MainActor
 struct ToolCallCorrelatorTests {
 
     // MARK: - Normal sequence
 
-    @MainActor
     @Test func startOutputEndSequenceSharesToolId() {
         let mapper = ToolCallCorrelator()
 
@@ -39,7 +39,6 @@ struct ToolCallCorrelatorTests {
 
     // MARK: - Sequential tools get distinct IDs
 
-    @MainActor
     @Test func sequentialToolsGetDistinctIds() {
         let mapper = ToolCallCorrelator()
 
@@ -61,7 +60,6 @@ struct ToolCallCorrelatorTests {
 
     // MARK: - Output without start (orphan)
 
-    @MainActor
     @Test func outputWithoutStartGeneratesNewId() {
         let mapper = ToolCallCorrelator()
 
@@ -78,7 +76,6 @@ struct ToolCallCorrelatorTests {
 
     // MARK: - End without start (orphan)
 
-    @MainActor
     @Test func endWithoutStartGeneratesNewId() {
         let mapper = ToolCallCorrelator()
 
@@ -92,7 +89,6 @@ struct ToolCallCorrelatorTests {
 
     // MARK: - End clears current ID
 
-    @MainActor
     @Test func endClearsCurrentId() {
         let mapper = ToolCallCorrelator()
 
@@ -114,7 +110,6 @@ struct ToolCallCorrelatorTests {
 
     // MARK: - Reset
 
-    @MainActor
     @Test func resetClearsState() {
         let mapper = ToolCallCorrelator()
 
@@ -137,7 +132,6 @@ struct ToolCallCorrelatorTests {
 
     // MARK: - Session ID passthrough
 
-    @MainActor
     @Test func sessionIdIsPassedThrough() {
         let mapper = ToolCallCorrelator()
 
@@ -165,7 +159,6 @@ struct ToolCallCorrelatorTests {
 
     // MARK: - Args are preserved
 
-    @MainActor
     @Test func argsArePreserved() {
         let mapper = ToolCallCorrelator()
         let args: [String: JSONValue] = [
@@ -184,7 +177,6 @@ struct ToolCallCorrelatorTests {
 
     // MARK: - Error output flag
 
-    @MainActor
     @Test func errorOutputFlagIsPreserved() {
         let mapper = ToolCallCorrelator()
         _ = mapper.start(sessionId: "s1", tool: "bash", args: [:])
@@ -199,7 +191,6 @@ struct ToolCallCorrelatorTests {
 
     // MARK: - Server-provided toolCallId
 
-    @MainActor
     @Test func serverProvidedToolCallIdIsUsed() {
         let mapper = ToolCallCorrelator()
 
@@ -225,7 +216,6 @@ struct ToolCallCorrelatorTests {
         #expect(endId == "server-tc-1", "End should use server-provided toolCallId")
     }
 
-    @MainActor
     @Test func outputFallsBackToCurrentToolWhenNoServerToolCallId() {
         let mapper = ToolCallCorrelator()
 
@@ -241,7 +231,6 @@ struct ToolCallCorrelatorTests {
         #expect(payload.toolEventId == "server-tc-1", "Should fall back to current tool's server-provided ID")
     }
 
-    @MainActor
     @Test func noServerIdGeneratesSyntheticUUID() {
         let mapper = ToolCallCorrelator()
 

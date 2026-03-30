@@ -4,8 +4,8 @@ import UIKit
 @testable import Oppi
 
 @Suite("Tool expansion scroll matrix")
+@MainActor
 struct ToolExpandScrollMatrixTests {
-    @MainActor
     @Test(arguments: ToolExpandScrollMatrixCase.allCases)
     func expandingToolRowsDoesNotLockOuterScroll(_ toolCase: ToolExpandScrollMatrixCase) throws {
         let fixture = try #require(
@@ -40,7 +40,6 @@ struct ToolExpandScrollMatrixTests {
                 "Scroll down snapped by \(downwardDrift)pt for \(toolCase.name)")
     }
 
-    @MainActor
     @Test(arguments: ToolExpandScrollMatrixCase.allCases)
     func collapsingExpandedToolRowsKeepsScrollStable(_ toolCase: ToolExpandScrollMatrixCase) throws {
         let fixture = try #require(
@@ -66,7 +65,6 @@ struct ToolExpandScrollMatrixTests {
                 "Post-collapse downward scroll snapped by \(downwardDrift)pt for \(toolCase.name)")
     }
 
-    @MainActor
     @Test(arguments: ToolExpandScrollMatrixCase.allCases)
     func expandingToolRowsKeepsAnchoredBottomEdgeStable(_ toolCase: ToolExpandScrollMatrixCase) throws {
         let fixture = try #require(
@@ -90,7 +88,6 @@ struct ToolExpandScrollMatrixTests {
         }
     }
 
-    @MainActor
     @Test(arguments: ToolExpandScrollMatrixCase.allCases)
     func collapsingToolRowsKeepsAnchoredBottomEdgeStable(_ toolCase: ToolExpandScrollMatrixCase) throws {
         let fixture = try #require(
@@ -115,7 +112,6 @@ struct ToolExpandScrollMatrixTests {
         }
     }
 
-    @MainActor
     @Test(arguments: ToolExpandScrollMatrixCase.allCases)
     func expandedToolRowsFollowFullScreenSupportMatrix(_ toolCase: ToolExpandScrollMatrixCase) throws {
         let fixture = try #require(
@@ -144,7 +140,6 @@ struct ToolExpandScrollMatrixTests {
         #expect((fullScreenContent != nil) == toolCase.expectedSupportsFullScreenPreview)
     }
 
-    @MainActor
     @Test(arguments: TimelineStreamingScrollMatrixCase.allCases)
     func streamingScrollAndRenderingMatrix(_ matrixCase: TimelineStreamingScrollMatrixCase) {
         let runner = TimelineStreamingScrollScenarioRunner(
@@ -163,7 +158,6 @@ struct ToolExpandScrollMatrixTests {
         runner.assertFollowTransitions(step: "\(matrixCase.name)-follow")
     }
 
-    @MainActor
     @Test func longDeterministicMixedContentStressScenario() {
         let runner = TimelineStreamingScrollScenarioRunner(
             sessionSuffix: "long-stress",

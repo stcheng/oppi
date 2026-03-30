@@ -4,9 +4,9 @@ import UIKit
 @testable import Oppi
 
 @Suite("ChatScrollController")
+@MainActor
 struct ChatScrollControllerTests {
 
-    @MainActor
     @Test func initialState() {
         let controller = ChatScrollController()
         #expect(controller.scrollTargetID == nil)
@@ -14,14 +14,12 @@ struct ChatScrollControllerTests {
         #expect(controller.isCurrentlyNearBottom)
     }
 
-    @MainActor
     @Test func cancelIsSafe() {
         let controller = ChatScrollController()
         controller.cancel()
         controller.cancel() // idempotent
     }
 
-    @MainActor
     @Test func scrollTargetIDReset() {
         let controller = ChatScrollController()
         controller.scrollTargetID = "item-42"
@@ -30,7 +28,6 @@ struct ChatScrollControllerTests {
         #expect(controller.scrollTargetID == nil)
     }
 
-    @MainActor
     @Test func needsInitialScrollToggle() {
         let controller = ChatScrollController()
         #expect(!controller.needsInitialScroll)
@@ -40,7 +37,6 @@ struct ChatScrollControllerTests {
 
     // MARK: - Near-Bottom State
 
-    @MainActor
     @Test func updateNearBottomTracksState() {
         let controller = ChatScrollController()
         #expect(controller.isCurrentlyNearBottom)
@@ -52,7 +48,6 @@ struct ChatScrollControllerTests {
         #expect(controller.isCurrentlyNearBottom)
     }
 
-    @MainActor
     @Test func topVisibleItemIdTracksState() {
         let controller = ChatScrollController()
         #expect(controller.currentTopVisibleItemId == nil)
@@ -66,7 +61,6 @@ struct ChatScrollControllerTests {
 
     // MARK: - Hint Visibility
 
-    @MainActor
     @Test func detachedStreamingHintVisibility() {
         let controller = ChatScrollController()
         #expect(!controller.isDetachedStreamingHintVisible)
@@ -78,7 +72,6 @@ struct ChatScrollControllerTests {
         #expect(!controller.isDetachedStreamingHintVisible)
     }
 
-    @MainActor
     @Test func jumpToBottomHintVisibility() {
         let controller = ChatScrollController()
         #expect(!controller.isJumpToBottomHintVisible)
@@ -92,7 +85,6 @@ struct ChatScrollControllerTests {
 
     // MARK: - handleContentChange
 
-    @MainActor
     @Test func handleContentChangeScrollsToStreamingTarget() async {
         let controller = ChatScrollController()
         controller.updateNearBottom(true)
@@ -108,7 +100,6 @@ struct ChatScrollControllerTests {
         #expect(targets == ["stream-1"])
     }
 
-    @MainActor
     @Test func handleContentChangeScrollsToBottomWhenNoStreaming() async {
         let controller = ChatScrollController()
         controller.updateNearBottom(true)
@@ -124,7 +115,6 @@ struct ChatScrollControllerTests {
         #expect(targets == ["bottom-1"])
     }
 
-    @MainActor
     @Test func handleContentChangeSkipsWhenNotNearBottom() async {
         let controller = ChatScrollController()
         controller.updateNearBottom(false)
@@ -140,7 +130,6 @@ struct ChatScrollControllerTests {
         #expect(callCount == 0)
     }
 
-    @MainActor
     @Test func handleContentChangeHeavyTimelineFollowsWhenBusy() async {
         let controller = ChatScrollController()
         controller.updateNearBottom(true)
@@ -157,7 +146,6 @@ struct ChatScrollControllerTests {
         #expect(targets == ["stream-1"])
     }
 
-    @MainActor
     @Test func handleContentChangeHeavyTimelineSkipsWhenIdle() async {
         let controller = ChatScrollController()
         controller.updateNearBottom(true)
@@ -174,7 +162,6 @@ struct ChatScrollControllerTests {
         #expect(callCount == 0)
     }
 
-    @MainActor
     @Test func handleContentChangeSkipsDuringKeyboardTransition() async {
         let controller = ChatScrollController()
         controller.updateNearBottom(true)
@@ -204,7 +191,6 @@ struct ChatScrollControllerTests {
         #expect(callCount == 1)
     }
 
-    @MainActor
     @Test func handleContentChangeRechecksKeyboardBeforeDelayedScroll() async {
         let controller = ChatScrollController()
         controller.updateNearBottom(true)
@@ -225,7 +211,6 @@ struct ChatScrollControllerTests {
         #expect(callCount == 0)
     }
 
-    @MainActor
     @Test func handleContentChangeSkipsDuringUserInteraction() async {
         let controller = ChatScrollController()
         controller.updateNearBottom(true)
@@ -242,7 +227,6 @@ struct ChatScrollControllerTests {
         #expect(callCount == 0)
     }
 
-    @MainActor
     @Test func handleContentChangeCancelsPendingScrollWhenUserStartsInteracting() async {
         let controller = ChatScrollController()
         controller.updateNearBottom(true)
@@ -271,7 +255,6 @@ struct ChatScrollControllerTests {
         #expect(callCount == 1)
     }
 
-    @MainActor
     @Test func detachFromBottomForUserScrollRequiresReentry() async {
         let controller = ChatScrollController()
         controller.updateNearBottom(true)
@@ -300,7 +283,6 @@ struct ChatScrollControllerTests {
 
     // MARK: - Initial Scroll & Scroll Target
 
-    @MainActor
     @Test func handleInitialScrollInvokesCallback() async {
         let controller = ChatScrollController()
         controller.needsInitialScroll = true
@@ -313,7 +295,6 @@ struct ChatScrollControllerTests {
         #expect(!controller.needsInitialScroll)
     }
 
-    @MainActor
     @Test func handleScrollTargetInvokesCallbackAndResetsTarget() async {
         let controller = ChatScrollController()
         controller.scrollTargetID = "target-1"
@@ -328,7 +309,6 @@ struct ChatScrollControllerTests {
 
     // MARK: - requestScrollToBottom
 
-    @MainActor
     @Test func requestScrollToBottomReattachesAndClearsHints() {
         let controller = ChatScrollController()
         controller.updateNearBottom(false)
@@ -344,7 +324,6 @@ struct ChatScrollControllerTests {
         #expect(controller.scrollToBottomNonce == nonceBefore &+ 1)
     }
 
-    @MainActor
     @Test func requestScrollToBottomLocksFollowUntilUserScrollsUp() {
         let controller = ChatScrollController()
 

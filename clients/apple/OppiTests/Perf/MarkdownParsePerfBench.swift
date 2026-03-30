@@ -9,7 +9,7 @@ import Foundation
 /// `buildSegmentsIncremental → parseCommonMark → FlatSegment.build`
 ///
 /// Output format: METRIC name=number (microseconds)
-@Suite("MarkdownParsePerfBench")
+@Suite("MarkdownParsePerfBench", .tags(.perf))
 @MainActor
 struct MarkdownParsePerfBench {
 

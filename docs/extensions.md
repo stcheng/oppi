@@ -1,370 +1,151 @@
-# Extension Support
+# Oppi extension behavior
 
-How Oppi handles pi extensions end-to-end: discovery, selection, spawning, mobile rendering, and adding new ones.
+This page only covers what Oppi changes or adds on top of pi's extension system.
+
+For writing extensions, supported layouts, lifecycle hooks, tool APIs, and TUI renderers, use pi's docs:
+
+- pi extension docs: `server/node_modules/@mariozechner/pi-coding-agent/docs/extensions.md`
+- pi examples: `server/node_modules/@mariozechner/pi-coding-agent/examples/extensions/`
+
+## What Oppi changes
+
+Oppi adds three behaviors on top of normal pi extension loading:
+
+1. **Server-managed first-party tools**
+   - `ask`
+   - `spawn_agent`
+   - `permission-gate` as a reserved managed name
+2. **Workspace allowlist filtering** via `workspace.extensions`
+3. **Mobile rendering** via server-side `StyledSegment[]`, not pi TUI components
 
 ## Architecture
 
-```
-┌──────────────────────────────────────────────────────┐
-│  Host Machine                                        │
-│                                                      │
-│  ~/.pi/agent/extensions/                             │
-│    ├── memory.ts          ← pi extension (symlink)   │
-│    ├── todos.ts           ← pi extension (symlink)   │
-│    └── permission-gate.ts ← managed (hidden from UI) │
-│                                                      │
-│  ~/.pi/agent/mobile-renderers/                       │
-│    ├── memory.ts          ← mobile renderer          │
-│    └── todos.ts           ← mobile renderer          │
-│                                                      │
-└──────────────────────┬───────────────────────────────┘
-                       │
-                       ▼
-┌──────────────────────────────────────────────────────┐
-│  Oppi Server                                         │
-│                                                      │
-│  extension-loader.ts                                 │
-│    listHostExtensions()  → GET /extensions            │
-│    resolveWorkspaceExtensions()  → extension paths    │
-│                                                      │
-│  mobile-renderer.ts                                  │
-│    Built-in renderers (bash, read, edit, write, plot, …) │
-│    + ~/.pi/agent/mobile-renderers/ → StyledSegment[]  │
-│                                                      │
-│  sdk-backend.ts                                      │
-│    createAgentSession({                              │
-│      extensionsOverride: [                           │
-│        permission-gate,   ← always loaded            │
-│        memory.ts,         ← workspace picks          │
-│        todos.ts                                      │
-│      ]                                               │
-│    })                                                │
-│                                                      │
-│  session-protocol.ts                                 │
-│    tool_execution_start → renderCall(toolName, args)  │
-│    tool_execution_end   → renderResult(toolName, …)   │
-│    Segments sent in WS messages to iOS                │
-│                                                      │
-└──────────────────────┬───────────────────────────────┘
-                       │
-                       ▼
-┌──────────────────────────────────────────────────────┐
-│  iOS App                                             │
-│                                                      │
-│  WorkspaceEditView                                   │
-│    GET /extensions → toggle checkboxes               │
-│    workspace.extensions = ["memory", "todos"]        │
-│                                                      │
-│  StyledSegment (model)                               │
-│    text: String, style: bold|muted|dim|accent|…      │
-│                                                      │
-│  SegmentRenderer                                     │
-│    StyledSegment[] → NSAttributedString              │
-│    Maps styles to Tokyo Night theme colors           │
-│                                                      │
-│  ToolPresentationBuilder                             │
-│    callSegments → collapsed tool row title            │
-│    resultSegments → trailing badge                   │
-│                                                      │
-└──────────────────────────────────────────────────────┘
+```mermaid
+flowchart TD
+  subgraph Host[Host machine]
+    GE[~/.pi/agent/extensions\nglobal pi extensions]
+    PE[.pi/extensions\nproject-local pi extensions]
+    MR[~/.pi/agent/mobile-renderers\nmobile renderer sidecars]
+  end
+
+  subgraph Server[Oppi server]
+    EL[extension-loader.ts\nlistHostExtensions]
+    SR[skills route\nGET /extensions]
+    SS[session-start.ts\ninject ask and spawn_agent]
+    SB[sdk-backend.ts\nfilter managed names\napply workspace allowlist]
+    PG[GateServer policy hook\nin-process permission gate]
+    MRR[mobile-renderer.ts]
+    SP[session-protocol.ts]
+  end
+
+  subgraph iOS[iOS app]
+    WE[WorkspaceEditView]
+    SEG[SegmentRenderer]
+    TP[ToolPresentationBuilder]
+  end
+
+  GE --> EL
+  PE --> EL
+  EL --> SR --> WE
+  GE --> SB
+  PE --> SB
+  SS --> SB
+  PG --> SB
+  MR --> MRR --> SP --> SEG --> TP
+  SB --> SP
 ```
 
-## How It Works
+## Runtime behavior
 
-### 1. Discovery
+### Host extensions
 
-`listHostExtensions()` scans `~/.pi/agent/extensions/` and returns all entries except:
+At session startup, Oppi starts from pi's normal discovered extension set for the session cwd:
 
-- Hidden files (`.` prefix)
-- `permission-gate` (managed by oppi-server, always loaded)
+- `~/.pi/agent/extensions/`
+- `.pi/extensions/`
 
-Results are served via `GET /extensions` to the iOS app.
+Oppi does not replace that mechanism. It filters it.
 
-### 2. Selection
+### Managed names
 
-iOS `WorkspaceEditView` shows discovered extensions as toggleable checkboxes. Selected names are stored in `workspace.extensions: string[]`. The text field also supports manual entry for extensions not auto-discovered.
+Oppi reserves these names:
 
-### 3. Session Creation
+- `permission-gate`
+- `ask`
+- `spawn_agent`
 
-When a session starts (`sdk-backend.ts`):
+Those names are filtered out of host discovery and owned by the server.
 
-1. `extensionsOverride` is set on `createAgentSession()` — this replaces pi's default auto-discovery
-2. Permission-gate extension is always included
-3. `resolveWorkspaceExtensions(workspace.extensions)` resolves names → absolute paths
-4. Each resolved extension is added to the override array
+- `ask` comes from `server/extensions/ask.ts`
+- `spawn_agent` comes from `server/extensions/spawn-agent.ts`
+- `permission-gate` is implemented by the server policy engine in `server/src/sdk-backend.ts`
 
-This gives oppi full control over which extensions load per workspace.
+### Workspace allowlist
 
-### 4. Mobile Rendering
+`workspace.extensions` has two modes:
 
-Pi extensions define TUI renderers via `renderCall()`/`renderResult()` that produce terminal UI components. These don't work on iOS. Instead, oppi uses a parallel **mobile renderer** system that produces serializable `StyledSegment[]`:
+- **`undefined`**: use pi's normal discovery, plus Oppi first-party tools
+- **defined**: treat the list as an authoritative allowlist for optional extensions
 
-```typescript
-interface StyledSegment {
-  text: string;
-  style?: "bold" | "muted" | "dim" | "accent" | "success" | "warning" | "error";
-}
+If a workspace sets `extensions`, include `ask` and `spawn_agent` explicitly if you want to keep them.
 
-interface MobileToolRenderer {
-  renderCall(args: Record<string, unknown>): StyledSegment[];
-  renderResult(details: unknown, isError: boolean): StyledSegment[];
-}
-```
+## Extension picker behavior
 
-**Two sources of mobile renderers:**
+`GET /extensions` is not a generic pi reference API. It is the picker source for the Oppi workspace editor.
 
-| Source | Location | Covers |
-|--------|----------|--------|
-| Built-in | `server/src/mobile-renderer.ts` | `bash`, `read`, `edit`, `write`, `grep`, `find`, `ls`, `todo`, `plot` |
-| User renderers | `~/.pi/agent/mobile-renderers/*.ts` | Custom extension tools (`remember`, `recall`, etc.) |
+Behavior:
 
-User renderers live in a **separate directory** from pi extensions (`~/.pi/agent/mobile-renderers/`). This prevents the pi CLI from trying to load them as extensions — they're pure rendering hints, not extension modules.
+- always scans `~/.pi/agent/extensions/`
+- also scans `<workspace cwd>/.pi/extensions/` when the client provides a cwd
+- excludes managed names
+- deduplicates by extension name for UI display
+- prefers the project-local entry when the same name exists in both places
 
-Segments are injected into WS messages by `session-protocol.ts`:
-- `toolStart` → includes `callSegments`
-- `toolEnd` → includes `resultSegments`
+That last rule is a UI choice so the picker matches the workspace context cleanly.
 
-iOS renders them via `SegmentRenderer` → `NSAttributedString` with theme-mapped colors.
+## Mobile rendering gotcha
 
-## Adding a New Extension
+Pi's `renderCall()` and `renderResult()` drive the terminal UI. Oppi iOS does not use them.
 
-### Step 1: Write the Pi Extension
+For mobile, Oppi uses server-side renderers that produce `StyledSegment[]`.
 
-Follow [pi's extension docs](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/docs/extensions.md). Key points:
+Sources:
 
-```typescript
-// ~/.pi/agent/extensions/my-ext.ts (or in dotfiles, symlinked)
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { Type } from "@sinclair/typebox";
+- built-in renderers in `server/src/mobile-renderer.ts`
+- optional sidecars in `~/.pi/agent/mobile-renderers/*.ts`
 
-export default function (pi: ExtensionAPI) {
-  pi.registerTool({
-    name: "my_tool",
-    label: "My Tool",
-    description: "What it does",
-    parameters: Type.Object({
-      action: Type.String(),
-    }),
-    async execute(toolCallId, params, signal, onUpdate, ctx) {
-      return {
-        content: [{ type: "text", text: "Result for LLM" }],
-        details: { someData: "..." },  // Available to mobile renderer
-      };
-    },
-    // Optional TUI renderers (for terminal pi, not iOS)
-    renderCall(args, theme) { /* ... */ },
-    renderResult(result, options, theme) { /* ... */ },
-  });
-}
-```
+If an extension looks good in terminal pi but looks generic in Oppi, this is usually why.
 
-Test locally with `pi -e ./my-ext.ts`.
+## Permission gate gotcha
 
-### Step 2: Install to Extensions Directory
+`permission-gate` is not a host extension you install or toggle per workspace.
 
-```bash
-# Option A: Symlink from dotfiles (recommended)
-ln -s ~/.config/dotfiles/shared/pi/extensions/my-ext.ts ~/.pi/agent/extensions/my-ext.ts
+Oppi replaces that behavior with an in-process gate wired through the server and mobile approval flow.
 
-# Option B: Copy directly
-cp my-ext.ts ~/.pi/agent/extensions/my-ext.ts
-```
+## File map
 
-The extension now appears in `GET /extensions` and the iOS workspace editor.
-
-### Step 3: Create a Mobile Renderer (Optional but Recommended)
+| File | Why it matters |
+|---|---|
+| `server/extensions/first-party.ts` | Reserved names and enablement rules |
+| `server/extensions/ask.ts` | First-party ask tool |
+| `server/extensions/spawn-agent.ts` | First-party multi-agent tools |
+| `server/src/extension-loader.ts` | Picker discovery for global + project-local extensions |
+| `server/src/routes/skills.ts` | `GET /extensions` |
+| `server/src/session-start.ts` | Injects first-party factories |
+| `server/src/sdk-backend.ts` | Filters managed names and applies workspace allowlist |
+| `server/src/mobile-renderer.ts` | Mobile tool row renderers |
+| `server/src/session-protocol.ts` | Sends `callSegments` and `resultSegments` to iOS |
 
-Without a renderer, iOS falls back to raw tool name + text output. With one, you get styled collapsed summaries.
+## When to read pi docs instead
 
-```typescript
-// ~/.pi/agent/mobile-renderers/my-ext.ts
-
-interface StyledSegment {
-  text: string;
-  style?: "bold" | "muted" | "dim" | "accent" | "success" | "warning" | "error";
-}
+Go to pi's docs for:
 
-interface MobileToolRenderer {
-  renderCall(args: Record<string, unknown>): StyledSegment[];
-  renderResult(details: unknown, isError: boolean): StyledSegment[];
-}
+- how to write an extension
+- supported extension directory layouts
+- event lifecycle details
+- custom tools
+- custom commands
+- terminal rendering with TUI components
+- package-based extension distribution
 
-const renderers: Record<string, MobileToolRenderer> = {
-  my_tool: {
-    renderCall(args) {
-      return [
-        { text: "my_tool ", style: "bold" },
-        { text: String(args.action || ""), style: "accent" },
-      ];
-    },
-    renderResult(details: any, isError) {
-      if (isError) return [];
-      return [{ text: "✓", style: "success" }];
-    },
-  },
-};
-
-export default renderers;
-```
-
-**Key rules for mobile renderers:**
-- Location: `~/.pi/agent/mobile-renderers/<name>.ts`
-- Default export: `Record<string, MobileToolRenderer>` keyed by tool name
-- One file can cover multiple tools from the same extension
-- Keep summaries short — they're collapsed one-liners on mobile
-- Never throw — return `[]` as fallback
-
-### Expanded Viewport Rendering
-
-When a user taps a tool row to expand it, iOS renders the tool's output in a scrollable viewport. For extension tools, the expanded content is controlled by two mechanisms:
-
-#### 1. Tool Result `details` (post-execution)
-
-Return `expandedText` and `presentationFormat` in your tool's `details` to control how the expanded viewport displays content after execution completes:
-
-```typescript
-async execute(toolCallId, params, signal, onUpdate, ctx) {
-  const result = doWork(params);
-  return {
-    content: [{ type: "text", text: JSON.stringify(result) }],  // For LLM
-    details: {
-      expandedText: formatMarkdown(result),    // For iOS viewport
-      presentationFormat: "markdown",          // Rendering hint
-    },
-  };
-}
-```
-
-| `presentationFormat` | iOS Rendering |
-|---------------------|---------------|
-| `"markdown"` / `"md"` | Rendered markdown with headers, code blocks, lists |
-| `"code"` / `"source"` / `"syntax"` | Syntax-highlighted code with line numbers |
-| `"json"` | Pretty-printed JSON |
-| `"diff"` / `"patch"` / `"unified-diff"` | Unified diff with added/removed highlighting |
-| _(omitted)_ | Auto-detect: tries JSON parse → unified diff → markdown heuristic → plain text |
-
-Additional detail fields:
-- `language` / `lang` — syntax language hint for `"code"` format (e.g. `"typescript"`)
-- `filePath` / `file_path` / `path` — file path context for code display
-- `startLine` / `start_line` — starting line number for code display
-
-When `expandedText` is omitted, iOS uses the raw tool output (`content[].text`). When `presentationFormat` is omitted, iOS auto-detects format from the content (JSON objects get pretty-printed, markdown-like content renders as markdown, etc).
-
-#### 2. Streaming Arg Preview (during execution)
-
-When the LLM generates a tool call with a large string argument (>200 bytes), the server automatically streams that content to the iOS viewport during arg generation. This means users see the content appearing in real-time instead of a "Waiting for output..." placeholder.
-
-This is fully automatic and requires no extension code. The server:
-1. Detects the largest string arg exceeding the threshold
-2. Emits it as `tool_output` with `mode: "replace"` alongside each streaming `tool_start`
-3. Clears the preview when real execution begins (`tool_execution_start`)
-
-The mobile renderer controls what appears in the **title bar** during streaming (via `callSegments`). The preview mechanism controls what appears in the **viewport**. Keep large content values (markdown bodies, long text) in dedicated string parameters — the server picks the largest one.
-
-**Design your args to render well:**
-
-| Pattern | Title (callSegments) | Viewport (auto) |
-|---------|---------------------|-----------------|
-| `{ action: "create", title: "Short", body: "# Long markdown..." }` | `todo create "Short"` | Full markdown renders in viewport |
-| `{ text: "Long memory entry...", tags: ["a","b"] }` | `remember "First line..."` | Full text in viewport |
-| `{ query: "short search" }` | `recall "short search"` | No preview (below threshold) |
-
-### Dynamic UI via `plot` Tool
-
-For dynamic chart UI in chat, use the `plot` extension tool contract documented in:
-
-- `.internal/docs-design/dynamic-ui-plot.md`
-
-Short version:
-- `plot` returns normal text in `content` (for LLM context and fallback)
-- preferred payload is `tool_end.details.ui[]`
-- Oppi server validates/sanitizes `details.ui`
-- iOS renders supported charts natively; falls back to `args.spec` then text
-
-### Step 4: Restart Server
-
-The server loads renderers at startup. Restart to pick up new ones:
-
-```bash
-launchctl kickstart -k gui/$(id -u)/dev.chenda.oppi
-```
-
-### Step 5: Enable in Workspace
-
-Open iOS → workspace settings → toggle the new extension on.
-
-## Style Guide for Mobile Renderers
-
-### Segment Styles → iOS Colors
-
-| Style | iOS Color | Usage |
-|-------|-----------|-------|
-| `bold` | `themeFg` (bold font) | Tool name prefix |
-| `muted` | `themeFgDim` | Secondary info (quoted text, values) |
-| `dim` | `themeComment` | Tertiary info (tags, counts, metadata) |
-| `accent` | `themeCyan` | Primary arguments (paths, commands) |
-| `success` | `themeGreen` | Success indicators (✓, counts) |
-| `warning` | `themeYellow` | Truncation, limits, cautions |
-| `error` | `themeRed` | Errors, non-zero exit codes |
-
-### Patterns
-
-**Tool call (collapsed title):**
-```
-[bold: "toolname "] [accent: "primary-arg"] [dim: "metadata"]
-```
-
-**Result (trailing badge):**
-```
-[success: "✓ Done"]           — simple success
-[success: "3/5 open"]         — counts
-[warning: "truncated"]        — limits hit
-[]                            — empty = no badge (error icon shows separately)
-```
-
-## Managed Extensions
-
-### permission-gate
-
-Always loaded by `sdk-backend.ts`. Never appears in `GET /extensions`. Connects to oppi-server via TCP localhost socket to route tool approvals through the iOS app.
-
-Located at: `server/extensions/permission-gate/`
-
-### Future: Built-in Renderers
-
-For pi's built-in tools (`bash`, `read`, `edit`, etc.), mobile renderers live directly in `server/src/mobile-renderer.ts`. These don't need user renderer files — they're always available.
-
-To add a new built-in tool renderer, add it to `BUILTIN_RENDERERS` in `mobile-renderer.ts`.
-
-## File Reference
-
-| File | Purpose |
-|------|---------|
-| `server/src/extension-loader.ts` | Discovery, validation, resolution of host extensions |
-| `server/src/mobile-renderer.ts` | `MobileRendererRegistry`, built-in renderers, user renderer loading |
-| `server/src/sdk-backend.ts` | Agent session creation including `extensionsOverride` |
-| `server/src/session-protocol.ts` | Injects `callSegments`/`resultSegments` into WS messages |
-| `~/.pi/agent/extensions/*.ts` | Pi extensions (auto-discovered) |
-| `~/.pi/agent/mobile-renderers/*.ts` | User-provided mobile renderers |
-| `server/extensions/permission-gate/` | Managed permission gate extension |
-| `clients/apple/.../StyledSegment.swift` | Segment model |
-| `clients/apple/.../SegmentRenderer.swift` | Segment → NSAttributedString |
-| `clients/apple/.../ToolPresentationBuilder.swift` | Segments → tool row UI |
-
-## Relationship to Pi
-
-Oppi reuses pi's extension system verbatim — same TypeScript format, same `ExtensionAPI`, same tool registration. The differences:
-
-| Aspect | Pi (Terminal) | Oppi (Mobile) |
-|--------|--------------|---------------|
-| Discovery | Auto-discovers `~/.pi/agent/extensions/` | Suppressed; explicit `extensionsOverride` array |
-| Rendering | TUI `Component` objects via `renderCall`/`renderResult` | `StyledSegment[]` via `~/.pi/agent/mobile-renderers/` |
-| UI interaction | `ctx.ui.confirm()`, `ctx.ui.select()` etc. | Forwarded via RPC → WS → iOS native dialogs |
-| Permission gate | Interactive TUI confirm dialog | TCP socket → iOS push notification + banner |
-| Selection | All discovered extensions load | Per-workspace toggle in iOS settings |
-
-Pi's extension docs are the canonical reference for writing extensions:
-- Extension API: [pi docs/extensions.md](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/docs/extensions.md)
-- Custom tools: Same doc, "Custom Tools" section
-- Tool rendering: Same doc, "Custom Rendering" section
-- State management: Same doc, "State Management" section
+Use this page for Oppi-specific behavior and gotchas only.

@@ -3,9 +3,9 @@ import Foundation
 @testable import Oppi
 
 @Suite("WebSocketClient Reconnect Backoff")
+@MainActor
 struct WebSocketClientReconnectBackoffTests {
 
-    @MainActor
     @Test func cancelReconnectBackoffResolvesWaitingSends() async {
         let client = WebSocketClient(
             credentials: makeTestCredentials(),
@@ -41,7 +41,6 @@ struct WebSocketClientReconnectBackoffTests {
         #expect(elapsed < .seconds(1), "Send should unblock quickly after cancelReconnectBackoff")
     }
 
-    @MainActor
     @Test func cancelReconnectBackoffDoesNothingWhenNotReconnecting() {
         let client = WebSocketClient(credentials: makeTestCredentials())
         client._setStatusForTesting(.connected)

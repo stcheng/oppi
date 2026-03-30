@@ -5,6 +5,7 @@ import Testing
 // swiftlint:disable force_try force_unwrapping
 
 @Suite("WorkspaceStore Multi-Server", .serialized)
+@MainActor
 struct MultiServerStoreTests {
 
     // MARK: - ServerSyncState
@@ -41,7 +42,6 @@ struct MultiServerStoreTests {
 
     // MARK: - Per-server upsert/remove
 
-    @MainActor
     @Test func upsertWorkspaceForServer() {
         let store = WorkspaceStore()
         let ws = makeTestWorkspace(id: "w1", name: "Alpha")
@@ -61,7 +61,6 @@ struct MultiServerStoreTests {
         #expect(store.workspacesByServer["server-b"]?.count == 1)
     }
 
-    @MainActor
     @Test func removeWorkspaceForServer() {
         let store = WorkspaceStore()
         store.upsert(makeTestWorkspace(id: "w1", name: "A"), serverId: "s1")
@@ -73,7 +72,6 @@ struct MultiServerStoreTests {
         #expect(store.workspacesByServer["s2"]?.count == 1)  // untouched
     }
 
-    @MainActor
     @Test func removeServer() {
         let store = WorkspaceStore()
         store.workspacesByServer["s1"] = [makeTestWorkspace(id: "w1", name: "A")]
@@ -90,7 +88,6 @@ struct MultiServerStoreTests {
 
     // MARK: - allWorkspaces / allSkills
 
-    @MainActor
     @Test func allWorkspacesRespectsServerOrder() {
         let store = WorkspaceStore()
         store.serverOrder = ["s2", "s1"]
@@ -103,7 +100,6 @@ struct MultiServerStoreTests {
         #expect(all[1].name == "From S1")
     }
 
-    @MainActor
     @Test func allSkillsDeduplicatesByName() {
         let store = WorkspaceStore()
         store.serverOrder = ["s1", "s2"]
@@ -117,7 +113,6 @@ struct MultiServerStoreTests {
 
     // MARK: - Per-server freshness
 
-    @MainActor
     @Test func perServerFreshnessState() {
         let store = WorkspaceStore()
         #expect(store.freshnessState(forServer: "unknown") == .offline)
@@ -132,7 +127,6 @@ struct MultiServerStoreTests {
         #expect(store.freshnessState(forServer: "s1") == .live)
     }
 
-    @MainActor
     @Test func isAllLoadedRequiresAllServers() {
         let store = WorkspaceStore()
         store.serverOrder = ["s1", "s2"]
@@ -147,7 +141,6 @@ struct MultiServerStoreTests {
         #expect(store.isAllLoaded)
     }
 
-    @MainActor
     @Test func isAnySyncingTracksAnyServer() {
         let store = WorkspaceStore()
         store.serverFreshness["s1"] = ServerSyncState()
@@ -163,7 +156,6 @@ struct MultiServerStoreTests {
 
     // MARK: - loadAll with mock
 
-    @MainActor
     @Test func loadAllFetchesFromMultipleServers() async throws {
         defer { MultiServerMockURLProtocol.handler = nil }
 
@@ -230,7 +222,6 @@ struct MultiServerStoreTests {
         #expect(store.isAllLoaded)
     }
 
-    @MainActor
     @Test func loadAllHandlesPartialFailure() async {
         let store = WorkspaceStore()
         let ws1 = makeTestWorkspace(id: "w1", name: "Survives")

@@ -4,6 +4,7 @@ import UIKit
 @testable import Oppi
 
 @Suite("ChatTimelineCollectionHost.Controller")
+@MainActor
 struct ChatTimelineCoordinatorTests {
 
     @MainActor

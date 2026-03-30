@@ -3,9 +3,9 @@ import Foundation
 @testable import Oppi
 
 @Suite("TimelineReducer — Permissions")
+@MainActor
 struct TimelineReducerPermissionTests {
 
-    @MainActor
     @Test func permissionRequestSkipsTimeline() {
         let reducer = TimelineReducer()
         let perm = PermissionRequest(
@@ -29,7 +29,6 @@ struct TimelineReducerPermissionTests {
         #expect(tool == "bash")
     }
 
-    @MainActor
     @Test func permissionExpiredIsNoOpInReducer() {
         let reducer = TimelineReducer()
         let perm = PermissionRequest(

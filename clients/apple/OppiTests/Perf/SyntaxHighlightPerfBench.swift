@@ -10,7 +10,7 @@ import UIKit
 /// - ToolRowTextRenderer.makeCodeAttributedText (full pipeline: gutter + highlight + assembly)
 ///
 /// Outputs METRIC lines for autoresearch.sh to parse.
-@Suite("Syntax Highlight Perf Bench")
+@Suite("Syntax Highlight Perf Bench", .tags(.perf))
 @MainActor
 struct SyntaxHighlightPerfBench {
 

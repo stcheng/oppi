@@ -217,7 +217,7 @@ struct WorkspaceEditView: View {
             }
 
             Section("Extensions") {
-                Text("Named extensions from ~/.pi/agent/extensions.")
+                Text("Named pi extensions. Includes project-local .pi/extensions when Host Working Directory is set.")
                     .font(.caption)
                     .foregroundStyle(.themeComment)
 
@@ -236,7 +236,7 @@ struct WorkspaceEditView: View {
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(ext.name)
                                         .font(.body)
-                                    Text(ext.kind)
+                                    Text(ext.subtitle)
                                         .font(.caption2.monospaced())
                                         .foregroundStyle(.themeComment)
                                 }
@@ -444,7 +444,8 @@ struct WorkspaceEditView: View {
         defer { isLoadingExtensions = false }
 
         do {
-            availableExtensions = try await api.listExtensions()
+            let cwd = hostMount.trimmingCharacters(in: .whitespacesAndNewlines)
+            availableExtensions = try await api.listExtensions(cwd: cwd.isEmpty ? nil : cwd)
         } catch {
             extensionsError = error.localizedDescription
         }

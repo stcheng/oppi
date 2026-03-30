@@ -11,7 +11,7 @@ import Foundation
 /// and reports the median of the remaining runs. Output format:
 ///   METRIC name=number
 /// for consumption by the autoresearch extension.
-@Suite("TimelinePerfBench")
+@Suite("TimelinePerfBench", .tags(.perf))
 @MainActor
 struct TimelinePerfBench {
 

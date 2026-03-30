@@ -5,8 +5,8 @@ import Testing
 // swiftlint:disable force_unwrapping
 
 @Suite("WorkspaceStore Offline", .serialized)
+@MainActor
 struct WorkspaceStoreOfflineTests {
-    @MainActor
     @Test func loadUsesCachedDataWhenOffline() async throws {
         defer { WorkspaceStoreMockURLProtocol.handler = nil }
 
@@ -36,7 +36,6 @@ struct WorkspaceStoreOfflineTests {
         #expect(store.isLoaded)
     }
 
-    @MainActor
     @Test func loadFailureKeepsExistingStateWhenAlreadyLoaded() async {
         defer { WorkspaceStoreMockURLProtocol.handler = nil }
 

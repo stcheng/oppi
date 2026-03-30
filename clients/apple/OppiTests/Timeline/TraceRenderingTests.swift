@@ -14,6 +14,7 @@ import Foundation
 /// 4. Tool results can be large (50KB+ transcripts, base64 images)
 /// 5. Some assistant messages are very short status updates ("Fetching transcript...")
 @Suite("Real-world Trace Rendering")
+@MainActor
 struct TraceRenderingTests {
 
     // MARK: - Helpers
@@ -57,7 +58,6 @@ struct TraceRenderingTests {
 
     // MARK: - Whitespace-only assistant messages
 
-    @MainActor
     @Test func whitespaceOnlyAssistantMessagesSkipped() {
         let reducer = TimelineReducer()
         // Pattern from real trace: assistant emits "\n\n" before thinking block
@@ -86,7 +86,6 @@ struct TraceRenderingTests {
         #expect(text.hasPrefix("Here are my skills:"))
     }
 
-    @MainActor
     @Test func emptyStringAssistantMessageSkipped() {
         let reducer = TimelineReducer()
         let events = [
@@ -103,7 +102,6 @@ struct TraceRenderingTests {
         #expect(text == "Real content")
     }
 
-    @MainActor
     @Test func spacesOnlyAssistantMessageSkipped() {
         let reducer = TimelineReducer()
         let events = [
@@ -117,7 +115,6 @@ struct TraceRenderingTests {
 
     // MARK: - Tool call with preceding status message
 
-    @MainActor
     @Test func statusMessageBeforeToolCall() {
         // Pattern: assistant says "Fetching transcript..." then starts tool
         let reducer = TimelineReducer()
@@ -151,7 +148,6 @@ struct TraceRenderingTests {
 
     // MARK: - Multi-tool chain without assistant text
 
-    @MainActor
     @Test func chainedToolCallsNoInterveningText() {
         let reducer = TimelineReducer()
         let events = [
@@ -185,7 +181,6 @@ struct TraceRenderingTests {
 
     // MARK: - Read tool with structured args
 
-    @MainActor
     @Test func readToolArgsPreserved() {
         let reducer = TimelineReducer()
         let events = [
@@ -206,7 +201,6 @@ struct TraceRenderingTests {
 
     // MARK: - Write tool with file content
 
-    @MainActor
     @Test func writeToolArgsIncludeContent() {
         let reducer = TimelineReducer()
         let fileContent = "# Summary\n\nThis is the report content."
@@ -228,7 +222,6 @@ struct TraceRenderingTests {
 
     // MARK: - Edit tool with oldText/newText
 
-    @MainActor
     @Test func editToolArgsIncludeOldAndNew() {
         let reducer = TimelineReducer()
         let events = [
@@ -250,7 +243,6 @@ struct TraceRenderingTests {
 
     // MARK: - Large tool output (memory bounded)
 
-    @MainActor
     @Test func largeToolOutputTruncated() {
         let reducer = TimelineReducer()
         let largeOutput = String(repeating: "x", count: ToolOutputStore.perItemCap + 1_024)
@@ -269,7 +261,6 @@ struct TraceRenderingTests {
 
     // MARK: - Error tool result
 
-    @MainActor
     @Test func errorToolResultMarksItem() {
         let reducer = TimelineReducer()
         let events = [
@@ -291,7 +282,6 @@ struct TraceRenderingTests {
 
     // MARK: - Full conversation flow (youtube summarization)
 
-    @MainActor
     @Test func fullYoutubeSummarizationFlow() {
         let reducer = TimelineReducer()
         let events = [
@@ -363,7 +353,6 @@ struct TraceRenderingTests {
 
     // MARK: - Weather query flow
 
-    @MainActor
     @Test func weatherQueryWithToolFailures() {
         let reducer = TimelineReducer()
         let events = [
@@ -402,7 +391,6 @@ struct TraceRenderingTests {
 
     // MARK: - Research flow (many tool calls)
 
-    @MainActor
     @Test func researchFlowManySearches() {
         let reducer = TimelineReducer()
         var events: [TraceEvent] = [
@@ -444,7 +432,6 @@ struct TraceRenderingTests {
 
     // MARK: - Streaming then trace reload
 
-    @MainActor
     @Test func streamingThenTraceReloadProducesCleanTimeline() {
         let reducer = TimelineReducer()
 
@@ -464,7 +451,6 @@ struct TraceRenderingTests {
 
     // MARK: - SVG write tool
 
-    @MainActor
     @Test func writeToolWithSVGContent() {
         let reducer = TimelineReducer()
         let svg = "<svg xmlns=\"http://www.w3.org/2000/svg\"><circle cx=\"50\" cy=\"50\" r=\"40\"/></svg>"
@@ -483,7 +469,6 @@ struct TraceRenderingTests {
 
     // MARK: - Orphan tool result
 
-    @MainActor
     @Test func orphanToolResultStored() {
         let reducer = TimelineReducer()
         let events = [
@@ -498,7 +483,6 @@ struct TraceRenderingTests {
 
     // MARK: - Compaction
 
-    @MainActor
     @Test func compactionBetweenMessages() {
         let reducer = TimelineReducer()
         let events = [
@@ -522,7 +506,6 @@ struct TraceRenderingTests {
 
     // MARK: - Multiple thinking blocks
 
-    @MainActor
     @Test func multipleThinkingBlocksAcrossTurns() {
         let reducer = TimelineReducer()
         let events = [
@@ -546,7 +529,6 @@ struct TraceRenderingTests {
 
     // MARK: - Partial trace preferred over REST
 
-    @MainActor
     @Test func partialTraceBetterThanREST() {
         // Scenario: JSONL partially missing (server restart). Trace has
         // some turns with tool calls. REST has ALL turns but as flat text.

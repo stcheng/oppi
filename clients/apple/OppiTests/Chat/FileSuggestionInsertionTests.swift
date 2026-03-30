@@ -3,6 +3,7 @@ import Foundation
 @testable import Oppi
 
 @Suite("FileSuggestion insertion")
+@MainActor
 struct FileSuggestionInsertionTests {
 
     // MARK: - Insertion text output
@@ -162,7 +163,6 @@ struct FileSuggestionInsertionTests {
 
     // MARK: - ServerConnection state management
 
-    @MainActor
     @Test func clearFileSuggestionsEmptiesItems() {
         let (conn, _) = makeTestConnection()
         conn.chatState.fileSuggestions = [
@@ -172,7 +172,6 @@ struct FileSuggestionInsertionTests {
         #expect(conn.chatState.fileSuggestions.isEmpty)
     }
 
-    @MainActor
     @Test func clearFileSuggestionsCancelsTask() {
         let (conn, _) = makeTestConnection()
         let task = Task<Void, Never> { @MainActor in
@@ -184,7 +183,6 @@ struct FileSuggestionInsertionTests {
         #expect(conn.chatState.fileSuggestionTask == nil)
     }
 
-    @MainActor
     @Test func fetchFileSuggestionsCancelsPreviousTask() {
         let (conn, _) = makeTestConnection()
         conn.fileIndexStore.setPathsForTesting(["src/index.ts", "src/app.ts", "README.md"])
@@ -199,7 +197,6 @@ struct FileSuggestionInsertionTests {
         #expect(oldTask.isCancelled, "Previous task must be cancelled when a new query starts")
     }
 
-    @MainActor
     @Test func fetchFileSuggestionsReplacesTask() {
         let (conn, _) = makeTestConnection()
         conn.fileIndexStore.setPathsForTesting(["src/index.ts", "src/app.ts", "README.md"])
@@ -216,7 +213,6 @@ struct FileSuggestionInsertionTests {
         #expect(task1?.isCancelled == true)
     }
 
-    @MainActor
     @Test func fetchWithNoFileIndexReturnsEmpty() {
         let (conn, _) = makeTestConnection()
         // fileIndex not loaded — search should return empty immediately
@@ -225,7 +221,6 @@ struct FileSuggestionInsertionTests {
         #expect(conn.chatState.fileSuggestionTask == nil)
     }
 
-    @MainActor
     @Test func fetchPopulatesSuggestionsFromLocalIndex() async {
         let (conn, _) = makeTestConnection()
         conn.fileIndexStore.setPathsForTesting([
@@ -245,7 +240,6 @@ struct FileSuggestionInsertionTests {
                 "Match positions should be populated for highlighting")
     }
 
-    @MainActor
     @Test func fetchEmptyQueryReturnsFilesByLength() {
         let (conn, _) = makeTestConnection()
         conn.fileIndexStore.setPathsForTesting([
@@ -263,7 +257,6 @@ struct FileSuggestionInsertionTests {
                 "No match positions for empty query")
     }
 
-    @MainActor
     @Test func invalidateMarksIndexDirty() {
         let (conn, _) = makeTestConnection()
         conn.fileIndexStore.setPathsForTesting(["README.md"])
@@ -278,7 +271,6 @@ struct FileSuggestionInsertionTests {
         #expect(conn.fileIndexStore.paths?.count == 1)
     }
 
-    @MainActor
     @Test func clearAfterFetchDropsResults() async {
         let (conn, _) = makeTestConnection()
         conn.fileIndexStore.setPathsForTesting(["src/index.ts", "README.md"])

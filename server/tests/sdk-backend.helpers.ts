@@ -11,7 +11,6 @@ export function makeSdkBackendStub(): {
   prompt: ReturnType<typeof vi.fn>;
 } {
   const abort = vi.fn(async () => {});
-  const dispose = vi.fn();
 
   const steeringMessages: string[] = [];
   const followUpMessages: string[] = [];
@@ -56,7 +55,7 @@ export function makeSdkBackendStub(): {
     getFollowUpMessages: vi.fn(() => [...followUpMessages]),
   };
 
-  const sdkBackend = {
+  let sdkBackend = {
     prompt,
     abort,
     setModel: vi.fn(async () => ({ success: true })),
@@ -71,8 +70,13 @@ export function makeSdkBackendStub(): {
     isStreaming: false,
     sessionFile: undefined,
     sessionId: "pi-session-1",
-    dispose,
+    dispose: vi.fn(),
   } as unknown as SdkBackend;
+
+  const dispose = vi.fn(() => {
+    (sdkBackend as { isDisposed: boolean }).isDisposed = true;
+  });
+  (sdkBackend as { dispose: typeof dispose }).dispose = dispose;
 
   return { sdkBackend, abort, dispose, prompt };
 }

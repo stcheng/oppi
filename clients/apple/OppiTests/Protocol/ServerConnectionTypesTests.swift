@@ -2,8 +2,8 @@ import Testing
 
 @testable import Oppi
 
-@MainActor
 @Suite("ServerConnectionTypes")
+@MainActor
 struct ServerConnectionTypesTests {
 
     // MARK: - CommandResultWaiter

@@ -10,11 +10,11 @@ import Foundation
 /// Fix 4: Ping watchdog triggers reconnect after consecutive failures
 /// Fix 5: Silence watchdog detects stuck sessions
 @Suite("Stream Recovery")
+@MainActor
 struct StreamRecoveryTests {
 
     // MARK: - Fix 1: closeAllOrphanedTools
 
-    @MainActor
     @Test func agentEndClosesAllOpenToolRows() {
         let reducer = TimelineReducer()
 
@@ -35,7 +35,6 @@ struct StreamRecoveryTests {
         }
     }
 
-    @MainActor
     @Test func agentEndClosesToolsWithMixedState() {
         let reducer = TimelineReducer()
 
@@ -56,7 +55,6 @@ struct StreamRecoveryTests {
 
     // MARK: - Fix 2: agentStart finalizes stale state
 
-    @MainActor
     @Test func agentStartFinalizesStaleAssistantMessage() {
         let reducer = TimelineReducer()
 
@@ -79,7 +77,6 @@ struct StreamRecoveryTests {
         #expect(messages[1] == "Second turn text")
     }
 
-    @MainActor
     @Test func agentStartClosesStaleToolRows() {
         let reducer = TimelineReducer()
 
@@ -99,7 +96,6 @@ struct StreamRecoveryTests {
         #expect(tools[0].1 == true, "Stale tool should be closed by new agentStart")
     }
 
-    @MainActor
     @Test func agentStartFinalizesStaleThinking() {
         let reducer = TimelineReducer()
 
@@ -123,7 +119,6 @@ struct StreamRecoveryTests {
 
     // MARK: - Fix 3: sessionEnded full cleanup
 
-    @MainActor
     @Test func sessionEndedFinalizesThinking() {
         let reducer = TimelineReducer()
 
@@ -140,7 +135,6 @@ struct StreamRecoveryTests {
         #expect(thinking[0] == true, "Thinking should be finalized on sessionEnded")
     }
 
-    @MainActor
     @Test func sessionEndedClosesOrphanedTools() {
         let reducer = TimelineReducer()
 
@@ -156,7 +150,6 @@ struct StreamRecoveryTests {
         #expect(tools[0] == true, "Tool should be closed on sessionEnded")
     }
 
-    @MainActor
     @Test func sessionEndedFinalizesAssistantText() {
         let reducer = TimelineReducer()
 
@@ -178,7 +171,6 @@ struct StreamRecoveryTests {
         #expect(systemEvents[0].contains("timeout"))
     }
 
-    @MainActor
     @Test func sessionEndedFullCleanup() {
         // All three: thinking + tool + assistant, all open
         let reducer = TimelineReducer()
@@ -208,7 +200,6 @@ struct StreamRecoveryTests {
 
     // MARK: - processBatch invariants
 
-    @MainActor
     @Test func processBatchClosesOrphanedToolsOnAgentEnd() {
         let reducer = TimelineReducer()
 
@@ -228,7 +219,6 @@ struct StreamRecoveryTests {
         #expect(tools.allSatisfy { $0.1 })
     }
 
-    @MainActor
     @Test func processBatchAgentStartCleansUpPreviousTurn() {
         let reducer = TimelineReducer()
 
@@ -274,7 +264,6 @@ struct StreamRecoveryTests {
 
     // MARK: - Edge: rapid agentStart without agentEnd
 
-    @MainActor
     @Test func rapidAgentStartsDoNotDuplicate() {
         let reducer = TimelineReducer()
 
@@ -296,7 +285,6 @@ struct StreamRecoveryTests {
 
     // MARK: - Edge: empty buffer finalization
 
-    @MainActor
     @Test func agentStartWithEmptyBuffersIsClean() {
         let reducer = TimelineReducer()
 
@@ -307,7 +295,6 @@ struct StreamRecoveryTests {
         #expect(reducer.items.isEmpty, "Empty turn should produce no items")
     }
 
-    @MainActor
     @Test func whitespaceOnlyBufferDiscardedOnAgentStart() {
         let reducer = TimelineReducer()
 

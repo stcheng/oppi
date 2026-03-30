@@ -3,8 +3,8 @@ import Foundation
 import UIKit
 @testable import Oppi
 
-@MainActor
 @Suite("Tool elapsed time")
+@MainActor
 struct ToolElapsedTimeTests {
 
     // MARK: - Formatting

@@ -3,9 +3,9 @@ import Testing
 @testable import Oppi
 
 @Suite("TimelineReducer — Invariants")
+@MainActor
 struct TimelineReducerInvariantTests {
 
-    @MainActor
     @Test func seededBatchesPreserveRenderAndIdentityInvariants() {
         let reducer = TimelineReducer()
         let batches = makeSeededBatches(seed: 0xC0FFEE, count: 120)
@@ -35,7 +35,6 @@ struct TimelineReducerInvariantTests {
         }
     }
 
-    @MainActor
     @Test func deterministicPermutationsKeepOrderingAndSingleToolRow() {
         for permutation in timelinePermutationCases() {
             let reducer = TimelineReducer()
@@ -72,7 +71,6 @@ struct TimelineReducerInvariantTests {
         }
     }
 
-    @MainActor
     @Test func cappedToolOutputNoOpBatchesDoNotMutateVisibleState() {
         let reducer = TimelineReducer()
         let toolID = "tool-cap"
@@ -99,7 +97,6 @@ struct TimelineReducerInvariantTests {
         #expect(snapshot(of: reducer) == baselineSnapshot)
     }
 
-    @MainActor
     @Test func replayingNonDeltaBatchBumpsRenderVersionOnlyOnFirstPass() {
         let reducer = TimelineReducer()
         let batch: [AgentEvent] = [
@@ -124,7 +121,6 @@ struct TimelineReducerInvariantTests {
         #expect(snapshot(of: reducer) == baselineSnapshot)
     }
 
-    @MainActor
     @Test func reconnectReplayMaintainsSingleToolIdentityAndTerminalInvariants() {
         for terminalEvent in deterministicTerminalEvents() {
             let reducer = TimelineReducer()
@@ -166,7 +162,6 @@ struct TimelineReducerInvariantTests {
         }
     }
 
-    @MainActor
     @Test func partitionedProcessBatchMatchesSequentialProcessingContracts() {
         let events = makeSeededBatches(seed: 0xA11CE, count: 40).flatMap { $0 }
 

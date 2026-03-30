@@ -3,11 +3,11 @@ import Foundation
 @testable import Oppi
 
 @Suite("TimelineReducer — Load Session")
+@MainActor
 struct TimelineReducerLoadTests {
 
     // MARK: - Basic load
 
-    @MainActor
     @Test func loadSessionUserAndAssistant() {
         let reducer = TimelineReducer()
         let events = [
@@ -34,7 +34,6 @@ struct TimelineReducerLoadTests {
         #expect(assistantText == "Hi there!")
     }
 
-    @MainActor
     @Test func loadSessionToolCallAndResult() {
         let reducer = TimelineReducer()
         let events = [
@@ -60,7 +59,6 @@ struct TimelineReducerLoadTests {
         #expect(reducer.toolOutputStore.fullOutput(for: "tc1") == "file1.txt\nfile2.txt")
     }
 
-    @MainActor
     @Test func loadSessionThinking() {
         let reducer = TimelineReducer()
         let events = [
@@ -81,7 +79,6 @@ struct TimelineReducerLoadTests {
         #expect(isDone)
     }
 
-    @MainActor
     @Test func loadSessionLongThinkingKeepsFullPreview() {
         let reducer = TimelineReducer()
         let longThinking = String(repeating: "x", count: 600)
@@ -101,7 +98,6 @@ struct TimelineReducerLoadTests {
         #expect(preview == longThinking)
     }
 
-    @MainActor
     @Test func loadSessionSystemAndCompaction() {
         let reducer = TimelineReducer()
         let events = [
@@ -128,7 +124,6 @@ struct TimelineReducerLoadTests {
         #expect(msg2 == "Context compacted")
     }
 
-    @MainActor
     @Test func loadSessionCompactionPrefersTraceSummaryText() {
         let reducer = TimelineReducer()
         let events = [
@@ -147,7 +142,6 @@ struct TimelineReducerLoadTests {
         #expect(message == "Context compacted (12,345 tokens): ## Goal\n1. Keep calm")
     }
 
-    @MainActor
     @Test func loadSessionToolResultErrorFlag() {
         let reducer = TimelineReducer()
         let events = [
@@ -167,7 +161,6 @@ struct TimelineReducerLoadTests {
         #expect(isError)
     }
 
-    @MainActor
     @Test func loadSessionToolArgsStored() {
         let reducer = TimelineReducer()
         let events = [
@@ -183,7 +176,6 @@ struct TimelineReducerLoadTests {
 
     // MARK: - Incremental load
 
-    @MainActor
     @Test func loadSessionUnchangedTraceUsesIncrementalNoOp() {
         let reducer = TimelineReducer()
         let events = [
@@ -207,7 +199,6 @@ struct TimelineReducerLoadTests {
         #expect(reducer.items == baselineItems)
     }
 
-    @MainActor
     @Test func loadSessionAppendedTraceUsesIncrementalAppend() {
         let reducer = TimelineReducer()
         let base = [
@@ -240,7 +231,6 @@ struct TimelineReducerLoadTests {
         #expect(tailText == "Incremental tail")
     }
 
-    @MainActor
     @Test func loadSessionForcesFullRebuildAfterOutOfBandMutation() {
         let reducer = TimelineReducer()
         let base = [
@@ -275,7 +265,6 @@ struct TimelineReducerLoadTests {
 
     // MARK: - Incremental mode breakers
 
-    @MainActor
     @Test func processBatchBreaksIncrementalMode() {
         let reducer = TimelineReducer()
         let events = makeBaseTrace()
@@ -292,7 +281,6 @@ struct TimelineReducerLoadTests {
             "processBatch should break incremental mode")
     }
 
-    @MainActor
     @Test func processSingleEventBreaksIncrementalMode() {
         let reducer = TimelineReducer()
         let events = makeBaseTrace()
@@ -305,7 +293,6 @@ struct TimelineReducerLoadTests {
             "process() should break incremental mode")
     }
 
-    @MainActor
     @Test func appendUserMessageBreaksIncrementalMode() {
         let reducer = TimelineReducer()
         let events = makeBaseTrace()
@@ -318,7 +305,6 @@ struct TimelineReducerLoadTests {
             "appendUserMessage should break incremental mode")
     }
 
-    @MainActor
     @Test func removeItemBreaksIncrementalMode() {
         let reducer = TimelineReducer()
         let events = makeBaseTrace()
@@ -332,7 +318,6 @@ struct TimelineReducerLoadTests {
             "removeItem should break incremental mode")
     }
 
-    @MainActor
     @Test func appendAudioClipBreaksIncrementalMode() {
         let reducer = TimelineReducer()
         let events = makeBaseTrace()
@@ -345,7 +330,6 @@ struct TimelineReducerLoadTests {
             "appendAudioClip should break incremental mode")
     }
 
-    @MainActor
     @Test func resolvePermissionBreaksIncrementalMode() {
         let reducer = TimelineReducer()
         let events = makeBaseTrace()
@@ -360,7 +344,6 @@ struct TimelineReducerLoadTests {
 
     // MARK: - Incremental edge cases
 
-    @MainActor
     @Test func resetClearsIncrementalTrackingState() {
         let reducer = TimelineReducer()
         let events = makeBaseTrace()
@@ -376,7 +359,6 @@ struct TimelineReducerLoadTests {
             "reset should clear incremental tracking state")
     }
 
-    @MainActor
     @Test func tracePrefixDivergenceForcesFullRebuild() {
         let reducer = TimelineReducer()
         let original = [
@@ -409,7 +391,6 @@ struct TimelineReducerLoadTests {
         #expect(text == "Compacted response")
     }
 
-    @MainActor
     @Test func shorterTraceForcesFullRebuild() {
         let reducer = TimelineReducer()
         let full = [
@@ -435,7 +416,6 @@ struct TimelineReducerLoadTests {
         #expect(reducer.items.count == 1)
     }
 
-    @MainActor
     @Test func incrementalAppendWithToolCallAndResult() {
         let reducer = TimelineReducer()
         let base = makeBaseTrace()
@@ -466,7 +446,6 @@ struct TimelineReducerLoadTests {
         #expect(reducer.toolArgsStore.args(for: "tc1")?["command"] == .string("echo hi"))
     }
 
-    @MainActor
     @Test func incrementalAppendWithThinkingEvent() {
         let reducer = TimelineReducer()
         let base = makeBaseTrace()
@@ -491,7 +470,6 @@ struct TimelineReducerLoadTests {
         #expect(preview == longThinking)
     }
 
-    @MainActor
     @Test func consecutiveIncrementalAppendsAccumulate() {
         let reducer = TimelineReducer()
         let base = makeBaseTrace()
@@ -524,7 +502,6 @@ struct TimelineReducerLoadTests {
 
     // MARK: - Orphaned User Message Preservation
 
-    @MainActor
     @Test func fullRebuildPreservesLocalUserMessageNotInTrace() {
         let reducer = TimelineReducer()
 
@@ -552,7 +529,6 @@ struct TimelineReducerLoadTests {
         #expect(text == "How about this graph?")
     }
 
-    @MainActor
     @Test func fullRebuildDropsLocalUserMessageWhenTraceContainsSameTextWithDifferentID() {
         let reducer = TimelineReducer()
 
@@ -591,7 +567,6 @@ struct TimelineReducerLoadTests {
         #expect(finalID != localMessageId)
     }
 
-    @MainActor
     @Test func fullRebuildSetsTimelineMatchesFalseWhenOrphansPreserved() {
         let reducer = TimelineReducer()
 
@@ -616,7 +591,6 @@ struct TimelineReducerLoadTests {
 
     // MARK: - Orphan chronological positioning
 
-    @MainActor
     @Test func orphanedUserMessageInsertedChronologicallyNotAtEnd() {
         let reducer = TimelineReducer()
 
@@ -667,7 +641,6 @@ struct TimelineReducerLoadTests {
         #expect(a2Text == "Second answer")
     }
 
-    @MainActor
     @Test func multipleOrphanedUserMessagesPreserveChronologicalOrder() {
         let reducer = TimelineReducer()
 
@@ -703,7 +676,6 @@ struct TimelineReducerLoadTests {
         #expect(texts == ["First", "Response one", "Second", "Third", "Fourth"])
     }
 
-    @MainActor
     @Test func chronologicalInsertionIndexUnitTest() {
         // Direct test of the static helper.
         let items: [ChatItem] = [

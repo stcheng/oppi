@@ -3,9 +3,9 @@ import Foundation
 @testable import Oppi
 
 @Suite("TimelineReducer — Edge Cases")
+@MainActor
 struct TimelineReducerEdgeCaseTests {
 
-    @MainActor
     @Test func duplicateToolStartDoesNotCreateDuplicateRows() {
         let reducer = TimelineReducer()
         let toolId = "call_1|fc_1"
@@ -28,7 +28,6 @@ struct TimelineReducerEdgeCaseTests {
         #expect(!isDone)
     }
 
-    @MainActor
     @Test func duplicateLiveToolStartUpdatesHistoryRowInPlace() {
         let reducer = TimelineReducer()
         let toolId = "call_2|fc_2"
@@ -59,7 +58,6 @@ struct TimelineReducerEdgeCaseTests {
         #expect(!isDone)
     }
 
-    @MainActor
     @Test func messageEndDoesNotDuplicateTraceAssistantAfterReload() {
         let reducer = TimelineReducer()
 
@@ -98,7 +96,6 @@ struct TimelineReducerEdgeCaseTests {
         #expect(text == "Love you, man. Wrapped clean.")
     }
 
-    @MainActor
     @Test func messageEndDoesNotDuplicateTraceAssistantWithTrailingSystemEvent() {
         let reducer = TimelineReducer()
 
@@ -150,7 +147,6 @@ struct TimelineReducerEdgeCaseTests {
         #expect(text == "Love you, man. Wrapped clean.")
     }
 
-    @MainActor
     @Test func messageEndDoesNotDuplicateTraceAssistantWithTrailingToolCall() {
         let reducer = TimelineReducer()
 
@@ -215,7 +211,6 @@ struct TimelineReducerEdgeCaseTests {
         #expect(text == "Love you, man. Wrapped clean.")
     }
 
-    @MainActor
     @Test func doubleAgentStartPreservesFirstTurnItems() {
         let reducer = TimelineReducer()
 
@@ -240,7 +235,6 @@ struct TimelineReducerEdgeCaseTests {
         #expect(second == "fresh response")
     }
 
-    @MainActor
     @Test func resetThenReconnectProducesCleanTimeline() {
         let reducer = TimelineReducer()
 
@@ -261,7 +255,6 @@ struct TimelineReducerEdgeCaseTests {
         #expect(text == "fresh")
     }
 
-    @MainActor
     @Test func resetClearsEverything() {
         let reducer = TimelineReducer()
 
@@ -288,7 +281,6 @@ struct TimelineReducerEdgeCaseTests {
         #expect(reducer.renderVersion > preResetVersion)
     }
 
-    @MainActor
     @Test func eventsAfterSessionEndedStillAppend() {
         let reducer = TimelineReducer()
 
@@ -302,7 +294,6 @@ struct TimelineReducerEdgeCaseTests {
         #expect(reducer.items.count == 3)
     }
 
-    @MainActor
     @Test func memoryWarningClearsTransientStores() {
         let reducer = TimelineReducer()
         let toolID = "tool-1"
@@ -331,7 +322,6 @@ struct TimelineReducerEdgeCaseTests {
         #expect(!reducer.items.isEmpty)
     }
 
-    @MainActor
     @Test func memoryWarningStripsImageAttachments() {
         let reducer = TimelineReducer()
 
@@ -351,7 +341,6 @@ struct TimelineReducerEdgeCaseTests {
         }
     }
 
-    @MainActor
     @Test func markdownSegmentCacheSkipsOversizedEntries() {
         let cache = MarkdownSegmentCache.shared
         cache.clearAll()
@@ -366,7 +355,6 @@ struct TimelineReducerEdgeCaseTests {
         #expect(stats.totalSourceBytes == 0)
     }
 
-    @MainActor
     @Test func markdownSegmentCacheEvictsToBudget() {
         let cache = MarkdownSegmentCache.shared
         cache.clearAll()
@@ -383,7 +371,6 @@ struct TimelineReducerEdgeCaseTests {
         #expect(stats.totalSourceBytes <= 1024 * 1024)
     }
 
-    @MainActor
     @Test func markdownSegmentCacheSeparatesEntriesByTheme() {
         let cache = MarkdownSegmentCache.shared
         cache.clearAll()
@@ -400,7 +387,6 @@ struct TimelineReducerEdgeCaseTests {
         #expect(stats.entries == 2)
     }
 
-    @MainActor
     @Test func previewTruncatesLongText() {
         let long = String(repeating: "x", count: 600)
         let preview = ChatItem.preview(long)
@@ -408,13 +394,11 @@ struct TimelineReducerEdgeCaseTests {
         #expect(preview.hasSuffix("…"))
     }
 
-    @MainActor
     @Test func previewKeepsShortText() {
         let short = "hello"
         #expect(ChatItem.preview(short) == "hello")
     }
 
-    @MainActor
     @Test func chatItemTimestamps() {
         let now = Date()
         let user = ChatItem.userMessage(id: "1", text: "hi", timestamp: now)
@@ -449,7 +433,6 @@ struct TimelineReducerEdgeCaseTests {
 
     // MARK: - Duplicate assistant message during streaming turn
 
-    @MainActor
     @Test func messageEndDoesNotDuplicateStreamedTextBeforeToolCall() {
         // Reproduces: text deltas stream → toolStart finalizes → messageEnd
         // arrives with same text → should NOT create a second assistant message.
@@ -478,7 +461,6 @@ struct TimelineReducerEdgeCaseTests {
         )
     }
 
-    @MainActor
     @Test func messageEndDoesNotDuplicateAcrossMultipleToolRoundtrips() {
         // Full multi-turn scenario: text → tool → messageEnd → text → tool → messageEnd
         let reducer = TimelineReducer()
@@ -518,7 +500,6 @@ struct TimelineReducerEdgeCaseTests {
         )
     }
 
-    @MainActor
     @Test func messageEndReplacesStreamedTextWhenStillStreaming() {
         // Normal finalization: text deltas build partial text, messageEnd
         // replaces with the authoritative full text (no duplicate).
@@ -542,7 +523,6 @@ struct TimelineReducerEdgeCaseTests {
         #expect(text == "Full final text")
     }
 
-    @MainActor
     @Test func messageEndAfterAgentEndDoesNotDuplicateWithDifferentText() {
         // Edge case from reconnect: agentEnd finalizes partial text,
         // then a stale messageEnd arrives with different (longer) text.
@@ -583,7 +563,6 @@ struct TimelineReducerEdgeCaseTests {
     /// With orphan preservation, u3 would become a ghost at the bottom.
     /// With `preserveOrphans: false` (used by loadHistory), the orphan
     /// is dropped — the fresh trace is authoritative.
-    @MainActor
     @Test func freshTraceLoadWithoutOrphanPreservationDropsGhostMessage() {
         let reducer = TimelineReducer()
 
@@ -617,7 +596,6 @@ struct TimelineReducerEdgeCaseTests {
     }
 
     /// Orphan preservation still works when enabled (cache load path).
-    @MainActor
     @Test func cacheLoadWithOrphanPreservationKeepsLocalMessage() {
         let reducer = TimelineReducer()
 
@@ -645,7 +623,6 @@ struct TimelineReducerEdgeCaseTests {
 
     /// When the fresh trace DOES include the user's latest message, no ghost
     /// should appear regardless of preserveOrphans setting.
-    @MainActor
     @Test func freshTraceWithAllMessagesProducesNoGhost() {
         let reducer = TimelineReducer()
 
@@ -694,7 +671,6 @@ struct TimelineReducerEdgeCaseTests {
         }
     }
 
-    @MainActor
     @Test func lateTextDeltaAfterPrematureAgentEndResumesLatestAssistantRow() {
         // Reproduces a state-sync race: a synthetic/early agentEnd finalizes the
         // streaming row, then one more text_delta + messageEnd arrive for the

@@ -1,8 +1,8 @@
 import Testing
 @testable import Oppi
 
+@Suite("ChatTimelinePerf suspension ceiling", .tags(.perf))
 @MainActor
-@Suite("ChatTimelinePerf suspension ceiling")
 struct ChatTimelinerPerfSuspensionCeilingTests {
     @Test func suspensionCeilingIsReasonable() {
         // The ceiling must be high enough to pass through real stalls (seconds)

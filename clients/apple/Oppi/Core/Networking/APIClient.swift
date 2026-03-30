@@ -562,9 +562,21 @@ actor APIClient {
         return try JSONDecoder().decode(Response.self, from: data).skills
     }
 
-    /// List available host extensions from ~/.pi/agent/extensions.
-    func listExtensions() async throws -> [ExtensionInfo] {
-        let data = try await get("/extensions")
+    /// List available host extensions for the current workspace context.
+    ///
+    /// When `cwd` is provided, the server also scans `<cwd>/.pi/extensions` in addition to
+    /// the global `~/.pi/agent/extensions` directory.
+    func listExtensions(cwd: String? = nil) async throws -> [ExtensionInfo] {
+        var path = "/extensions"
+        if let cwd, !cwd.isEmpty {
+            var components = URLComponents()
+            components.queryItems = [URLQueryItem(name: "cwd", value: cwd)]
+            if let query = components.percentEncodedQuery {
+                path += "?\(query)"
+            }
+        }
+
+        let data = try await get(path)
         struct Response: Decodable { let extensions: [ExtensionInfo] }
         return try JSONDecoder().decode(Response.self, from: data).extensions
     }

@@ -3,8 +3,8 @@ import Testing
 @testable import Oppi
 
 @Suite("Scroll invariant property tests")
+@MainActor
 struct ScrollInvariantPropertyTests {
-    @MainActor
     @Test(arguments: [
         UInt64(0),
         UInt64(42),
@@ -28,7 +28,6 @@ struct ScrollInvariantPropertyTests {
         harness.assertNoScrollCommandStorms()
     }
 
-    @MainActor
     @Test(arguments: [UInt64(100), UInt64(200)])
     func heavyTimelinePreservesInvariants(seed: UInt64) {
         var generator = TimelineEventGenerator(seed: seed)

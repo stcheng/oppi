@@ -3,11 +3,11 @@ import Foundation
 @testable import Oppi
 
 @Suite("DeltaCoalescer")
+@MainActor
 struct DeltaCoalescerTests {
 
     // MARK: - Immediate flush for non-delta events
 
-    @MainActor
     @Test func toolStartFlushesImmediately() {
         let coalescer = DeltaCoalescer()
         var flushed: [[AgentEvent]] = []
@@ -26,7 +26,6 @@ struct DeltaCoalescerTests {
         #expect(tool == "bash")
     }
 
-    @MainActor
     @Test func repeatedToolStartForSameToolIsBufferedAndCoalesced() {
         let coalescer = DeltaCoalescer()
         var flushed: [[AgentEvent]] = []
@@ -55,7 +54,6 @@ struct DeltaCoalescerTests {
         #expect(args["content"]?.stringValue == "abc")
     }
 
-    @MainActor
     @Test func toolEndFlushesImmediately() {
         let coalescer = DeltaCoalescer()
         var flushed: [[AgentEvent]] = []
@@ -66,7 +64,6 @@ struct DeltaCoalescerTests {
         #expect(flushed.count == 1)
     }
 
-    @MainActor
     @Test func toolEndFlushesBufferedToolStartUpdateBeforeEnding() {
         let coalescer = DeltaCoalescer()
         var flushed: [[AgentEvent]] = []
@@ -92,7 +89,6 @@ struct DeltaCoalescerTests {
         }
     }
 
-    @MainActor
     @Test func permissionRequestFlushesImmediately() {
         let coalescer = DeltaCoalescer()
         var flushed: [[AgentEvent]] = []
@@ -114,7 +110,6 @@ struct DeltaCoalescerTests {
         #expect(req.id == "p1")
     }
 
-    @MainActor
     @Test func permissionExpiredFlushesImmediately() {
         let coalescer = DeltaCoalescer()
         var flushed: [[AgentEvent]] = []
@@ -130,7 +125,6 @@ struct DeltaCoalescerTests {
         #expect(id == "p1")
     }
 
-    @MainActor
     @Test func agentStartFlushesImmediately() {
         let coalescer = DeltaCoalescer()
         var flushed: [[AgentEvent]] = []
@@ -141,7 +135,6 @@ struct DeltaCoalescerTests {
         #expect(flushed.count == 1)
     }
 
-    @MainActor
     @Test func agentEndFlushesImmediately() {
         let coalescer = DeltaCoalescer()
         var flushed: [[AgentEvent]] = []
@@ -152,7 +145,6 @@ struct DeltaCoalescerTests {
         #expect(flushed.count == 1)
     }
 
-    @MainActor
     @Test func sessionEndedFlushesImmediately() {
         let coalescer = DeltaCoalescer()
         var flushed: [[AgentEvent]] = []
@@ -163,7 +155,6 @@ struct DeltaCoalescerTests {
         #expect(flushed.count == 1)
     }
 
-    @MainActor
     @Test func errorFlushesImmediately() {
         let coalescer = DeltaCoalescer()
         var flushed: [[AgentEvent]] = []
@@ -176,7 +167,6 @@ struct DeltaCoalescerTests {
 
     // MARK: - Buffered deltas
 
-    @MainActor
     @Test func textDeltaIsBufferedNotImmediate() {
         let coalescer = DeltaCoalescer()
         var flushed: [[AgentEvent]] = []
@@ -188,7 +178,6 @@ struct DeltaCoalescerTests {
         #expect(flushed.isEmpty)
     }
 
-    @MainActor
     @Test func thinkingDeltaIsBuffered() {
         let coalescer = DeltaCoalescer()
         var flushed: [[AgentEvent]] = []
@@ -199,7 +188,6 @@ struct DeltaCoalescerTests {
         #expect(flushed.isEmpty)
     }
 
-    @MainActor
     @Test func toolOutputIsBuffered() {
         let coalescer = DeltaCoalescer()
         var flushed: [[AgentEvent]] = []
@@ -212,7 +200,6 @@ struct DeltaCoalescerTests {
 
     // MARK: - flushNow
 
-    @MainActor
     @Test func flushNowDeliversBufferedDeltas() {
         let coalescer = DeltaCoalescer()
         var flushed: [[AgentEvent]] = []
@@ -230,7 +217,6 @@ struct DeltaCoalescerTests {
         #expect(flushed[0].count == 3)
     }
 
-    @MainActor
     @Test func flushNowOnEmptyBufferIsNoOp() {
         let coalescer = DeltaCoalescer()
         var flushed: [[AgentEvent]] = []
@@ -242,7 +228,6 @@ struct DeltaCoalescerTests {
         #expect(flushed.isEmpty)
     }
 
-    @MainActor
     @Test func doubleFlushNowIsIdempotent() {
         let coalescer = DeltaCoalescer()
         var flushed: [[AgentEvent]] = []
@@ -257,7 +242,6 @@ struct DeltaCoalescerTests {
 
     // MARK: - Immediate event flushes pending buffer first
 
-    @MainActor
     @Test func immediateEventFlushesPendingBufferFirst() {
         let coalescer = DeltaCoalescer()
         var flushed: [[AgentEvent]] = []
@@ -284,7 +268,6 @@ struct DeltaCoalescerTests {
         }
     }
 
-    @MainActor
     @Test func immediateEventPreservesMixedDeltaOrderingWithinFlush() {
         let coalescer = DeltaCoalescer()
         var flushed: [[AgentEvent]] = []
@@ -306,7 +289,6 @@ struct DeltaCoalescerTests {
         #expect(flushed[1].map(\.typeLabel) == ["toolStart"])
     }
 
-    @MainActor
     @Test func maxBufferedEventCountForcesDeterministicFlush() {
         let coalescer = DeltaCoalescer()
         var flushed: [[AgentEvent]] = []
@@ -320,7 +302,6 @@ struct DeltaCoalescerTests {
         #expect(flushed[0].count == 512)
     }
 
-    @MainActor
     @Test func maxBufferedBytesForcesDeterministicFlush() {
         let coalescer = DeltaCoalescer()
         var flushed: [[AgentEvent]] = []
@@ -340,7 +321,6 @@ struct DeltaCoalescerTests {
 
     // MARK: - Timer-based flush
 
-    @MainActor
     @Test func bufferedDeltasFlushAfterInterval() async {
         let coalescer = DeltaCoalescer()
         var flushed: [[AgentEvent]] = []
@@ -357,7 +337,6 @@ struct DeltaCoalescerTests {
         #expect(flushed[0].count == 1)
     }
 
-    @MainActor
     @Test func multipleBufferedDeltasCoalesceInSingleFlush() async {
         let coalescer = DeltaCoalescer()
         var flushed: [[AgentEvent]] = []
@@ -378,7 +357,6 @@ struct DeltaCoalescerTests {
 
     // MARK: - No onFlush handler
 
-    @MainActor
     @Test func noOnFlushHandlerDoesNotCrash() {
         let coalescer = DeltaCoalescer()
         // onFlush is nil — should not crash

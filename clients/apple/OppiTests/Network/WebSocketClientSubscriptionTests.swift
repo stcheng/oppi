@@ -418,6 +418,7 @@ struct WebSocketClientCancelBackoffTests {
 // MARK: - Reconnect Delay Curve
 
 @Suite("WebSocket Reconnect Delay Curve")
+@MainActor
 struct WebSocketClientReconnectDelayCurveTests {
 
     /// Attempts 1-3: base 500ms (transient: suspension wake, network handoff)

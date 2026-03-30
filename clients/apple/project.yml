@@ -351,9 +351,11 @@ schemes:
         OppiE2ETests: [test]
     test:
       targets:
-        - OppiTests
-        - OppiUITests
-        - OppiE2ETests
+        - name: OppiTests
+          parallelizable: true
+          randomExecutionOrder: true
+        - name: OppiUITests
+        - name: OppiE2ETests
 
   OppiMac:
     build:
@@ -362,4 +364,6 @@ schemes:
         OppiMacTests: [test]
     test:
       targets:
-        - OppiMacTests
+        - name: OppiMacTests
+          parallelizable: true
+          randomExecutionOrder: true

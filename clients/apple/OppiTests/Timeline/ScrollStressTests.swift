@@ -3,8 +3,8 @@ import Testing
 @testable import Oppi
 
 @Suite("Scroll stress scenarios")
+@MainActor
 struct ScrollStressTests {
-    @MainActor
     @Test
     func rapidStreamingWhileScrolledUp() {
         var harness = ScrollPropertyTestHarness(sessionId: "scroll-stress-stream")
@@ -31,7 +31,6 @@ struct ScrollStressTests {
         harness.assertNoScrollCommandStorms()
     }
 
-    @MainActor
     @Test
     func expandToolAtVisibleBoundaryDuringStreaming() {
         var harness = ScrollPropertyTestHarness(sessionId: "scroll-stress-expand")
@@ -59,7 +58,6 @@ struct ScrollStressTests {
         harness.assertNoScrollCommandStorms()
     }
 
-    @MainActor
     @Test
     func fullReloadWhileDetachedAtSpecificItem() {
         var harness = ScrollPropertyTestHarness(sessionId: "scroll-stress-reload")
@@ -76,7 +74,6 @@ struct ScrollStressTests {
         harness.assertNoScrollCommandStorms()
     }
 
-    @MainActor
     @Test
     func backgroundForegroundCycleDuringDetachedStreaming() {
         var harness = ScrollPropertyTestHarness(sessionId: "scroll-stress-lifecycle")

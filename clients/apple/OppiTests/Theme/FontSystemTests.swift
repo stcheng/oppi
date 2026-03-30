@@ -5,6 +5,7 @@ import Testing
 
 /// Tests for CodeFontFamily enum — raw values, display names, PostScript name generation, and font creation.
 @Suite("CodeFontFamily")
+@MainActor
 struct CodeFontFamilyTests {
 
     // MARK: - Raw values

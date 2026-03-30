@@ -11,6 +11,7 @@ import Testing
 ///   - Correctness: is the timeline accurate (zero violations is target)
 ///
 /// These metrics define the optimization surface for autoresearch.
+@MainActor
 struct BusyReentryMetrics: Sendable {
     // -- Latency (milliseconds) --
 
@@ -74,6 +75,7 @@ struct BusyReentryMetrics: Sendable {
 // MARK: - Scenario Parameters
 
 /// Defines the conditions for a single bench run.
+@MainActor
 struct BusyReentryScenario: Sendable {
     /// How many events the cache has (subset of total trace).
     let cacheEventCount: Int
@@ -463,7 +465,8 @@ final class BusyReentryBench {
 
 // MARK: - Bench Tests (baseline measurement)
 
-@Suite("Busy Re-entry Metrics Bench")
+@Suite("Busy Re-entry Metrics Bench", .tags(.perf))
+@MainActor
 struct BusyReentryMetricsBenchTests {
 
     // MARK: - Baseline: current behavior measurement
@@ -472,7 +475,6 @@ struct BusyReentryMetricsBenchTests {
     /// cache is 30 events stale, session has 100 events total, moderate streaming.
     ///
     /// This establishes the baseline metrics that autoresearch will improve.
-    @MainActor
     @Test func baselineModerateStaleCache() async {
         let scenario = BusyReentryScenario(
             cacheEventCount: 70,
@@ -493,7 +495,6 @@ struct BusyReentryMetricsBenchTests {
 
     /// Cache is very stale (only 20 of 200 events cached).
     /// This is the worst case for the gap bug.
-    @MainActor
     @Test func baselineVeryStaleCache() async {
         let scenario = BusyReentryScenario(
             cacheEventCount: 20,
@@ -510,7 +511,6 @@ struct BusyReentryMetricsBenchTests {
     }
 
     /// No cache at all (cold start into busy session).
-    @MainActor
     @Test func baselineNoCache() async {
         let scenario = BusyReentryScenario(
             cacheEventCount: 0,
@@ -527,7 +527,6 @@ struct BusyReentryMetricsBenchTests {
     }
 
     /// Fast network (50ms trace fetch) — minimal merge window.
-    @MainActor
     @Test func baselineFastNetwork() async {
         let scenario = BusyReentryScenario(
             cacheEventCount: 80,
@@ -544,7 +543,6 @@ struct BusyReentryMetricsBenchTests {
     }
 
     /// Slow network (5s trace fetch) — long merge window, many live events.
-    @MainActor
     @Test func baselineSlowNetwork() async {
         let scenario = BusyReentryScenario(
             cacheEventCount: 50,
@@ -565,7 +563,6 @@ struct BusyReentryMetricsBenchTests {
     /// This test will FAIL on the current codebase because shouldDeferRebuild
     /// prevents the trace from being applied for busy sessions.
     /// Autoresearch experiments must make this pass.
-    @MainActor
     @Test func gapMustBeZeroAfterMerge() async {
         let scenario = BusyReentryScenario(
             cacheEventCount: 50,
