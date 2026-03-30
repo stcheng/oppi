@@ -334,8 +334,8 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.chenda.OppiMac
         PRODUCT_NAME: Oppi
-        MARKETING_VERSION: "0.1.0"
-        CURRENT_PROJECT_VERSION: 1
+        MARKETING_VERSION: "0.1.1"
+        CURRENT_PROJECT_VERSION: 2
         CODE_SIGN_IDENTITY: "Developer ID Application"
         CODE_SIGN_STYLE: Manual
         DEVELOPMENT_TEAM: AZAQMY4SPZ
