@@ -559,9 +559,11 @@ final class FullScreenCodeViewController: UIViewController {
         languageHint: String? = nil,
         fallbackSourceLabel: String? = nil
     ) -> SelectedTextSourceContext? {
-        guard let sessionId = selectedTextSessionId else { return nil }
+        // Allow empty session ID for file browser context where there's no
+        // active session but we still want the π quick action menu.
+        guard selectedTextPiRouter != nil else { return nil }
         return SelectedTextSourceContext(
-            sessionId: sessionId,
+            sessionId: selectedTextSessionId ?? "",
             surface: surface,
             sourceLabel: selectedTextSourceLabel ?? fallbackSourceLabel,
             filePath: filePath,
