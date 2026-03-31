@@ -345,6 +345,10 @@ final class ServerProcessManager {
         // Ensure homebrew paths are available for git, pi, etc.
         var env = ProcessRunner.augmentedEnvironment
         env["OPPI_DATA_DIR"] = dataDir
+        // Tell the server which bun binary to use for pi runtime update checks/installs.
+        // Without this the server falls back to process.argv[0], which is the exact Cellar
+        // path bun resolved to at launch time — that path disappears after any Homebrew update.
+        env["OPPI_RUNTIME_BIN"] = nodePath
         proc.environment = env
 
         let stdout = Pipe()

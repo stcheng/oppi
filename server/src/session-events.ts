@@ -291,11 +291,11 @@ export class SessionEventProcessor {
         }
         break;
 
-      case "auto_compaction_start":
+      case "compaction_start":
         active.compactionStartedAt = Date.now();
         break;
 
-      case "auto_compaction_end": {
+      case "compaction_end": {
         if (metrics) {
           // Duration
           if (active.compactionStartedAt) {
@@ -304,8 +304,8 @@ export class SessionEventProcessor {
             });
           }
           // Result
-          const aborted = "aborted" in event && event.aborted === true;
-          const willRetry = "willRetry" in event && event.willRetry === true;
+          const aborted = event.aborted === true;
+          const willRetry = event.willRetry === true;
           const result = aborted ? "aborted" : willRetry ? "will_retry" : "success";
           metrics.record("server.compaction_result", 1, { sessionId, result });
         }

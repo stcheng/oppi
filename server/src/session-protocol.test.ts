@@ -1757,18 +1757,19 @@ describe("translatePiEvent", () => {
   });
 
   describe("compaction events", () => {
-    it("translates auto_compaction_start", () => {
+    it("translates compaction_start", () => {
       const result = translatePiEvent(
-        { type: "auto_compaction_start", reason: "threshold" } as AgentSessionEvent,
+        { type: "compaction_start", reason: "threshold" } as AgentSessionEvent,
         makeCtx(),
       );
       expect(result).toEqual([{ type: "compaction_start", reason: "threshold" }]);
     });
 
-    it("translates auto_compaction_end", () => {
+    it("translates compaction_end", () => {
       const result = translatePiEvent(
         {
-          type: "auto_compaction_end",
+          type: "compaction_end",
+          reason: "threshold",
           result: { summary: "compressed", tokensBefore: 50000 },
           aborted: false,
           willRetry: false,
@@ -1786,10 +1787,11 @@ describe("translatePiEvent", () => {
       ]);
     });
 
-    it("handles auto_compaction_end with undefined result", () => {
+    it("handles compaction_end with undefined result", () => {
       const result = translatePiEvent(
         {
-          type: "auto_compaction_end",
+          type: "compaction_end",
+          reason: "threshold",
           result: undefined,
           aborted: true,
           willRetry: true,

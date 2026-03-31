@@ -154,7 +154,8 @@ export class ApiModelTitleProvider implements SessionTitleProvider {
         console.warn(`${ts()} [auto-title] model not found: ${this.modelId}`);
         return null;
       }
-      const apiKey = await this.modelRegistry.getApiKey(model);
+      const auth = await this.modelRegistry.getApiKeyAndHeaders(model);
+      const apiKey = auth.ok ? auth.apiKey : undefined;
       const abortController = new AbortController();
       const timeout = setTimeout(() => abortController.abort(), GENERATION_TIMEOUT_MS);
 

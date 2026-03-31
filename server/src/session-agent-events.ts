@@ -40,8 +40,8 @@ export class SessionAgentEventCoordinator {
     "message_end",
     "tool_execution_start",
     "tool_execution_end",
-    "auto_compaction_start",
-    "auto_compaction_end",
+    "compaction_start",
+    "compaction_end",
     "auto_retry_start",
     "auto_retry_end",
   ]);

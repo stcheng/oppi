@@ -648,10 +648,10 @@ export function translatePiEvent(
       return messages;
     }
 
-    case "auto_compaction_start":
+    case "compaction_start":
       return [{ type: "compaction_start", reason: event.reason ?? "threshold" }];
 
-    case "auto_compaction_end":
+    case "compaction_end":
       return [
         {
           type: "compaction_end",

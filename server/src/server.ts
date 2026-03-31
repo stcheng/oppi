@@ -340,21 +340,15 @@ export class Server {
     // SDK model registry + catalog
     const agentDir = getAgentDir();
     const authStorage = AuthStorage.create(join(agentDir, "auth.json"));
-    this.modelRegistry = new ModelRegistry(authStorage, join(agentDir, "models.json"));
+    this.modelRegistry = ModelRegistry.create(authStorage, join(agentDir, "models.json"));
     this.models = new ModelCatalog(
       this.modelRegistry,
       this.storage,
       storage.getConfig().modelAllowlist,
     );
-    // Decoupled runtime: deps live in ~/.config/oppi/server-runtime/ (mutable),
-    // separate from the immutable app bundle. Updates happen via bun install there.
-    const runtimeDir = process.env.OPPI_RUNTIME_DIR || join(storage.getDataDir(), "server-runtime");
-    const runtimeExecutable = process.env.OPPI_RUNTIME_BIN || process.argv[0] || "bun";
+    // Runtime version reporter — updates are managed by the Mac app via Sparkle.
     this.runtimeUpdates = new RuntimeUpdateManager({
-      packageName: process.env.OPPI_RUNTIME_PACKAGE || "@mariozechner/pi-coding-agent",
       currentVersion: Server.detectPiAgentVersion(),
-      executable: runtimeExecutable,
-      cwd: runtimeDir,
     });
 
     const dataDir = storage.getDataDir();

@@ -177,7 +177,7 @@ export class SdkBackend {
     const cwd = resolveSdkSessionCwd(workspace);
     const agentDir = getAgentDir();
     const authStorage = AuthStorage.create(join(agentDir, "auth.json"));
-    const modelRegistry = new ModelRegistry(authStorage, join(agentDir, "models.json"));
+    const modelRegistry = ModelRegistry.create(authStorage, join(agentDir, "models.json"));
     const settingsManager = SettingsManager.create(cwd, agentDir);
 
     // Resolve the model from the session's model ID.
@@ -583,6 +583,10 @@ export class SdkBackend {
 
       setToolsExpanded: (_expanded) => {
         // Tool expansion requires TUI access; unsupported in Oppi sessions.
+      },
+
+      setHiddenThinkingLabel: (_label) => {
+        // Thinking label customization requires TUI; unsupported in Oppi sessions.
       },
     } as ExtensionUIContext;
   }
