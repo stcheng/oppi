@@ -74,12 +74,28 @@ enum LANEndpointSelection {
         }
 
         let scheme = credentials.resolvedScheme
-        guard let lanBaseURL = URL(string: "\(scheme.rawValue)://\(discoveredEndpoint.host):\(discoveredEndpoint.port)"),
-              let lanStreamURL = URL(string: "\(scheme.websocketScheme)://\(discoveredEndpoint.host):\(discoveredEndpoint.port)/stream") else {
+
+        // When using HTTPS with a hostname-based TLS cert (e.g. Tailscale),
+        // keep the paired hostname in the URL instead of the discovered LAN
+        // IP. The cert's CN/SAN won't match a raw IP, and iOS rejects the
+        // connection in Release builds. The LAN discovery still confirms
+        // server presence + port; Tailscale routes directly over LAN when
+        // both peers share the same network.
+        let lanHost: String
+        if scheme == .https, !credentials.host.isEmpty,
+           credentials.host.contains(".") && !credentials.host.allSatisfy({ $0.isNumber || $0 == "." }) {
+            // Paired host is a hostname (not an IP) — use it for TLS compat
+            lanHost = credentials.host
+        } else {
+            lanHost = discoveredEndpoint.host
+        }
+
+        guard let lanBaseURL = URL(string: "\(scheme.rawValue)://\(lanHost):\(discoveredEndpoint.port)"),
+              let lanStreamURL = URL(string: "\(scheme.websocketScheme)://\(lanHost):\(discoveredEndpoint.port)/stream") else {
             return paired
         }
 
-        logger.info("LAN selected: \(discoveredEndpoint.host, privacy: .public):\(discoveredEndpoint.port)")
+        logger.info("LAN selected: \(lanHost, privacy: .public):\(discoveredEndpoint.port) (discovered: \(discoveredEndpoint.host, privacy: .public))")
 
         return EndpointSelection(
             baseURL: lanBaseURL,

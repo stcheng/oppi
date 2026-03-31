@@ -34,7 +34,30 @@ struct ServerConnectionLANTransportTests {
 
         #expect(connection.transportPath == .lan)
         #expect(connection.wsClient === initialWebSocketClient)
-        #expect(await connection.apiClient?.baseURL.absoluteString == "https://192.168.1.42:7749")
+        // HTTPS + hostname-based host: LAN uses paired hostname for TLS compat
+        #expect(await connection.apiClient?.baseURL.absoluteString == "https://my-server.tail00000.ts.net:7749")
+    }
+
+    @Test func matchingLANDiscoveryDoesNotFlipAPIClientWhilePairedSocketIsHealthy() async {
+        let connection = ServerConnection()
+        let credentials = makeCredentials()
+        #expect(connection.configure(credentials: credentials) == true)
+
+        let initialWebSocketClient = connection.wsClient
+        connection.wsClient?._setStatusForTesting(.connected)
+
+        connection.setDiscoveredLANEndpoint(
+            LANDiscoveredEndpoint(
+                host: "192.168.1.42",
+                port: 7749,
+                serverFingerprintPrefix: "SERVERFINGERPRINT",
+                tlsCertFingerprintPrefix: "TLSFINGERPRINT"
+            )
+        )
+
+        #expect(connection.transportPath == .paired)
+        #expect(connection.wsClient === initialWebSocketClient)
+        #expect(await connection.apiClient?.baseURL.absoluteString == "https://my-server.tail00000.ts.net:7749")
     }
 
     @Test func removingLANDiscoveryFallsBackToPairedWithoutReplacingWebSocketClient() async {

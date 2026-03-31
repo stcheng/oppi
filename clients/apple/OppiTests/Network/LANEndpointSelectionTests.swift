@@ -32,7 +32,7 @@ struct LANEndpointSelectionTests {
         #expect(result?.transportPath == .paired)
     }
 
-    @Test func selectsLANWhenServerAndTLSFingerprintsMatch() {
+    @Test func selectsLANWithPairedHostnameForHTTPS() {
         let credentials = makeCredentials(
             host: "my-server.tail00000.ts.net",
             scheme: .https,
@@ -49,9 +49,11 @@ struct LANEndpointSelectionTests {
 
         let result = LANEndpointSelection.select(credentials: credentials, discoveredEndpoint: discovered)
 
+        // HTTPS + hostname-based paired host: use paired hostname (not discovered IP)
+        // so the TLS cert CN/SAN matches. Tailscale routes over LAN when on same network.
         #expect(result?.transportPath == .lan)
-        #expect(result?.baseURL.absoluteString == "https://192.168.1.42:7749")
-        #expect(result?.streamURL.absoluteString == "wss://192.168.1.42:7749/stream")
+        #expect(result?.baseURL.absoluteString == "https://my-server.tail00000.ts.net:7749")
+        #expect(result?.streamURL.absoluteString == "wss://my-server.tail00000.ts.net:7749/stream")
     }
 
     @Test func fallsBackToPairedWhenServerFingerprintPrefixDoesNotMatch() {
@@ -116,6 +118,75 @@ struct LANEndpointSelectionTests {
         #expect(result?.transportPath == .paired)
     }
 
+    @Test func selectsLANWithDiscoveredIPForHTTP() {
+        let credentials = makeCredentials(
+            host: "my-server.tail00000.ts.net",
+            scheme: .http,
+            serverFingerprint: "sha256:SERVERFINGERPRINTABCDEF",
+            tlsFingerprint: "sha256:TLSFINGERPRINTABCDEF"
+        )
+
+        let discovered = LANDiscoveredEndpoint(
+            host: "192.168.1.42",
+            port: 7749,
+            serverFingerprintPrefix: "SERVERFINGERPRINT",
+            tlsCertFingerprintPrefix: "TLSFINGERPRINT"
+        )
+
+        let result = LANEndpointSelection.select(credentials: credentials, discoveredEndpoint: discovered)
+
+        // HTTP: no TLS cert matching concern, use discovered LAN IP directly
+        #expect(result?.transportPath == .lan)
+        #expect(result?.baseURL.absoluteString == "http://192.168.1.42:7749")
+        #expect(result?.streamURL.absoluteString == "ws://192.168.1.42:7749/stream")
+    }
+
+    @Test func selectsLANWithDiscoveredIPWhenPairedHostIsIPAddress() {
+        let credentials = makeCredentials(
+            host: "192.168.68.66",
+            scheme: .https,
+            serverFingerprint: "sha256:SERVERFINGERPRINTABCDEF",
+            tlsFingerprint: "sha256:TLSFINGERPRINTABCDEF"
+        )
+
+        let discovered = LANDiscoveredEndpoint(
+            host: "192.168.1.42",
+            port: 7749,
+            serverFingerprintPrefix: "SERVERFINGERPRINT",
+            tlsCertFingerprintPrefix: "TLSFINGERPRINT"
+        )
+
+        let result = LANEndpointSelection.select(credentials: credentials, discoveredEndpoint: discovered)
+
+        // HTTPS + IP-based paired host: no hostname to preserve, use discovered IP
+        #expect(result?.transportPath == .lan)
+        #expect(result?.baseURL.absoluteString == "https://192.168.1.42:7749")
+        #expect(result?.streamURL.absoluteString == "wss://192.168.1.42:7749/stream")
+    }
+
+    @Test func usesDiscoveredPortWithPairedHostname() {
+        let credentials = makeCredentials(
+            host: "my-server.tail00000.ts.net",
+            scheme: .https,
+            serverFingerprint: "sha256:SERVERFINGERPRINTABCDEF",
+            tlsFingerprint: "sha256:TLSFINGERPRINTABCDEF"
+        )
+
+        let discovered = LANDiscoveredEndpoint(
+            host: "192.168.1.42",
+            port: 8443,
+            serverFingerprintPrefix: "SERVERFINGERPRINT",
+            tlsCertFingerprintPrefix: "TLSFINGERPRINT"
+        )
+
+        let result = LANEndpointSelection.select(credentials: credentials, discoveredEndpoint: discovered)
+
+        // Hostname from paired creds, but port from discovery
+        #expect(result?.transportPath == .lan)
+        #expect(result?.baseURL.absoluteString == "https://my-server.tail00000.ts.net:8443")
+        #expect(result?.streamURL.absoluteString == "wss://my-server.tail00000.ts.net:8443/stream")
+    }
+
     @Test func allowsLANWhenDiscoveredTLSPrefixIsMissingButServerMatches() {
         let credentials = makeCredentials(
             host: "my-server.tail00000.ts.net",
@@ -134,6 +205,7 @@ struct LANEndpointSelectionTests {
         let result = LANEndpointSelection.select(credentials: credentials, discoveredEndpoint: discovered)
 
         #expect(result?.transportPath == .lan)
+        #expect(result?.baseURL.absoluteString == "https://my-server.tail00000.ts.net:7749")
     }
 
     @Test func invalidDiscoveredPortFallsBackToPaired() {

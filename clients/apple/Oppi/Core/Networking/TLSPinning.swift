@@ -6,7 +6,7 @@ import Security
 ///
 /// When no fingerprint is configured, the delegate falls back to default
 /// system trust handling.
-final class PinnedServerTrustDelegate: NSObject, URLSessionDelegate {
+final class PinnedServerTrustDelegate: NSObject, URLSessionDelegate, URLSessionTaskDelegate {
     private let pinnedLeafFingerprint: String?
 
     init(pinnedLeafFingerprint: String?) {
@@ -14,9 +14,28 @@ final class PinnedServerTrustDelegate: NSObject, URLSessionDelegate {
         super.init()
     }
 
+    // Session-level challenge handler.
     func urlSession(
         _ session: URLSession,
         didReceive challenge: URLAuthenticationChallenge,
+        completionHandler: @escaping @Sendable (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
+    ) {
+        handleChallenge(challenge, completionHandler: completionHandler)
+    }
+
+    // Task-level challenge handler — some iOS versions dispatch here
+    // instead of the session-level method, especially in Release builds.
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        didReceive challenge: URLAuthenticationChallenge,
+        completionHandler: @escaping @Sendable (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
+    ) {
+        handleChallenge(challenge, completionHandler: completionHandler)
+    }
+
+    private func handleChallenge(
+        _ challenge: URLAuthenticationChallenge,
         completionHandler: @escaping @Sendable (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
     ) {
         guard challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust else {

@@ -4,6 +4,7 @@ import { tmpdir, homedir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+  certificateMatchesHost,
   collectSubjectAltNames,
   isTailscaleHostname,
   normalizeHostForSan,
@@ -595,6 +596,26 @@ describe("prepareTlsForServer", () => {
       });
 
       expect(certText).toContain("myhost.example.com");
+    });
+
+    it("reports true when cert SAN covers the requested host", () => {
+      const config = makeConfig({ tls: { mode: "self-signed" }, dataDir: tmpDir });
+      const resolved = prepareTlsForServer(config, tmpDir, {
+        additionalHosts: ["myhost.example.com", "192.0.2.42"],
+      });
+
+      expect(certificateMatchesHost(resolved.certPath!, "myhost.example.com")).toBe(true);
+      expect(certificateMatchesHost(resolved.certPath!, "192.0.2.42")).toBe(true);
+    });
+
+    it("reports false when cert SAN does not cover the requested host", () => {
+      const config = makeConfig({ tls: { mode: "self-signed" }, dataDir: tmpDir });
+      const resolved = prepareTlsForServer(config, tmpDir, {
+        additionalHosts: ["myhost.example.com"],
+      });
+
+      expect(certificateMatchesHost(resolved.certPath!, "203.0.113.77")).toBe(false);
+      expect(certificateMatchesHost(resolved.certPath!, "other.example.com")).toBe(false);
     });
 
     it("regenerates when partial material is present", () => {

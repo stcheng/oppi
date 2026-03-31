@@ -328,7 +328,8 @@ struct ConnectionCoordinatorPathChangeTests {
             ),
         ])
         #expect(conn.transportPath == .lan)
-        #expect(await conn.apiClient?.baseURL.absoluteString == "https://192.168.1.42:7749")
+        // HTTPS + hostname-based host: LAN uses paired hostname for TLS compat
+        #expect(await conn.apiClient?.baseURL.absoluteString == "https://my-server.tail00000.ts.net:7749")
 
         // Step 2: User has an active session
         conn._setActiveSessionIdForTesting("s1")
@@ -424,7 +425,9 @@ struct ConnectionCoordinatorPathChangeTests {
         #expect(conn.transportPath == .paired,
                 "Should stay paired until Bonjour discovers LAN endpoint")
 
-        // Later, Bonjour discovers LAN endpoint — endpoint updates for NEXT connection
+        // Later, Bonjour discovers LAN endpoint.
+        // Keep the working paired transport until the socket reconnects so
+        // REST calls don't jump to raw-IP TLS while WS is still on Tailscale.
         coordinator._applyLANDiscoveryForTesting([
             LANDiscoveredEndpoint(
                 host: "192.168.1.42",
@@ -433,8 +436,10 @@ struct ConnectionCoordinatorPathChangeTests {
                 tlsCertFingerprintPrefix: "TLSFINGERPRINT"
             ),
         ])
-        #expect(conn.transportPath == .lan,
-                "LAN endpoint should be preferred once discovered")
+        #expect(conn.transportPath == .paired,
+                "Healthy paired transport should stay active until reconnect")
+        #expect(await conn.apiClient?.baseURL.absoluteString == "https://my-server.tail00000.ts.net:7749",
+                "API client should stay on paired hostname until reconnect")
     }
 
     // MARK: - Helpers

@@ -220,6 +220,26 @@ final class ServerConnection {
         }
 
         let previousSelection = endpointSelection
+        let shouldDeferEndpointSwitch = previousSelection?.transportPath == .paired
+            && selection.transportPath == .lan
+            && wsClient?.status == .connected
+
+        wsClient?.setPreferredEndpoint(selection)
+
+        if shouldDeferEndpointSwitch {
+            ClientLog.info(
+                "Network",
+                "Deferring LAN API switch until transport reconnect",
+                metadata: [
+                    "from": previousSelection?.transportPath.rawValue ?? "unknown",
+                    "to": selection.transportPath.rawValue,
+                    "fromHost": previousSelection?.baseURL.host ?? "unknown",
+                    "toHost": selection.baseURL.host ?? "unknown",
+                ]
+            )
+            return
+        }
+
         endpointSelection = selection
         transportPath = selection.transportPath
 
@@ -235,8 +255,6 @@ final class ServerConnection {
                 ]
             )
         }
-
-        wsClient?.setPreferredEndpoint(selection)
 
         if previousSelection?.baseURL != selection.baseURL {
             apiClient = APIClient(

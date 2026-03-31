@@ -183,6 +183,22 @@ export function readCertificateExpiryMs(certPath: string): number {
   return expiresAt;
 }
 
+export function certificateMatchesHost(certPath: string, host: string): boolean {
+  const normalizedHost = normalizeHostForSan(host);
+  if (!normalizedHost) {
+    return false;
+  }
+
+  const certRaw = readFileSync(certPath);
+  const cert = new X509Certificate(certRaw);
+
+  if (isIP(normalizedHost)) {
+    return cert.checkIP(normalizedHost) !== undefined;
+  }
+
+  return cert.checkHost(normalizedHost, { subject: "never" }) !== undefined;
+}
+
 function ensureSelfSignedMaterial(resolved: ResolvedTlsConfig, additionalHosts: string[]): void {
   if (!resolved.certPath || !resolved.keyPath || !resolved.caPath) {
     throw new Error("self-signed TLS mode requires certPath/keyPath/caPath");
