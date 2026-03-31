@@ -307,10 +307,39 @@ describe("workspace file serving", () => {
     mkdirSync(join(wsRoot, "output"), { recursive: true });
     // 1x1 red PNG (minimal valid PNG)
     const pngHeader = Buffer.from([
-      0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, // signature
-      0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52, // IHDR chunk
-      0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, // 1x1
-      0x08, 0x02, 0x00, 0x00, 0x00, 0x90, 0x77, 0x53, 0xde, // 8bit RGB + CRC
+      0x89,
+      0x50,
+      0x4e,
+      0x47,
+      0x0d,
+      0x0a,
+      0x1a,
+      0x0a, // signature
+      0x00,
+      0x00,
+      0x00,
+      0x0d,
+      0x49,
+      0x48,
+      0x44,
+      0x52, // IHDR chunk
+      0x00,
+      0x00,
+      0x00,
+      0x01,
+      0x00,
+      0x00,
+      0x00,
+      0x01, // 1x1
+      0x08,
+      0x02,
+      0x00,
+      0x00,
+      0x00,
+      0x90,
+      0x77,
+      0x53,
+      0xde, // 8bit RGB + CRC
     ]);
     writeFileSync(join(wsRoot, "chart.png"), pngHeader);
     writeFileSync(join(wsRoot, "output", "figure.jpg"), Buffer.alloc(16, 0xab));
@@ -394,9 +423,7 @@ describe("workspace file serving", () => {
   });
 
   it("supports query-param token auth", async () => {
-    const res = await fetch(
-      `${baseUrl}/workspaces/${wsId}/files/chart.png?token=${token}`,
-    );
+    const res = await fetch(`${baseUrl}/workspaces/${wsId}/files/chart.png?token=${token}`);
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toBe("image/png");
   });
@@ -419,7 +446,10 @@ describe("workspace file browser", () => {
     writeFileSync(join(wsRoot, "id_rsa"), "-----BEGIN RSA PRIVATE KEY-----");
     writeFileSync(join(wsRoot, "chart.png"), Buffer.alloc(16, 0xff));
     writeFileSync(join(wsRoot, "src", "index.ts"), "console.log('hi')");
-    writeFileSync(join(wsRoot, "src", "components", "Button.tsx"), "export const Button = () => {}");
+    writeFileSync(
+      join(wsRoot, "src", "components", "Button.tsx"),
+      "export const Button = () => {}",
+    );
     writeFileSync(join(wsRoot, "node_modules", "dep", "index.js"), "module.exports = {}");
     writeFileSync(join(wsRoot, ".git", "HEAD"), "ref: refs/heads/main");
 
@@ -609,18 +639,55 @@ describe("sessions API", () => {
 
 // ── WebSocket ──
 
-describe("WebSocket", () => {
-  it("rejects unauthenticated WS upgrade", async () => {
-    const ws = new WebSocket(`${baseUrl.replace("http", "ws")}/stream`);
-    const closed = await new Promise<boolean>((resolve) => {
-      ws.on("error", () => resolve(true));
-      ws.on("close", () => resolve(true));
-      ws.on("open", () => {
-        ws.close();
-        resolve(false);
+function waitForUpgradeRejection(
+  ws: WebSocket,
+): Promise<{ statusCode: number; headers: Record<string, string | string[] | undefined> }> {
+  return new Promise((resolve, reject) => {
+    const cleanup = (): void => {
+      ws.off("unexpected-response", onUnexpectedResponse);
+      ws.off("open", onOpen);
+      ws.off("error", onError);
+    };
+
+    const onUnexpectedResponse = (
+      _request: unknown,
+      response: {
+        statusCode?: number;
+        headers: Record<string, string | string[] | undefined>;
+        resume(): void;
+      },
+    ): void => {
+      cleanup();
+      response.resume();
+      resolve({
+        statusCode: response.statusCode ?? 0,
+        headers: response.headers,
       });
-    });
-    expect(closed).toBe(true);
+    };
+
+    const onOpen = (): void => {
+      cleanup();
+      ws.close();
+      reject(new Error("Expected upgrade rejection but connection opened"));
+    };
+
+    const onError = (error: Error): void => {
+      cleanup();
+      reject(error);
+    };
+
+    ws.once("unexpected-response", onUnexpectedResponse);
+    ws.once("open", onOpen);
+    ws.once("error", onError);
+  });
+}
+
+describe("WebSocket", () => {
+  it("rejects unauthenticated WS upgrade with Bearer challenge", async () => {
+    const ws = new WebSocket(`${baseUrl.replace("http", "ws")}/stream`);
+    const rejection = await waitForUpgradeRejection(ws);
+    expect(rejection.statusCode).toBe(401);
+    expect(rejection.headers["www-authenticate"]).toBe('Bearer realm="oppi"');
   });
 
   it("rejects WS upgrade with malformed Authorization header", async () => {
@@ -628,36 +695,36 @@ describe("WebSocket", () => {
       headers: { Authorization: "bearer malformed" },
     });
 
-    const closed = await new Promise<boolean>((resolve) => {
-      ws.on("error", () => resolve(true));
-      ws.on("close", () => resolve(true));
-      ws.on("open", () => {
-        ws.close();
-        resolve(false);
-      });
-    });
-
-    expect(closed).toBe(true);
+    const rejection = await waitForUpgradeRejection(ws);
+    expect(rejection.statusCode).toBe(401);
+    expect(rejection.headers["www-authenticate"]).toBe('Bearer realm="oppi"');
   });
 
   it("rejects WS upgrade to unknown path", async () => {
     const ws = new WebSocket(`${baseUrl.replace("http", "ws")}/nonexistent`, {
       headers: { Authorization: `Bearer ${token}` },
     });
-    const closed = await new Promise<boolean>((resolve) => {
-      ws.on("error", () => resolve(true));
-      ws.on("close", () => resolve(true));
-      ws.on("open", () => {
-        ws.close();
-        resolve(false);
-      });
+    const rejection = await waitForUpgradeRejection(ws);
+    expect(rejection.statusCode).toBe(404);
+  });
+
+  it("rejects WS upgrade with mismatched Origin header", async () => {
+    const ws = new WebSocket(`${baseUrl.replace("http", "ws")}/stream`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Origin: "http://evil.example.com",
+      },
     });
-    expect(closed).toBe(true);
+    const rejection = await waitForUpgradeRejection(ws);
+    expect(rejection.statusCode).toBe(403);
   });
 
   it("accepts authenticated WS to /stream and receives stream_connected", async () => {
     const ws = new WebSocket(`${baseUrl.replace("http", "ws")}/stream`, {
-      headers: { Authorization: `Bearer ${token}` },
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Origin: baseUrl,
+      },
     });
 
     const msg = await new Promise<Record<string, unknown> | null>((resolve) => {
@@ -760,10 +827,16 @@ describe("policy API", () => {
   });
 
   it("PATCH /policy/rules/:id updates decision and label", async () => {
-    const gate = (server as unknown as { gate: { ruleStore: import("../src/rules.js").RuleStore } }).gate;
+    const gate = (server as unknown as { gate: { ruleStore: import("../src/rules.js").RuleStore } })
+      .gate;
     const rule = gate.ruleStore.add({
-      tool: "bash", decision: "ask", executable: "make", pattern: "make test*",
-      label: "original-label", scope: "global", source: "manual",
+      tool: "bash",
+      decision: "ask",
+      executable: "make",
+      pattern: "make test*",
+      label: "original-label",
+      scope: "global",
+      source: "manual",
     });
 
     const res = await patch(`/policy/rules/${rule.id}`, {
@@ -780,9 +853,14 @@ describe("policy API", () => {
   });
 
   it("PATCH /policy/rules/:id validates decision values", async () => {
-    const gate = (server as unknown as { gate: { ruleStore: import("../src/rules.js").RuleStore } }).gate;
+    const gate = (server as unknown as { gate: { ruleStore: import("../src/rules.js").RuleStore } })
+      .gate;
     const rule = gate.ruleStore.add({
-      tool: "bash", decision: "ask", label: "validate-test", scope: "global", source: "manual",
+      tool: "bash",
+      decision: "ask",
+      label: "validate-test",
+      scope: "global",
+      source: "manual",
     });
 
     const res = await patch(`/policy/rules/${rule.id}`, { decision: "yolo" });
@@ -792,9 +870,14 @@ describe("policy API", () => {
   });
 
   it("PATCH /policy/rules/:id requires at least one patch field", async () => {
-    const gate = (server as unknown as { gate: { ruleStore: import("../src/rules.js").RuleStore } }).gate;
+    const gate = (server as unknown as { gate: { ruleStore: import("../src/rules.js").RuleStore } })
+      .gate;
     const rule = gate.ruleStore.add({
-      tool: "bash", decision: "ask", label: "empty-patch", scope: "global", source: "manual",
+      tool: "bash",
+      decision: "ask",
+      label: "empty-patch",
+      scope: "global",
+      source: "manual",
     });
 
     const res = await patch(`/policy/rules/${rule.id}`, {});
@@ -804,10 +887,16 @@ describe("policy API", () => {
   });
 
   it("PATCH /policy/rules/:id updates pattern and executable", async () => {
-    const gate = (server as unknown as { gate: { ruleStore: import("../src/rules.js").RuleStore } }).gate;
+    const gate = (server as unknown as { gate: { ruleStore: import("../src/rules.js").RuleStore } })
+      .gate;
     const rule = gate.ruleStore.add({
-      tool: "bash", decision: "ask", executable: "git", pattern: "git tag*",
-      label: "pattern-test", scope: "global", source: "manual",
+      tool: "bash",
+      decision: "ask",
+      executable: "git",
+      pattern: "git tag*",
+      label: "pattern-test",
+      scope: "global",
+      source: "manual",
     });
 
     const res = await patch(`/policy/rules/${rule.id}`, {
@@ -931,30 +1020,61 @@ describe("themes API", () => {
     theme: {
       colors: {
         // Base (13)
-        bg: "#1a1b26", bgDark: "#16161e", bgHighlight: "#292e42",
-        fg: "#c0caf5", fgDim: "#a9b1d6", comment: "#565f89",
-        blue: "#7aa2f7", cyan: "#7dcfff", green: "#9ece6a",
-        orange: "#ff9e64", purple: "#bb9af7", red: "#f7768e",
-        yellow: "#e0af68", thinkingText: "#a9b1d6",
+        bg: "#1a1b26",
+        bgDark: "#16161e",
+        bgHighlight: "#292e42",
+        fg: "#c0caf5",
+        fgDim: "#a9b1d6",
+        comment: "#565f89",
+        blue: "#7aa2f7",
+        cyan: "#7dcfff",
+        green: "#9ece6a",
+        orange: "#ff9e64",
+        purple: "#bb9af7",
+        red: "#f7768e",
+        yellow: "#e0af68",
+        thinkingText: "#a9b1d6",
         // User message (2)
-        userMessageBg: "#292e42", userMessageText: "#c0caf5",
+        userMessageBg: "#292e42",
+        userMessageText: "#c0caf5",
         // Tool state (5)
-        toolPendingBg: "#1e2a4a", toolSuccessBg: "#1e2e1e", toolErrorBg: "#2e1e1e",
-        toolTitle: "#c0caf5", toolOutput: "#a9b1d6",
+        toolPendingBg: "#1e2a4a",
+        toolSuccessBg: "#1e2e1e",
+        toolErrorBg: "#2e1e1e",
+        toolTitle: "#c0caf5",
+        toolOutput: "#a9b1d6",
         // Markdown (10)
-        mdHeading: "#ffaa00", mdLink: "#0000ff", mdLinkUrl: "#666666",
-        mdCode: "#00ffff", mdCodeBlock: "#00ff00", mdCodeBlockBorder: "#808080",
-        mdQuote: "#808080", mdQuoteBorder: "#808080", mdHr: "#808080",
+        mdHeading: "#ffaa00",
+        mdLink: "#0000ff",
+        mdLinkUrl: "#666666",
+        mdCode: "#00ffff",
+        mdCodeBlock: "#00ff00",
+        mdCodeBlockBorder: "#808080",
+        mdQuote: "#808080",
+        mdQuoteBorder: "#808080",
+        mdHr: "#808080",
         mdListBullet: "#00ffff",
         // Diffs (3)
-        toolDiffAdded: "#00ff00", toolDiffRemoved: "#ff0000", toolDiffContext: "#808080",
+        toolDiffAdded: "#00ff00",
+        toolDiffRemoved: "#ff0000",
+        toolDiffContext: "#808080",
         // Syntax (9)
-        syntaxComment: "#6A9955", syntaxKeyword: "#569CD6", syntaxFunction: "#DCDCAA",
-        syntaxVariable: "#9CDCFE", syntaxString: "#CE9178", syntaxNumber: "#B5CEA8",
-        syntaxType: "#4EC9B0", syntaxOperator: "#D4D4D4", syntaxPunctuation: "#D4D4D4",
+        syntaxComment: "#6A9955",
+        syntaxKeyword: "#569CD6",
+        syntaxFunction: "#DCDCAA",
+        syntaxVariable: "#9CDCFE",
+        syntaxString: "#CE9178",
+        syntaxNumber: "#B5CEA8",
+        syntaxType: "#4EC9B0",
+        syntaxOperator: "#D4D4D4",
+        syntaxPunctuation: "#D4D4D4",
         // Thinking (6)
-        thinkingOff: "#505050", thinkingMinimal: "#6e6e6e", thinkingLow: "#5f87af",
-        thinkingMedium: "#81a2be", thinkingHigh: "#b294bb", thinkingXhigh: "#d183e8",
+        thinkingOff: "#505050",
+        thinkingMinimal: "#6e6e6e",
+        thinkingLow: "#5f87af",
+        thinkingMedium: "#81a2be",
+        thinkingHigh: "#b294bb",
+        thinkingXhigh: "#d183e8",
       },
     },
   };
@@ -1225,7 +1345,9 @@ type PairingTestContext = {
   baseUrl: string;
 };
 
-async function withIsolatedPairingServer(run: (ctx: PairingTestContext) => Promise<void>): Promise<void> {
+async function withIsolatedPairingServer(
+  run: (ctx: PairingTestContext) => Promise<void>,
+): Promise<void> {
   const pairingDataDir = mkdtempSync(join(tmpdir(), "oppi-pairing-integration-"));
   const pairingStorage = new Storage(pairingDataDir);
   pairingStorage.updateConfig({
@@ -1251,46 +1373,50 @@ async function withIsolatedPairingServer(run: (ctx: PairingTestContext) => Promi
 
 describe("pairing token flow", () => {
   it("issues dt token and rejects replay", async () => {
-    await withIsolatedPairingServer(async ({ storage: pairingStorage, baseUrl: pairingBaseUrl }) => {
-      const pt = pairingStorage.issuePairingToken(90_000);
+    await withIsolatedPairingServer(
+      async ({ storage: pairingStorage, baseUrl: pairingBaseUrl }) => {
+        const pt = pairingStorage.issuePairingToken(90_000);
 
-      const first = await fetch(`${pairingBaseUrl}/pair`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pairingToken: pt, deviceName: "test-iphone" }),
-      });
-      expect(first.status).toBe(200);
-      const firstBody = (await first.json()) as { deviceToken: string };
-      expect(firstBody.deviceToken.startsWith("dt_")).toBe(true);
+        const first = await fetch(`${pairingBaseUrl}/pair`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ pairingToken: pt, deviceName: "test-iphone" }),
+        });
+        expect(first.status).toBe(200);
+        const firstBody = (await first.json()) as { deviceToken: string };
+        expect(firstBody.deviceToken.startsWith("dt_")).toBe(true);
 
-      // Issued token works for auth
-      const auth = await fetch(`${pairingBaseUrl}/me`, {
-        headers: { Authorization: `Bearer ${firstBody.deviceToken}` },
-      });
-      expect(auth.status).toBe(200);
+        // Issued token works for auth
+        const auth = await fetch(`${pairingBaseUrl}/me`, {
+          headers: { Authorization: `Bearer ${firstBody.deviceToken}` },
+        });
+        expect(auth.status).toBe(200);
 
-      // Replay rejected (even if caller identity fields differ)
-      const replay = await fetch(`${pairingBaseUrl}/pair`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pairingToken: pt, deviceName: "different-device" }),
-      });
-      expect(replay.status).toBe(401);
-    });
+        // Replay rejected (even if caller identity fields differ)
+        const replay = await fetch(`${pairingBaseUrl}/pair`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ pairingToken: pt, deviceName: "different-device" }),
+        });
+        expect(replay.status).toBe(401);
+      },
+    );
   }, 30_000);
 
   it("rejects expired pairing token", async () => {
-    await withIsolatedPairingServer(async ({ storage: pairingStorage, baseUrl: pairingBaseUrl }) => {
-      const pt = pairingStorage.issuePairingToken(1_000);
-      await new Promise((r) => setTimeout(r, 1_100));
+    await withIsolatedPairingServer(
+      async ({ storage: pairingStorage, baseUrl: pairingBaseUrl }) => {
+        const pt = pairingStorage.issuePairingToken(1_000);
+        await new Promise((r) => setTimeout(r, 1_100));
 
-      const res = await fetch(`${pairingBaseUrl}/pair`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pairingToken: pt }),
-      });
-      expect(res.status).toBe(401);
-    });
+        const res = await fetch(`${pairingBaseUrl}/pair`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ pairingToken: pt }),
+        });
+        expect(res.status).toBe(401);
+      },
+    );
   });
 
   it("rejects missing pairingToken", async () => {

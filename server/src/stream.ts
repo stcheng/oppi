@@ -493,10 +493,18 @@ export class UserStreamMux {
 
     send({ type: "stream_connected", userName: this.ctx.storage.getOwnerName() });
 
-    ws.on("message", (data) => {
+    ws.on("message", (data, isBinary) => {
       queue = queue
         .then(async () => {
           msgRecv++;
+
+          if (isBinary) {
+            console.warn("[ws] Rejecting binary frame on /stream", {
+              owner: this.ctx.storage.getOwnerName(),
+            });
+            ws.close(1003, "Binary frames not supported");
+            return;
+          }
 
           if (!firstMessageRecorded && metrics) {
             firstMessageRecorded = true;

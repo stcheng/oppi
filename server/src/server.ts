@@ -80,6 +80,43 @@ function secureTokenEquals(expected: string, actual: string): boolean {
   return timingSafeEqual(expectedBytes, actualBytes);
 }
 
+const WS_MAX_PAYLOAD_BYTES = 16 * 1024 * 1024;
+const WS_CLOSE_GOING_AWAY = 1001;
+
+function writeUpgradeErrorResponse(
+  socket: Duplex,
+  statusLine: string,
+  headers: Record<string, string> = {},
+): void {
+  const lines = [statusLine, ...Object.entries(headers).map(([k, v]) => `${k}: ${v}`), "", ""];
+  socket.write(lines.join("\r\n"));
+  socket.destroy();
+}
+
+function isAllowedWebSocketOrigin(
+  req: IncomingMessage,
+  transportScheme: "http" | "https",
+): boolean {
+  const originHeader = Array.isArray(req.headers.origin)
+    ? req.headers.origin[0]
+    : req.headers.origin;
+  if (!originHeader) {
+    return true;
+  }
+
+  const hostHeader = Array.isArray(req.headers.host) ? req.headers.host[0] : req.headers.host;
+  if (!hostHeader) {
+    return false;
+  }
+
+  try {
+    const origin = new URL(originHeader);
+    return origin.protocol === `${transportScheme}:` && origin.host === hostHeader;
+  } catch {
+    return false;
+  }
+}
+
 export function formatUnauthorizedAuthLog(opts: {
   transport: "http" | "ws";
   path: string;
@@ -522,6 +559,7 @@ export class Server {
 
     this.wss = new WebSocketServer({
       noServer: true,
+      maxPayload: WS_MAX_PAYLOAD_BYTES,
       perMessageDeflate: {
         zlibDeflateOptions: { level: 1 }, // fast compression (speed > ratio)
         threshold: 1024, // only compress messages >= 1KB
@@ -714,6 +752,7 @@ export class Server {
     this.liveActivity.shutdown();
     this.push.shutdown();
     this.searchIndex?.close();
+    this.closeActiveConnections(WS_CLOSE_GOING_AWAY, "Server shutting down");
     this.wss.close();
     this.httpServer.close();
   }
@@ -918,6 +957,14 @@ export class Server {
     this.connections.delete(ws);
   }
 
+  private closeActiveConnections(code: number, reason: string): void {
+    for (const ws of this.connections) {
+      if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CLOSING) {
+        ws.close(code, reason);
+      }
+    }
+  }
+
   private async ensureSkillsInitialized(): Promise<void> {
     if (this.skillsInitialized) return;
 
@@ -1088,21 +1135,38 @@ export class Server {
           authorization: req.headers.authorization,
         }),
       );
-      socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
-      socket.destroy();
-      return;
-    }
-
-    if (url.pathname === "/stream") {
-      const upgradeReceivedAt = Date.now();
-      this.wss.handleUpgrade(req, socket, head, (ws) => {
-        this.streamMux.handleWebSocket(ws, upgradeReceivedAt);
+      writeUpgradeErrorResponse(socket, "HTTP/1.1 401 Unauthorized", {
+        "WWW-Authenticate": 'Bearer realm="oppi"',
+        Connection: "close",
+        "Content-Length": "0",
       });
       return;
     }
 
-    // Per-session WS endpoint removed — use /stream with subscribe instead.
-    socket.write("HTTP/1.1 404 Not Found\r\n\r\n");
-    socket.destroy();
+    if (url.pathname !== "/stream") {
+      // Per-session WS endpoint removed — use /stream with subscribe instead.
+      writeUpgradeErrorResponse(socket, "HTTP/1.1 404 Not Found", {
+        Connection: "close",
+        "Content-Length": "0",
+      });
+      return;
+    }
+
+    if (!isAllowedWebSocketOrigin(req, this.transportScheme)) {
+      console.warn("[ws] Rejected /stream upgrade due to origin mismatch", {
+        origin: req.headers.origin,
+        host: req.headers.host,
+      });
+      writeUpgradeErrorResponse(socket, "HTTP/1.1 403 Forbidden", {
+        Connection: "close",
+        "Content-Length": "0",
+      });
+      return;
+    }
+
+    const upgradeReceivedAt = Date.now();
+    this.wss.handleUpgrade(req, socket, head, (ws) => {
+      this.streamMux.handleWebSocket(ws, upgradeReceivedAt);
+    });
   }
 }

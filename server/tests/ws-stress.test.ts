@@ -84,14 +84,11 @@ async function createWorkspaceAndSession(): Promise<{
   });
   const { workspace } = (await wsRes.json()) as { workspace: { id: string } };
 
-  const sessRes = await fetch(
-    `${baseUrl}/workspaces/${workspace.id}/sessions`,
-    {
-      method: "POST",
-      headers,
-      body: JSON.stringify({ model: "anthropic/claude-sonnet-4-20250514" }),
-    },
-  );
+  const sessRes = await fetch(`${baseUrl}/workspaces/${workspace.id}/sessions`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ model: "anthropic/claude-sonnet-4-20250514" }),
+  });
   const { session } = (await sessRes.json()) as { session: { id: string } };
   return { workspaceId: workspace.id, sessionId: session.id };
 }
@@ -129,9 +126,7 @@ describe("stream connection lifecycle", () => {
     }
 
     // All should get stream_connected
-    const messages = await Promise.all(
-      connections.map((ws) => waitForMessage(ws)),
-    );
+    const messages = await Promise.all(connections.map((ws) => waitForMessage(ws)));
     expect(messages.every((msg) => msg.type === "stream_connected")).toBe(true);
 
     await Promise.all(
@@ -322,9 +317,7 @@ describe("message ordering under load", () => {
       expect(subResultIdx).toBeGreaterThanOrEqual(0);
 
       // connected event should come before command_result (server sends it first)
-      const connectedIdx = messages.findIndex(
-        (msg) => msg.type === "connected",
-      );
+      const connectedIdx = messages.findIndex((msg) => msg.type === "connected");
       if (connectedIdx >= 0) {
         expect(connectedIdx).toBeLessThan(subResultIdx);
       }
@@ -384,6 +377,31 @@ describe("close code handling", () => {
     expect(msg.type).toBe("stream_connected");
     ws2.close();
   });
+
+  it("server shutdown closes open clients with close code 1001", async () => {
+    const localDataDir = mkdtempSync(join(tmpdir(), "oppi-ws-shutdown-"));
+    const localStorage = new Storage(localDataDir);
+    const localPort = 50_000 + Math.floor(Math.random() * 5_000);
+    localStorage.updateConfig({ port: localPort, host: "127.0.0.1" });
+    const localToken = localStorage.ensurePaired();
+    const localServer = new Server(localStorage);
+
+    try {
+      await localServer.start();
+      const ws = connectHarnessStream(`ws://127.0.0.1:${localServer.port}`, localToken);
+      await waitForMessage(ws);
+
+      const closePromise = waitForClose(ws, 5_000);
+      await localServer.stop();
+      const closed = await closePromise;
+
+      expect(closed.code).toBe(1001);
+      expect(closed.reason.toString()).toBe("Server shutting down");
+    } finally {
+      await localServer.stop().catch(() => {});
+      rmSync(localDataDir, { recursive: true, force: true });
+    }
+  }, 15_000);
 
   it("server handles abrupt termination (no close frame)", async () => {
     const ws = connectStream();
@@ -461,6 +479,39 @@ describe("malformed message handling", () => {
       expect(result.success).toBe(false);
     } finally {
       ws.close();
+    }
+  });
+
+  it("rejects binary frames with close code 1003", async () => {
+    const ws = connectStream();
+
+    try {
+      await waitForMessage(ws);
+      ws.send(Buffer.from([0xde, 0xad, 0xbe, 0xef]), { binary: true });
+
+      const closed = await waitForClose(ws, 3_000);
+      expect(closed.code).toBe(1003);
+      expect(closed.reason.toString()).toBe("Binary frames not supported");
+    } finally {
+      if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CLOSING) {
+        ws.close();
+      }
+    }
+  });
+
+  it("rejects oversized frames with close code 1009", async () => {
+    const ws = connectStream();
+
+    try {
+      await waitForMessage(ws);
+      ws.send("x".repeat(17 * 1024 * 1024));
+
+      const closed = await waitForClose(ws, 5_000);
+      expect(closed.code).toBe(1009);
+    } finally {
+      if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CLOSING) {
+        ws.close();
+      }
     }
   });
 });
@@ -546,15 +597,10 @@ describe("reconnect bootstrap order (integration)", () => {
 
       // Extract the ordering of key message types
       const keyTypes = messages
-        .filter((msg) =>
-          ["connected", "state", "command_result"].includes(msg.type),
-        )
+        .filter((msg) => ["connected", "state", "command_result"].includes(msg.type))
         .map((msg) => ({
           type: msg.type,
-          command:
-            msg.type === "command_result"
-              ? msg.command
-              : undefined,
+          command: msg.type === "command_result" ? msg.command : undefined,
         }));
 
       // connected must come before state, state before command_result(subscribe)
