@@ -60,9 +60,6 @@ struct ServerDetailView: View {
                 if let runtime = info.runtimeUpdate {
                     Section("Runtime") {
                         LabeledContent("Pi Version", value: runtime.currentVersion)
-                        Text("Updates are delivered through the Mac app.")
-                            .font(.caption)
-                            .foregroundStyle(.themeComment)
                     }
                 }
             }
