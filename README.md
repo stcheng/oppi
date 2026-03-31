@@ -9,13 +9,17 @@
   <a href="https://testflight.apple.com/join/yaRP9aed">TestFlight</a> · <a href="docs/demo/">Screenshots</a>
 </p>
 
-There are many clankers and this is mine. They wrote all the code and I didn't review most of it. I do use it every day — my goal was just to have a better mobile experience than tmux + Termius + Claude Code. Thanks to [pi](https://github.com/badlogic/pi-mono) and the new models, this is now possible :)
+There are many clankers and this one is mine. iPhone app + self-hosted server + Mac companion for running [pi](https://github.com/badlogic/pi-mono) coding agent sessions from your phone. Stream output, approve tool calls, steer sessions, dictate prompts, attach screenshots — with native rendering that makes LLM output actually readable (no flickering).
+
+All the code is written by agents. I haven't written or reviewed most of it — I describe features, try them on device, file bugs, and add tests so neither the agent nor I are hallucinating. I spent the last year doing Tailscale + tmux + Termius to use Claude Code from my phone. It worked until it didn't: no dictation, no image input, Ctrl-A N nightmares. So I built this.
+
+The approach: [just talk to it](https://steipete.me/posts/just-talk-to-it), [feel it](https://mitchellh.com/writing/feel-it) by using it to build itself, and [measure everything](https://lucumr.pocoo.org/2025/6/17/measuring/). It mostly works, but there are [booboos everywhere](https://mariozechner.at/posts/2026-03-25-thoughts-on-slowing-the-fuck-down/). Unlike Mario, I have a high tolerance for booboos.
 
 ## Mac App (recommended on macOS)
 
 **Oppi for Mac** is a menu bar companion app that manages the local server and handles onboarding. It's the easiest way to get started.
 
-**Requirements:** macOS 15+, [Node.js](https://nodejs.org) v20+, [pi](https://github.com/badlogic/pi-mono) CLI
+**Requirements:** macOS 15+, [pi](https://github.com/badlogic/pi-mono) CLI. The app bundles its own JS runtime (Bun); no separate Node.js install needed.
 
 **Install:**
 1. Download the DMG from [Releases](../../releases)
@@ -48,7 +52,7 @@ The server embeds the [pi SDK](https://github.com/badlogic/pi-mono) directly —
 ## Install
 
 ```bash
-git clone https://github.com/duh17/Oppi.git
+git clone https://github.com/duh17/oppi.git
 cd Oppi/server
 npm install
 ```
