@@ -89,6 +89,35 @@ private extension ServerBadgeColor {
     }
 }
 
+// MARK: - Workspace Server Status Presentation
+
+struct WorkspaceServerStatusPresentation: Equatable, Sendable {
+    let state: FreshnessState
+    let label: String
+    let isUnreachable: Bool
+
+    static func derive(
+        freshnessState: FreshnessState,
+        freshnessLabel: String,
+        isTransportConnected: Bool,
+        hasCachedCatalog: Bool
+    ) -> Self {
+        guard freshnessState == .offline, isTransportConnected else {
+            return Self(
+                state: freshnessState,
+                label: freshnessLabel,
+                isUnreachable: freshnessState == .offline
+            )
+        }
+
+        if hasCachedCatalog {
+            return Self(state: .stale, label: "Connected", isUnreachable: false)
+        }
+
+        return Self(state: .syncing, label: "Connecting", isUnreachable: false)
+    }
+}
+
 // MARK: - RuntimeStatusBadge
 
 // periphery:ignore - future navigation bar badge; not yet integrated into ChatView

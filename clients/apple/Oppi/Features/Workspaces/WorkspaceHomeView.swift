@@ -85,9 +85,17 @@ struct WorkspaceHomeView: View {
         let serverId = server.id
         let workspaces = sortedWorkspaces(for: serverId)
         let serverConn = coordinator.connection(for: serverId)
-        let freshness = serverConn?.workspaceStore.freshnessState(forServer: serverId) ?? .offline
-        let freshnessLabel = serverConn?.workspaceStore.freshnessLabel(forServer: serverId) ?? "Offline"
-        let isUnreachable = freshness == .offline
+        let rawFreshness = serverConn?.workspaceStore.freshnessState(forServer: serverId) ?? .offline
+        let rawFreshnessLabel = serverConn?.workspaceStore.freshnessLabel(forServer: serverId) ?? "Offline"
+        let statusPresentation = WorkspaceServerStatusPresentation.derive(
+            freshnessState: rawFreshness,
+            freshnessLabel: rawFreshnessLabel,
+            isTransportConnected: serverConn?.isConnected == true,
+            hasCachedCatalog: !workspaces.isEmpty
+        )
+        let freshness = statusPresentation.state
+        let freshnessLabel = statusPresentation.label
+        let isUnreachable = statusPresentation.isUnreachable
         let isCollapsed = collapsedServerIds.contains(serverId)
 
         Section {

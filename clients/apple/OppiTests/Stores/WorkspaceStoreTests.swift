@@ -59,6 +59,50 @@ struct WorkspaceStoreOfflineTests {
         #expect(store.isLoaded)
     }
 
+    @Test func partialCatalogFailureLeavesCachedContentButMarksStoreOffline() async throws {
+        defer { WorkspaceStoreMockURLProtocol.handler = nil }
+
+        let fileManager = FileManager.default
+        let base = fileManager.temporaryDirectory.appending(path: "workspace-store-tests-\(UUID().uuidString)")
+        let root = base.appending(path: "cache-root")
+        defer { try? fileManager.removeItem(at: base) }
+
+        let cache = TimelineCache(rootURL: root)
+        let cachedWorkspaces = [makeTestWorkspace(id: "w-cached", name: "Cached Workspace")]
+        let cachedSkills = [makeSkill(name: "cached-skill")]
+        await cache.saveWorkspaces(cachedWorkspaces)
+        await cache.saveSkills(cachedSkills)
+
+        WorkspaceStoreMockURLProtocol.handler = { request in
+            let url = request.url!.absoluteString
+            let encoder = JSONEncoder()
+
+            if url.hasSuffix("/workspaces") {
+                let data = try encoder.encode(["workspaces": [makeTestWorkspace(id: "w-fresh", name: "Fresh Workspace")]])
+                let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+                return (data, response)
+            }
+
+            if url.hasSuffix("/skills") {
+                throw URLError(.badServerResponse)
+            }
+
+            throw URLError(.unsupportedURL)
+        }
+
+        let store = WorkspaceStore()
+        store._cacheForTesting = cache
+
+        let api = makeAPIClient()
+        await store.load(api: api)
+
+        #expect(store.workspaces == cachedWorkspaces)
+        #expect(store.skills == cachedSkills)
+        #expect(store.isLoaded)
+        #expect(store.lastSyncFailed)
+        #expect(store.freshnessState() == .offline)
+    }
+
     private func makeAPIClient() -> APIClient {
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [WorkspaceStoreMockURLProtocol.self]
@@ -76,6 +120,49 @@ struct WorkspaceStoreOfflineTests {
             path: "/tmp/\(name)",
             builtIn: true
         )
+    }
+}
+
+@Suite("Workspace Server Status Presentation")
+@MainActor
+struct WorkspaceServerStatusPresentationTests {
+    @Test func offlineStaysOfflineWhenTransportIsDisconnected() {
+        let presentation = WorkspaceServerStatusPresentation.derive(
+            freshnessState: .offline,
+            freshnessLabel: "Updated never",
+            isTransportConnected: false,
+            hasCachedCatalog: true
+        )
+
+        #expect(presentation.state == .offline)
+        #expect(presentation.label == "Updated never")
+        #expect(presentation.isUnreachable)
+    }
+
+    @Test func connectedTransportWithCachedCatalogShowsConnectedStaleState() {
+        let presentation = WorkspaceServerStatusPresentation.derive(
+            freshnessState: .offline,
+            freshnessLabel: "Updated never",
+            isTransportConnected: true,
+            hasCachedCatalog: true
+        )
+
+        #expect(presentation.state == .stale)
+        #expect(presentation.label == "Connected")
+        #expect(!presentation.isUnreachable)
+    }
+
+    @Test func connectedTransportWithoutCachedCatalogShowsConnectingState() {
+        let presentation = WorkspaceServerStatusPresentation.derive(
+            freshnessState: .offline,
+            freshnessLabel: "Updated never",
+            isTransportConnected: true,
+            hasCachedCatalog: false
+        )
+
+        #expect(presentation.state == .syncing)
+        #expect(presentation.label == "Connecting")
+        #expect(!presentation.isUnreachable)
     }
 }
 
