@@ -61,7 +61,6 @@ type ActiveSession = SessionStartActiveSession;
 export class SessionManager extends EventEmitter {
   private storage: Storage;
   private active: Map<string, ActiveSession> = new Map();
-  private pendingPromptPreambles: Map<string, string> = new Map();
   private pendingExtensionFactories: Map<string, ExtensionFactory[]> = new Map();
 
   /** Injected by the server to resolve context window for a model ID. */
@@ -268,20 +267,10 @@ export class SessionManager extends EventEmitter {
     },
   ): Promise<void> {
     const key = this.sessionKey(sessionId);
-    const active = this.active.get(key);
-    const preamble =
-      active && active.session.messageCount === 0
-        ? this.pendingPromptPreambles.get(sessionId)
-        : undefined;
 
     await this.inputCoordinator.sendPrompt(key, message, {
       ...opts,
-      preamble,
     });
-
-    if (preamble && active && active.session.messageCount > 0) {
-      this.pendingPromptPreambles.delete(sessionId);
-    }
   }
 
   /**
@@ -406,16 +395,6 @@ export class SessionManager extends EventEmitter {
     return this.sendCommandAsync(key, { ...command });
   }
 
-  setPendingPromptPreamble(sessionId: string, preamble: string): void {
-    const normalized = preamble.trim();
-    if (normalized.length === 0) {
-      this.pendingPromptPreambles.delete(sessionId);
-      return;
-    }
-
-    this.pendingPromptPreambles.set(sessionId, normalized);
-  }
-
   /**
    * Register extra extension factories to inject when a session starts.
    * Consumed and cleared by SessionStartCoordinator during startSession.
@@ -525,7 +504,6 @@ export class SessionManager extends EventEmitter {
   // ─── Session End ───
 
   private handleSessionEnd(key: string, reason: string): void {
-    this.pendingPromptPreambles.delete(key);
     this.lifecycleCoordinator.handleSessionEnd(key, reason);
   }
 
@@ -543,7 +521,6 @@ export class SessionManager extends EventEmitter {
 
   async stopSession(sessionId: string): Promise<void> {
     const key = this.sessionKey(sessionId);
-    this.pendingPromptPreambles.delete(sessionId);
     // cancelPendingAsk runs inside the session lock (via preStop callback)
     // so it serializes with respondToUIRequest, matching the sendAbort pattern.
     await this.stopFlowCoordinator.stopSession(key, sessionId, () => {

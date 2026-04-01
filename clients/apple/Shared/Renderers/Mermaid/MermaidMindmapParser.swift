@@ -98,19 +98,19 @@ enum MermaidMindmapParser {
         // Try to find shape delimiters after an optional id prefix.
         // Look for the first delimiter character that starts a shape.
         if let range = text.range(of: "(("), text.hasSuffix("))") {
-            let inner = String(text[range.upperBound...].dropLast(2))
+            let inner = normalize(String(text[range.upperBound...].dropLast(2)))
             return (inner, .circle)
         }
 
         // `((...))` — circle (no prefix)
         if text.hasPrefix("((") && text.hasSuffix("))") && text.count > 4 {
-            let inner = String(text.dropFirst(2).dropLast(2))
+            let inner = normalize(String(text.dropFirst(2).dropLast(2)))
             return (inner, .circle)
         }
 
         // `))...((` — bang/cloud
         if text.hasPrefix("))") && text.hasSuffix("((") && text.count > 4 {
-            let inner = String(text.dropFirst(2).dropLast(2))
+            let inner = normalize(String(text.dropFirst(2).dropLast(2)))
             return (inner, .bang)
         }
 
@@ -118,7 +118,7 @@ enum MermaidMindmapParser {
         if text.hasPrefix(")") && text.hasSuffix("(") && text.count > 2
             && !text.hasPrefix("))") && !text.hasSuffix("((")
         {
-            let inner = String(text.dropFirst(1).dropLast(1))
+            let inner = normalize(String(text.dropFirst(1).dropLast(1)))
             return (inner, .hexagon)
         }
 
@@ -126,24 +126,28 @@ enum MermaidMindmapParser {
         if text.hasPrefix("(") && text.hasSuffix(")") && text.count > 2
             && !text.hasPrefix("((") && !text.hasSuffix("))")
         {
-            let inner = String(text.dropFirst(1).dropLast(1))
+            let inner = normalize(String(text.dropFirst(1).dropLast(1)))
             return (inner, .rounded)
         }
 
         // `[...]` or `id[...]` — square
         if let range = text.range(of: "["), text.hasSuffix("]") {
-            let inner = String(text[range.upperBound...].dropLast(1))
+            let inner = normalize(String(text[range.upperBound...].dropLast(1)))
             return (inner, .square)
         }
 
         // `id(...)` — rounded (not already caught by circle)
         if let range = text.range(of: "("), text.hasSuffix(")"),
            !text.hasSuffix("))") {
-            let inner = String(text[range.upperBound...].dropLast(1))
+            let inner = normalize(String(text[range.upperBound...].dropLast(1)))
             return (inner, .rounded)
         }
 
         // Default — plain text
-        return (text, .default)
+        return (normalize(text), .default)
+    }
+
+    private static func normalize(_ text: String) -> String {
+        MermaidTextUtils.normalizeBrTags(text)
     }
 }

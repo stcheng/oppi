@@ -80,7 +80,11 @@ struct WorkspaceReviewFileDetailView: View {
             await loadDiff()
         }
         .navigationDestination(item: $navigateToReview) { dest in
-            ChatView(sessionId: dest.id, initialInputText: dest.inputText)
+            ChatView(
+                sessionId: dest.id,
+                initialInputText: dest.inputText,
+                initialPendingFiles: dest.filePaths.map { PendingFileReference(path: $0, isDirectory: false) }
+            )
         }
         .overlay {
             if let launchActionInFlight {
@@ -303,7 +307,8 @@ struct WorkspaceReviewFileDetailView: View {
             launchError = nil
             navigateToReview = ReviewSessionNavDestination(
                 id: response.session.id,
-                inputText: response.visiblePrompt
+                inputText: response.visiblePrompt,
+                filePaths: response.filePaths
             )
         } catch {
             launchError = error.localizedDescription

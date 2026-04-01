@@ -15,7 +15,6 @@ import { getGitStatus } from "../git-status.js";
 import { discoverLocalSessions } from "../local-sessions.js";
 import { resolveSdkSessionCwd } from "../sdk-backend.js";
 import type {
-  ContextSummary,
   CreateWorkspaceRequest,
   CreateWorkspaceReviewSessionRequest,
   Session,
@@ -489,23 +488,13 @@ export function createWorkspaceRoutes(ctx: RouteContext, helpers: RouteHelpers):
       selectedSession,
     });
 
-    const contextSummary: ContextSummary[] = launch.files.map((f) => ({
-      kind: "file_diff" as const,
-      path: f.path,
-      addedLines: f.addedLines ?? 0,
-      removedLines: f.removedLines ?? 0,
-    }));
-
     const model = workspace.lastUsedModel || workspace.defaultModel;
     const session = ctx.storage.createSession(launch.sessionName, model);
     session.workspaceId = workspace.id;
     session.workspaceName = workspace.name;
-    session.contextSummary = contextSummary;
     ctx.storage.saveSession(session);
 
     try {
-      ctx.sessions.setPendingPromptPreamble(session.id, launch.preamble);
-
       await ctx.sessions.startSession(session.id, workspace);
     } catch (error) {
       await ctx.sessions.stopSession(session.id).catch(() => {});
@@ -515,16 +504,12 @@ export function createWorkspaceRoutes(ctx: RouteContext, helpers: RouteHelpers):
 
     const launchedSession =
       ctx.sessions.getActiveSession(session.id) || ctx.storage.getSession(session.id) || session;
-    // Ensure contextSummary survives even if getActiveSession returned a copy without it
-    if (!launchedSession.contextSummary && contextSummary.length > 0) {
-      launchedSession.contextSummary = contextSummary;
-    }
     const response: WorkspaceReviewSessionResponse = {
       action: body.action,
       selectedPathCount: launch.files.length,
       session: ctx.ensureSessionContextWindow(launchedSession),
       visiblePrompt: launch.visiblePrompt,
-      contextSummary,
+      filePaths: launch.files.map((f) => f.path),
     };
     helpers.json(res, response, 201);
   }

@@ -1,6 +1,65 @@
 import SwiftUI
 import UIKit
 
+// MARK: - Export Loading Token
+
+/// Abstract token that the presenter uses to show/hide a loading spinner
+/// during export rendering. Concrete implementations handle UIKit bar buttons
+/// and SwiftUI state.
+@MainActor
+protocol ExportLoadingToken: AnyObject {
+    func start()
+    func stop()
+}
+
+// MARK: - Weak ref helper
+
+/// Type-erased weak reference box. Used to break retain cycles when passing
+/// a bar button reference into a UIMenu/UIAction closure.
+@MainActor
+final class Weak<T: AnyObject> {
+    weak var value: T?
+    init(_ value: T? = nil) { self.value = value }
+}
+
+// MARK: - BarButtonLoadingToken
+
+/// Swaps a UIBarButtonItem's image for a spinning UIActivityIndicatorView
+/// while an export renders, then restores the original image.
+@MainActor
+final class BarButtonLoadingToken: ExportLoadingToken {
+    private weak var button: UIBarButtonItem?
+    private let tintColor: UIColor?
+    private var savedImage: UIImage?
+    private var savedIsEnabled: Bool = true
+
+    init(button: UIBarButtonItem, tintColor: UIColor?) {
+        self.button = button
+        self.tintColor = tintColor
+    }
+
+    func start() {
+        guard let button else { return }
+        savedImage = button.image
+        savedIsEnabled = button.isEnabled
+
+        let spinner = UIActivityIndicatorView(style: .medium)
+        spinner.color = tintColor ?? button.tintColor
+        spinner.startAnimating()
+
+        button.image = nil
+        button.customView = spinner
+        button.isEnabled = false
+    }
+
+    func stop() {
+        guard let button else { return }
+        button.customView = nil
+        button.image = savedImage
+        button.isEnabled = savedIsEnabled
+    }
+}
+
 // MARK: - FileSharePresenter
 
 /// Single entry point for all share/export interactions across SwiftUI and UIKit.
@@ -15,17 +74,23 @@ enum FileSharePresenter {
     // MARK: - Render + Present
 
     /// Share content using the smart default format.
-    static func shareDefault(_ content: FileShareService.ShareableContent) async {
+    static func shareDefault(
+        _ content: FileShareService.ShareableContent,
+        loadingToken: ExportLoadingToken? = nil
+    ) async {
         let format = FileShareService.defaultFormat(for: content)
-        await share(content, format: format)
+        await share(content, format: format, loadingToken: loadingToken)
     }
 
     /// Share content in a specific format.
     static func share(
         _ content: FileShareService.ShareableContent,
-        format: FileShareService.ExportFormat
+        format: FileShareService.ExportFormat,
+        loadingToken: ExportLoadingToken? = nil
     ) async {
+        loadingToken?.start()
         let item = await FileShareService.render(content, as: format)
+        loadingToken?.stop()
         presentActivityController(item: item)
     }
 
@@ -35,6 +100,7 @@ enum FileSharePresenter {
     ///
     /// Single-format content (images, PDFs): tap exports directly.
     /// Multi-format content (code, markdown, etc.): tap opens format picker menu.
+    /// Shows a spinner in-place while the export renders.
     ///
     /// Used by ``FullScreenCodeViewController``, ``FullScreenImageViewController``,
     /// and any UIKit surface that needs a share button.
@@ -47,20 +113,31 @@ enum FileSharePresenter {
         let button: UIBarButtonItem
 
         if formats.count <= 1 {
-            // Single format — tap exports directly
+            // Single format — tap exports directly with spinner.
+            // Can't capture button weakly before it's initialized, so use
+            // an intermediary box that gets populated after init.
+            let buttonBox = Weak<UIBarButtonItem>()
             button = UIBarButtonItem(
                 image: shareImage,
                 primaryAction: UIAction { _ in
+                    guard let btn = buttonBox.value else { return }
+                    let token = BarButtonLoadingToken(button: btn, tintColor: tintColor)
                     Task { @MainActor in
-                        await shareDefault(content)
+                        await shareDefault(content, loadingToken: token)
                     }
                 }
             )
+            buttonBox.value = button
         } else {
-            // Multiple formats — tap opens format picker menu
-            button = UIBarButtonItem(
-                image: shareImage,
-                menu: buildFormatMenu(for: content)
+            // Multiple formats — tap opens format picker menu.
+            // Create button first, then set menu with a weak ref so the
+            // spinner can replace the button's content during export.
+            button = UIBarButtonItem(image: shareImage, menu: nil)
+            let weakButton = Weak(button)
+            button.menu = buildFormatMenu(
+                for: content,
+                tintColor: tintColor,
+                buttonRef: { weakButton.value }
             )
         }
 
@@ -76,7 +153,9 @@ enum FileSharePresenter {
     /// the system share sheet. Shared between bar button items and
     /// any other UIKit surface that needs a format picker.
     static func buildFormatMenu(
-        for content: FileShareService.ShareableContent
+        for content: FileShareService.ShareableContent,
+        tintColor: UIColor? = nil,
+        buttonRef: (@MainActor () -> UIBarButtonItem?)? = nil
     ) -> UIMenu {
         let formats = FileShareService.availableFormats(for: content)
         let actions = formats.map { format in
@@ -85,8 +164,14 @@ enum FileSharePresenter {
                 title: info.label,
                 image: UIImage(systemName: info.icon)
             ) { _ in
+                let token: ExportLoadingToken?
+                if let button = buttonRef?() {
+                    token = BarButtonLoadingToken(button: button, tintColor: tintColor)
+                } else {
+                    token = nil
+                }
                 Task { @MainActor in
-                    await share(content, format: format)
+                    await share(content, format: format, loadingToken: token)
                 }
             }
         }
@@ -142,7 +227,7 @@ enum FileSharePresenter {
 ///
 /// Single-format content: tap exports directly (no picker needed).
 /// Multi-format content: tap opens format picker menu.
-/// Delegates all logic to ``FileSharePresenter``.
+/// Shows a spinner while export renders. Delegates to ``FileSharePresenter``.
 struct FileShareButton: View {
     let content: FileShareService.ShareableContent
     let style: ButtonStyle
@@ -190,7 +275,25 @@ struct FileShareButton: View {
 
     @ViewBuilder
     private var shareLabel: some View {
-        Group {
+        if isExporting {
+            // Spinner replaces icon during export
+            switch style {
+            case .capsule:
+                HStack(spacing: 6) {
+                    ProgressView()
+                        .controlSize(.mini)
+                    Text("Exporting")
+                        .font(.caption2.bold())
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(.ultraThinMaterial)
+                .clipShape(Capsule())
+            case .icon:
+                ProgressView()
+                    .controlSize(.mini)
+            }
+        } else {
             switch style {
             case .capsule:
                 Label("Share", systemImage: "square.and.arrow.up")
@@ -204,7 +307,6 @@ struct FileShareButton: View {
                     .font(.caption2)
             }
         }
-        .opacity(isExporting ? 0.5 : 1)
     }
 
     private func exportDefault() async {

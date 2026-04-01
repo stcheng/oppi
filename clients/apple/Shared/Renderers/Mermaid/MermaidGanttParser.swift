@@ -67,7 +67,9 @@ enum MermaidGanttParser {
             dateFormat: dateFormat,
             sections: sections,
             axisFormat: axisFormat,
-            excludes: excludes
+            excludes: excludes,
+            tickInterval: nil,
+            weekend: nil
         )
     }
 
@@ -265,7 +267,7 @@ enum MermaidGanttParser {
         }
 
         return GanttTask(
-            name: name,
+            name: MermaidTextUtils.normalizeBrTags(name),
             id: id,
             status: status,
             startDate: startDate,

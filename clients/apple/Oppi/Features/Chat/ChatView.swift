@@ -45,12 +45,13 @@ struct ChatView: View {
     @State private var composerExternalFocusRequestID = 0
     @State private var contextBarCollapseToken = 0
     @State private var contextBarExpanded = false
-    @State private var contextPillDetailFile: WorkspaceReviewFile?
 
-    init(sessionId: String, initialInputText: String = "") {
+
+    init(sessionId: String, initialInputText: String = "", initialPendingFiles: [PendingFileReference] = []) {
         self.sessionId = sessionId
         _sessionManager = State(initialValue: ChatSessionManager(sessionId: sessionId))
         _inputText = State(initialValue: initialInputText)
+        _pendingFiles = State(initialValue: initialPendingFiles)
     }
 
     private struct ForkRoute: Identifiable, Hashable {
@@ -68,10 +69,6 @@ struct ChatView: View {
         sessionStore.sessions.first { $0.id == sessionId }
     }
 
-    /// Context pills derived from the session's persisted contextSummary.
-    private var contextPills: [ContextPill] {
-        session?.contextSummary?.map { ContextPill(from: $0) } ?? []
-    }
 
     /// Child sessions spawned by this session.
     private var childSessions: [Session] {
@@ -206,9 +203,6 @@ struct ChatView: View {
             .sheet(isPresented: $showOutline) { outlineSheet }
             .sheet(isPresented: $showModelPicker) { modelPickerSheet }
             .sheet(isPresented: $showContextInspector) { contextInspectorSheet }
-            .sheet(item: $contextPillDetailFile) { file in
-                contextPillDetailSheet(file: file)
-            }
             .fullScreenCover(isPresented: $showComposer) { composerSheet }
             .alert("Rename Session", isPresented: $showRenameAlert) { renameAlert }
             .alert("Switch model in active session?", isPresented: $showModelSwitchWarning, presenting: pendingModelSwitch) { model in
@@ -442,10 +436,7 @@ struct ChatView: View {
                     text: $inputText,
                     pendingImages: $pendingImages,
                     pendingFiles: $pendingFiles,
-                    contextPills: contextPills,
-                    onContextPillTap: session?.workspaceId != nil ? { pill in
-                        contextPillDetailFile = pill.toReviewFile()
-                    } : nil,
+
                     isBusy: isBusy,
                     busyStreamingBehavior: $busyStreamingBehavior,
                     isSending: actionHandler.isSending,
@@ -713,8 +704,7 @@ struct ChatView: View {
                 inputText = ""
                 pendingImages = []
                 pendingFiles = []
-                // Clear review context pills after first send
-                sessionStore.clearContextSummary(for: sessionId)
+
                 // Scroll to bottom after sending
                 scrollRef.requestScrollToBottom()
             },
@@ -771,24 +761,6 @@ struct ChatView: View {
 
     // MARK: - Sheets & Alerts
 
-    @ViewBuilder
-    private func contextPillDetailSheet(file: WorkspaceReviewFile) -> some View {
-        if let workspaceId = session?.workspaceId {
-            NavigationStack {
-                WorkspaceReviewFileDetailView(
-                    workspaceId: workspaceId,
-                    selectedSessionId: sessionId,
-                    file: file
-                )
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("Done") { contextPillDetailFile = nil }
-                    }
-                }
-            }
-            .presentationDetents([.medium, .large])
-        }
-    }
 
     private var outlineSheet: some View {
         SessionOutlineView(

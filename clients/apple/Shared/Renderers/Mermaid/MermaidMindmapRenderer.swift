@@ -427,44 +427,19 @@ enum MermaidMindmapRenderer {
         theme: RenderTheme,
         in ctx: CGContext
     ) {
-        let textColor: CGColor = theme.foreground
-        let attributes: [NSAttributedString.Key: Any] = [
-            .font: font,
-            .foregroundColor: textColor,
-        ]
-        let attrString = NSAttributedString(string: text, attributes: attributes)
-        let line = CTLineCreateWithAttributedString(attrString)
-        let bounds = CTLineGetBoundsWithOptions(line, [])
-
-        let textX = rect.midX - bounds.width / 2
-        let textY = rect.midY - bounds.height / 2
-
-        drawCTLine(line, at: CGPoint(x: textX, y: textY), fontSize: fontSize, in: ctx)
+        MermaidTextUtils.drawText(
+            text,
+            centeredIn: rect,
+            font: font,
+            fontSize: fontSize,
+            foregroundColor: theme.foreground,
+            in: ctx
+        )
     }
 
     // MARK: - Text helpers
 
     private static func measureText(_ text: String, font: CTFont, fontSize: CGFloat) -> CGSize {
-        let attributes: [NSAttributedString.Key: Any] = [.font: font]
-        let attrString = NSAttributedString(string: text, attributes: attributes)
-        let line = CTLineCreateWithAttributedString(attrString)
-        let bounds = CTLineGetBoundsWithOptions(line, [])
-        return CGSize(
-            width: max(bounds.width, fontSize * 2),
-            height: max(bounds.height, fontSize * 1.4)
-        )
-    }
-
-    /// Draw a CTLine at (x, y) in UIKit top-left (Y-down) coordinates.
-    ///
-    /// CTLineDraw uses CG coords (Y-up). This flips locally so text renders right-side-up.
-    private static func drawCTLine(_ line: CTLine, at point: CGPoint, fontSize: CGFloat, in ctx: CGContext) {
-        ctx.saveGState()
-        ctx.translateBy(x: point.x, y: point.y + fontSize)
-        ctx.scaleBy(x: 1, y: -1)
-        ctx.textMatrix = .identity
-        ctx.textPosition = .zero
-        CTLineDraw(line, ctx)
-        ctx.restoreGState()
+        MermaidTextUtils.measureText(text, font: font, fontSize: fontSize)
     }
 }

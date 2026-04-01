@@ -156,6 +156,34 @@ struct PathResolutionTests {
         #expect(path.hasSuffix("server.log"))
         #expect(path.contains("oppi"))
     }
+
+    /// Validates that the CLI subpath hardcoded in resolveServerCLIPath() matches
+    /// the actual server build output. Catches tsconfig rootDir changes that shift
+    /// the output directory structure without updating the Swift code.
+    @Test func serverCLISubpathMatchesBuildOutput() throws {
+        // Derive the repo root from the test file's location.
+        // Test file lives at: <repo>/clients/apple/OppiMacTests/ServerProcessManagerTests.swift
+        let testFile = #filePath
+        let repoRoot = URL(fileURLWithPath: testFile)
+            .deletingLastPathComponent()  // OppiMacTests/
+            .deletingLastPathComponent()  // apple/
+            .deletingLastPathComponent()  // clients/
+            .deletingLastPathComponent()  // repo root
+
+        // The relative subpath used by resolveServerCLIPath() for the seed and runtime dir.
+        // If you change this, also update ServerProcessManager.resolveServerCLIPath().
+        let cliSubpath = "dist/src/cli.js"
+
+        let serverCLI = repoRoot.appendingPathComponent("server/\(cliSubpath)")
+        #expect(
+            FileManager.default.fileExists(atPath: serverCLI.path),
+            """
+            Server CLI not found at expected path: \(serverCLI.path)
+            The subpath '\(cliSubpath)' must match the server's tsc output.
+            Check server/tsconfig.json rootDir and update ServerProcessManager.resolveServerCLIPath() if it changed.
+            """
+        )
+    }
 }
 
 // MARK: - Process lifecycle (integration — uses /bin/sleep)

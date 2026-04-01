@@ -19,8 +19,10 @@ struct GanttDiagram: Equatable, Sendable {
     let sections: [GanttSection]
     let axisFormat: String?
     let excludes: [String]
+    let tickInterval: String?
+    let weekend: String?
 
-    static let empty = Self(title: nil, dateFormat: "YYYY-MM-DD", sections: [], axisFormat: nil, excludes: [])
+    static let empty = Self(title: nil, dateFormat: "YYYY-MM-DD", sections: [], axisFormat: nil, excludes: [], tickInterval: nil, weekend: nil)
 }
 
 struct GanttSection: Equatable, Sendable {
@@ -44,6 +46,7 @@ enum GanttTaskStatus: Equatable, Sendable {
     case done
     case critical
     case milestone
+    case vert
 }
 
 // MARK: - Mindmap types
@@ -131,6 +134,16 @@ enum FlowNodeShape: Equatable, Sendable {
     case subroutine
     /// `A>text]`
     case asymmetric
+    /// `A[/text/]`
+    case parallelogram
+    /// `A[\text\]`
+    case parallelogramAlt
+    /// `A[/text\]`
+    case trapezoid
+    /// `A[\text/]`
+    case trapezoidAlt
+    /// `A(((text)))`
+    case doubleCircle
     /// Bare ID with no shape delimiters — uses ID as label.
     case `default`
 }
@@ -146,6 +159,16 @@ enum FlowEdgeStyle: Equatable, Sendable {
     case thick
     /// `~~~`
     case invisible
+    /// `--o`
+    case circle
+    /// `--x`
+    case cross
+    /// `<-->`
+    case biArrow
+    /// `o--o`
+    case biCircle
+    /// `x--x`
+    case biCross
 }
 
 struct FlowSubgraph: Equatable, Sendable {
@@ -166,8 +189,51 @@ struct FlowStyleDirective: Equatable, Sendable {
 struct SequenceDiagram: Equatable, Sendable {
     let participants: [SequenceParticipant]
     let messages: [SequenceMessage]
+    let notes: [SequenceNote]
+    let blocks: [SequenceBlock]
+    let autonumber: Bool
 
-    static let empty = Self(participants: [], messages: [])
+    static let empty = Self(participants: [], messages: [], notes: [], blocks: [], autonumber: false)
+}
+
+/// A note annotation in a sequence diagram.
+struct SequenceNote: Equatable, Sendable {
+    let text: String
+    let position: NotePosition
+    let actors: [String]
+}
+
+enum NotePosition: Equatable, Sendable {
+    case leftOf
+    case rightOf
+    case over
+}
+
+/// A structural block in a sequence diagram (loop, alt, par, critical, break, opt, rect).
+struct SequenceBlock: Equatable, Sendable {
+    let kind: SequenceBlockKind
+    let label: String
+    let elseBlocks: [SequenceElseBlock]?
+}
+
+struct SequenceElseBlock: Equatable, Sendable {
+    let label: String
+}
+
+enum SequenceBlockKind: Equatable, Sendable {
+    case loop
+    case alt
+    case opt
+    case par
+    case critical
+    case `break`
+    case rect
+}
+
+/// Activation modifier on a sequence message arrow.
+enum ActivationModifier: Equatable, Sendable {
+    case activate
+    case deactivate
 }
 
 struct SequenceParticipant: Equatable, Sendable {
@@ -189,6 +255,10 @@ enum SequenceArrowStyle: Equatable, Sendable {
     case solidCross
     /// `--x` dashed with cross
     case dashedCross
+    /// `-)` solid with open async arrow
+    case solidAsync
+    /// `--)` dashed with open async arrow
+    case dashedAsync
 }
 
 struct SequenceMessage: Equatable, Sendable {
@@ -196,4 +266,13 @@ struct SequenceMessage: Equatable, Sendable {
     let to: String
     let text: String
     let arrowStyle: SequenceArrowStyle
+    let activationModifier: ActivationModifier?
+
+    init(from: String, to: String, text: String, arrowStyle: SequenceArrowStyle, activationModifier: ActivationModifier? = nil) {
+        self.from = from
+        self.to = to
+        self.text = text
+        self.arrowStyle = arrowStyle
+        self.activationModifier = activationModifier
+    }
 }

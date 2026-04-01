@@ -92,14 +92,14 @@ final class ServerProcessManager {
         }
 
         // Mutable runtime dir (normal path after seeding)
-        let runtimeCLI = (serverRuntimeDir as NSString).appendingPathComponent("dist/cli.js")
+        let runtimeCLI = (serverRuntimeDir as NSString).appendingPathComponent("dist/src/cli.js")
         if FileManager.default.fileExists(atPath: runtimeCLI) {
             return runtimeCLI
         }
 
         // App bundle seed (fallback — used before first seed completes)
         if let resourcePath = Bundle.main.resourcePath {
-            let seedPath = (resourcePath as NSString).appendingPathComponent("server-seed/dist/cli.js")
+            let seedPath = (resourcePath as NSString).appendingPathComponent("server-seed/dist/src/cli.js")
             if FileManager.default.fileExists(atPath: seedPath) {
                 return seedPath
             }
@@ -107,8 +107,8 @@ final class ServerProcessManager {
 
         // Homebrew npm global
         let candidates = [
-            "/opt/homebrew/lib/node_modules/@anthropic-ai/oppi/dist/cli.js",
-            "/usr/local/lib/node_modules/@anthropic-ai/oppi/dist/cli.js",
+            "/opt/homebrew/lib/node_modules/@anthropic-ai/oppi/dist/src/cli.js",
+            "/usr/local/lib/node_modules/@anthropic-ai/oppi/dist/src/cli.js",
         ]
 
         return candidates.first { FileManager.default.fileExists(atPath: $0) }

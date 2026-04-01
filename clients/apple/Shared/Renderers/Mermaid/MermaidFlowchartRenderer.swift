@@ -177,16 +177,7 @@ struct MermaidFlowchartRenderer: GraphicalDocumentRenderer, Sendable {
 
     /// Measure text size using CoreText. Returns the natural size without padding.
     private func measureText(_ text: String, font: CTFont, fontSize: CGFloat) -> CGSize {
-        let attributes: [NSAttributedString.Key: Any] = [
-            .font: font,
-        ]
-        let attrString = NSAttributedString(string: text, attributes: attributes)
-        let line = CTLineCreateWithAttributedString(attrString)
-        let bounds = CTLineGetBoundsWithOptions(line, [])
-        return CGSize(
-            width: max(bounds.width, fontSize * 2),
-            height: max(bounds.height, fontSize * 1.4)
-        )
+        MermaidTextUtils.measureText(text, font: font, fontSize: fontSize)
     }
 
     /// Add shape-specific padding around text.
@@ -334,10 +325,30 @@ struct MermaidFlowchartRenderer: GraphicalDocumentRenderer, Sendable {
             path = subroutinePath(rect)
         case .asymmetric:
             path = asymmetricPath(rect)
+        case .parallelogram:
+            path = parallelogramPath(rect)
+        case .parallelogramAlt:
+            path = parallelogramAltPath(rect)
+        case .trapezoid:
+            path = trapezoidPath(rect)
+        case .trapezoidAlt:
+            path = trapezoidAltPath(rect)
+        case .doubleCircle:
+            path = CGPath(ellipseIn: rect, transform: nil)
         }
 
         ctx.addPath(path)
         ctx.drawPath(using: .fillStroke)
+
+        // Double circle: draw inner circle.
+        if shape == .doubleCircle {
+            let inset: CGFloat = 4
+            let innerRect = rect.insetBy(dx: inset, dy: inset)
+            let innerPath = CGPath(ellipseIn: innerRect, transform: nil)
+            ctx.addPath(innerPath)
+            ctx.strokePath()
+        }
+
         ctx.restoreGState()
     }
 
@@ -390,6 +401,50 @@ struct MermaidFlowchartRenderer: GraphicalDocumentRenderer, Sendable {
         return path
     }
 
+    private func parallelogramPath(_ rect: CGRect) -> CGPath {
+        let path = CGMutablePath()
+        let skew = rect.width * 0.15
+        path.move(to: CGPoint(x: rect.minX + skew, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.maxX - skew, y: rect.maxY))
+        path.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
+        path.closeSubpath()
+        return path
+    }
+
+    private func parallelogramAltPath(_ rect: CGRect) -> CGPath {
+        let path = CGMutablePath()
+        let skew = rect.width * 0.15
+        path.move(to: CGPoint(x: rect.minX, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.maxX - skew, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
+        path.addLine(to: CGPoint(x: rect.minX + skew, y: rect.maxY))
+        path.closeSubpath()
+        return path
+    }
+
+    private func trapezoidPath(_ rect: CGRect) -> CGPath {
+        let path = CGMutablePath()
+        let inset = rect.width * 0.15
+        path.move(to: CGPoint(x: rect.minX + inset, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.maxX - inset, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
+        path.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
+        path.closeSubpath()
+        return path
+    }
+
+    private func trapezoidAltPath(_ rect: CGRect) -> CGPath {
+        let path = CGMutablePath()
+        let inset = rect.width * 0.15
+        path.move(to: CGPoint(x: rect.minX, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.maxX - inset, y: rect.maxY))
+        path.addLine(to: CGPoint(x: rect.minX + inset, y: rect.maxY))
+        path.closeSubpath()
+        return path
+    }
+
     // MARK: - Node label
 
     private func drawNodeLabel(
@@ -399,19 +454,14 @@ struct MermaidFlowchartRenderer: GraphicalDocumentRenderer, Sendable {
         ctx: CGContext
     ) {
         let font = CTFontCreateWithName("Helvetica" as CFString, layout.fontSize, nil)
-        let attributes: [NSAttributedString.Key: Any] = [
-            .font: font,
-            .foregroundColor: layout.theme.foreground,
-        ]
-        let attrString = NSAttributedString(string: text, attributes: attributes)
-        let line = CTLineCreateWithAttributedString(attrString)
-        let bounds = CTLineGetBoundsWithOptions(line, [])
-
-        // Center text in the rect.
-        let textX = rect.midX - bounds.width / 2
-        let textY = rect.midY - bounds.height / 2
-
-        drawCTLine(line, at: CGPoint(x: textX, y: textY), fontSize: layout.fontSize, in: ctx)
+        MermaidTextUtils.drawText(
+            text,
+            centeredIn: rect,
+            font: font,
+            fontSize: layout.fontSize,
+            foregroundColor: layout.theme.foreground,
+            in: ctx
+        )
     }
 
     // MARK: - Edges
@@ -433,7 +483,7 @@ struct MermaidFlowchartRenderer: GraphicalDocumentRenderer, Sendable {
         ctx.setStrokeColor(layout.theme.foreground)
 
         switch style {
-        case .arrow:
+        case .arrow, .circle, .cross, .biArrow, .biCircle, .biCross:
             ctx.setLineWidth(1.5)
         case .open:
             ctx.setLineWidth(1.5)
@@ -454,8 +504,11 @@ struct MermaidFlowchartRenderer: GraphicalDocumentRenderer, Sendable {
         }
         ctx.strokePath()
 
-        // Draw arrowhead for arrow, dotted, and thick styles.
-        if style == .arrow || style == .dotted || style == .thick {
+        // Draw arrowhead for arrow, dotted, thick, and directional styles.
+        if style == .arrow || style == .dotted || style == .thick
+            || style == .biArrow || style == .cross || style == .biCross
+            || style == .circle || style == .biCircle
+        {
             drawArrowhead(at: points[points.count - 1],
                           from: points[points.count - 2],
                           size: layout.fontSize * 0.6,
@@ -521,30 +574,28 @@ struct MermaidFlowchartRenderer: GraphicalDocumentRenderer, Sendable {
 
         let smallFontSize = layout.fontSize * 0.85
         let font = CTFontCreateWithName("Helvetica" as CFString, smallFontSize, nil)
-        let attributes: [NSAttributedString.Key: Any] = [
-            .font: font,
-            .foregroundColor: layout.theme.foreground,
-        ]
-        let attrString = NSAttributedString(string: text, attributes: attributes)
-        let line = CTLineCreateWithAttributedString(attrString)
-        let bounds = CTLineGetBoundsWithOptions(line, [])
+        let textSize = MermaidTextUtils.measureText(text, font: font, fontSize: smallFontSize)
 
         // Draw background behind label for readability.
         let labelRect = CGRect(
-            x: midPoint.x - bounds.width / 2 - 3,
-            y: midPoint.y - bounds.height / 2 - 2,
-            width: bounds.width + 6,
-            height: bounds.height + 4
+            x: midPoint.x - textSize.width / 2 - 3,
+            y: midPoint.y - textSize.height / 2 - 2,
+            width: textSize.width + 6,
+            height: textSize.height + 4
         )
         ctx.saveGState()
         ctx.setFillColor(layout.theme.background)
         ctx.fill(labelRect)
 
         // Draw text.
-        drawCTLine(
-            line,
-            at: CGPoint(x: midPoint.x - bounds.width / 2, y: midPoint.y - bounds.height / 2),
-            fontSize: layout.fontSize * 0.85,
+        MermaidTextUtils.drawText(
+            text,
+            at: CGPoint(x: midPoint.x - textSize.width / 2, y: midPoint.y - textSize.height / 2),
+            width: textSize.width,
+            font: font,
+            fontSize: smallFontSize,
+            foregroundColor: layout.theme.foreground,
+            alignment: .center,
             in: ctx
         )
         ctx.restoreGState()

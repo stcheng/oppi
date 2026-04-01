@@ -81,6 +81,13 @@ struct MermaidParser: DocumentParser, Sendable {
         }
     }
 
+    // MARK: - Text normalization
+
+    /// Normalize Mermaid HTML break tags to newlines.
+    private func normalize(_ text: String) -> String {
+        MermaidTextUtils.normalizeBrTags(text)
+    }
+
     // MARK: - Comment stripping
 
     /// Remove `%%` comment from a line.
@@ -550,7 +557,7 @@ struct MermaidParser: DocumentParser, Sendable {
             end += 1
         }
         guard end < chars.count else { return nil }
-        let label = String(chars[(pos + 1) ..< end])
+        let label = normalize(String(chars[(pos + 1) ..< end]))
         return (label, end + 1)
     }
 
@@ -567,7 +574,7 @@ struct MermaidParser: DocumentParser, Sendable {
         // Find --> or ---
         if let arrowRange = remaining.range(of: "-->") {
             let labelEnd = remaining.distance(from: remaining.startIndex, to: arrowRange.lowerBound)
-            let label = String(remaining[remaining.startIndex ..< arrowRange.lowerBound]).trimmingCharacters(in: .whitespaces)
+            let label = normalize(String(remaining[remaining.startIndex ..< arrowRange.lowerBound]).trimmingCharacters(in: .whitespaces))
             if !label.isEmpty {
                 let totalConsumed = start + labelEnd + 3
                 return LabeledEdgeMatch(label: label, style: .arrow, endPos: totalConsumed)
@@ -576,7 +583,7 @@ struct MermaidParser: DocumentParser, Sendable {
 
         if let openRange = remaining.range(of: "---") {
             let labelEnd = remaining.distance(from: remaining.startIndex, to: openRange.lowerBound)
-            let label = String(remaining[remaining.startIndex ..< openRange.lowerBound]).trimmingCharacters(in: .whitespaces)
+            let label = normalize(String(remaining[remaining.startIndex ..< openRange.lowerBound]).trimmingCharacters(in: .whitespaces))
             if !label.isEmpty {
                 var totalConsumed = start + labelEnd + 3
                 // Consume extra hyphens
@@ -592,7 +599,7 @@ struct MermaidParser: DocumentParser, Sendable {
     private func tryParseInlineLabel(_ chars: [Character], _ pos: Int, terminator: String) -> (String, Int)? {
         let remaining = String(chars[pos...])
         guard let range = remaining.range(of: terminator) else { return nil }
-        let label = String(remaining[remaining.startIndex ..< range.lowerBound]).trimmingCharacters(in: .whitespaces)
+        let label = normalize(String(remaining[remaining.startIndex ..< range.lowerBound]).trimmingCharacters(in: .whitespaces))
         if label.isEmpty { return nil }
         let consumed = pos + remaining.distance(from: remaining.startIndex, to: range.upperBound)
         return (label, consumed)
@@ -603,7 +610,7 @@ struct MermaidParser: DocumentParser, Sendable {
         let remaining = String(chars[pos...])
         // Look for .-> terminator
         guard let range = remaining.range(of: ".->") else { return nil }
-        let label = String(remaining[remaining.startIndex ..< range.lowerBound]).trimmingCharacters(in: .whitespaces)
+        let label = normalize(String(remaining[remaining.startIndex ..< range.lowerBound]).trimmingCharacters(in: .whitespaces))
         if label.isEmpty { return nil }
         let consumed = pos + remaining.distance(from: remaining.startIndex, to: range.upperBound)
         return (label, consumed)
@@ -665,21 +672,21 @@ struct MermaidParser: DocumentParser, Sendable {
                     // Cylindrical: [(text)]
                     if let end = findClosing(chars, pos + 2, open: nil, close: ")") {
                         if end + 1 < chars.count, chars[end + 1] == "]" {
-                            let label = String(chars[(pos + 2) ..< end])
+                            let label = normalize(String(chars[(pos + 2) ..< end]))
                             return ShapeMatch(label: label, shape: .cylindrical, endPos: end + 2)
                         }
                     }
                 } else if chars[pos + 1] == "[" {
                     // Subroutine: [[text]]
                     if let end = findDoubleClosing(chars, pos + 2, close: "]") {
-                        let label = String(chars[(pos + 2) ..< end])
+                        let label = normalize(String(chars[(pos + 2) ..< end]))
                         return ShapeMatch(label: label, shape: .subroutine, endPos: end + 2)
                     }
                 }
             }
             // Rectangle: [text]
             if let end = findClosing(chars, pos + 1, open: nil, close: "]") {
-                let label = String(chars[(pos + 1) ..< end])
+                let label = normalize(String(chars[(pos + 1) ..< end]))
                 return ShapeMatch(label: label, shape: .rectangle, endPos: end + 1)
             }
 
@@ -690,21 +697,21 @@ struct MermaidParser: DocumentParser, Sendable {
                     // Stadium: ([text])
                     if let end = findClosing(chars, pos + 2, open: nil, close: "]") {
                         if end + 1 < chars.count, chars[end + 1] == ")" {
-                            let label = String(chars[(pos + 2) ..< end])
+                            let label = normalize(String(chars[(pos + 2) ..< end]))
                             return ShapeMatch(label: label, shape: .stadium, endPos: end + 2)
                         }
                     }
                 } else if chars[pos + 1] == "(" {
                     // Circle: ((text))
                     if let end = findDoubleClosing(chars, pos + 2, close: ")") {
-                        let label = String(chars[(pos + 2) ..< end])
+                        let label = normalize(String(chars[(pos + 2) ..< end]))
                         return ShapeMatch(label: label, shape: .circle, endPos: end + 2)
                     }
                 }
             }
             // Rounded: (text)
             if let end = findClosing(chars, pos + 1, open: nil, close: ")") {
-                let label = String(chars[(pos + 1) ..< end])
+                let label = normalize(String(chars[(pos + 1) ..< end]))
                 return ShapeMatch(label: label, shape: .rounded, endPos: end + 1)
             }
 
@@ -713,20 +720,20 @@ struct MermaidParser: DocumentParser, Sendable {
             if pos + 1 < chars.count, chars[pos + 1] == "{" {
                 // Hexagon: {{text}}
                 if let end = findDoubleClosing(chars, pos + 2, close: "}") {
-                    let label = String(chars[(pos + 2) ..< end])
+                    let label = normalize(String(chars[(pos + 2) ..< end]))
                     return ShapeMatch(label: label, shape: .hexagon, endPos: end + 2)
                 }
             }
             // Diamond: {text}
             if let end = findClosing(chars, pos + 1, open: nil, close: "}") {
-                let label = String(chars[(pos + 1) ..< end])
+                let label = normalize(String(chars[(pos + 1) ..< end]))
                 return ShapeMatch(label: label, shape: .diamond, endPos: end + 1)
             }
 
         case ">":
             // Asymmetric: >text]
             if let end = findClosing(chars, pos + 1, open: nil, close: "]") {
-                let label = String(chars[(pos + 1) ..< end])
+                let label = normalize(String(chars[(pos + 1) ..< end]))
                 return ShapeMatch(label: label, shape: .asymmetric, endPos: end + 1)
             }
 
@@ -799,7 +806,7 @@ struct MermaidParser: DocumentParser, Sendable {
             }
         }
 
-        return SequenceDiagram(participants: participants, messages: messages)
+        return SequenceDiagram(participants: participants, messages: messages, notes: [], blocks: [], autonumber: false)
     }
 
     private func parseParticipant(_ line: String) -> SequenceParticipant? {
@@ -820,11 +827,11 @@ struct MermaidParser: DocumentParser, Sendable {
         let parts = rest.components(separatedBy: " as ")
         if parts.count >= 2 {
             return SequenceParticipant(id: parts[0].trimmingCharacters(in: .whitespaces),
-                                       label: parts[1].trimmingCharacters(in: .whitespaces),
+                                       label: normalize(parts[1].trimmingCharacters(in: .whitespaces)),
                                        isActor: isActor)
         }
 
-        return SequenceParticipant(id: rest, label: rest, isActor: isActor)
+        return SequenceParticipant(id: rest, label: normalize(rest), isActor: isActor)
     }
 
     /// Parse sequence message: `A->>B: text`, `A-->>B: text`, etc.
@@ -848,7 +855,7 @@ struct MermaidParser: DocumentParser, Sendable {
                 let parts = afterArrow.split(separator: ":", maxSplits: 1).map(String.init)
                 guard let firstPart = parts.first else { continue }
                 let to = firstPart.trimmingCharacters(in: .whitespaces)
-                let text = parts.count > 1 ? parts[1].trimmingCharacters(in: .whitespaces) : ""
+                let text = parts.count > 1 ? normalize(parts[1].trimmingCharacters(in: .whitespaces)) : ""
 
                 if !from.isEmpty, !to.isEmpty {
                     return SequenceMessage(from: from, to: to, text: text, arrowStyle: style)

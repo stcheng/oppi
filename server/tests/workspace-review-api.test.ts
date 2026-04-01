@@ -200,9 +200,7 @@ describe("POST /workspaces/:wid/review/session", () => {
 
       const createdSession = makeSession("new-session", "w1");
       let savedSession: Session | undefined;
-      const setPendingPromptPreamble = vi.fn();
       const startSession = vi.fn(async () => createdSession);
-      const sendPrompt = vi.fn(async () => undefined);
       const getActiveSession = vi.fn(() => createdSession);
 
       const ctx = {
@@ -217,10 +215,8 @@ describe("POST /workspaces/:wid/review/session", () => {
           deleteSession: vi.fn(),
         },
         sessions: {
-          setPendingPromptPreamble,
           setPendingExtensionFactories: vi.fn(),
           startSession,
-          sendPrompt,
           getActiveSession,
           stopSession: vi.fn(async () => undefined),
         },
@@ -250,18 +246,11 @@ describe("POST /workspaces/:wid/review/session", () => {
         "new-session",
         expect.objectContaining({ id: "w1" }),
       );
-      // Phase 1: server no longer auto-prompts — iOS drives the prompt
-      expect(sendPrompt).not.toHaveBeenCalled();
-      expect(body.visiblePrompt).toBe("Review these selected changes.");
-      expect(body.contextSummary).toEqual([
-        expect.objectContaining({ kind: "file_diff", path: "review.swift" }),
-      ]);
-      expect(setPendingPromptPreamble).toHaveBeenCalledTimes(1);
-      expect(setPendingPromptPreamble.mock.calls[0]?.[1]).toContain(
-        "Continue from Oppi Workspace Review.",
+      // No preamble — agent reads files itself. iOS injects @paths.
+      expect(body.visiblePrompt).toBe(
+        "Review the selected files for bugs, regressions, and risky patterns. Cite file and line number for each finding.",
       );
-      expect(setPendingPromptPreamble.mock.calls[0]?.[1]).toContain("review.swift");
-      expect(setPendingPromptPreamble.mock.calls[0]?.[1]).toContain("+let value = newName");
+      expect(body.filePaths).toEqual(["review.swift"]);
     } finally {
       rmSync(repoDir, { recursive: true, force: true });
     }
@@ -308,4 +297,3 @@ describe("POST /workspaces/:wid/review/session", () => {
     }
   });
 });
-

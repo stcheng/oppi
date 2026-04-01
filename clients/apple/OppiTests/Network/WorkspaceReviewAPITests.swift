@@ -97,10 +97,7 @@ struct WorkspaceReviewAPITests {
                 "cost": 0
               },
               "visiblePrompt": "Prepare a commit for these selected changes.",
-              "contextSummary": [
-                { "kind": "file_diff", "path": "Sources/App.swift", "addedLines": 5, "removedLines": 2 },
-                { "kind": "file_diff", "path": "README.md", "addedLines": 1, "removedLines": 0 }
-              ]
+              "filePaths": ["Sources/App.swift", "README.md"]
             }
             """)
         }
@@ -116,13 +113,7 @@ struct WorkspaceReviewAPITests {
         #expect(response.session.id == "s-new")
         #expect(response.session.workspaceId == "w1")
         #expect(response.visiblePrompt == "Prepare a commit for these selected changes.")
-        #expect(response.contextSummary.count == 2)
-        #expect(response.contextSummary[0].path == "Sources/App.swift")
-        #expect(response.contextSummary[0].addedLines == 5)
-        #expect(response.contextSummary[0].removedLines == 2)
-        #expect(response.contextSummary[1].path == "README.md")
-        #expect(response.contextSummary[1].addedLines == 1)
-        #expect(response.contextSummary[1].removedLines == 0)
+        #expect(response.filePaths == ["Sources/App.swift", "README.md"])
     }
 
     private func requestBodyData(_ request: URLRequest) -> Data {

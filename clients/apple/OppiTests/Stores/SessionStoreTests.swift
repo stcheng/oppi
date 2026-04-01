@@ -326,43 +326,4 @@ struct SessionStoreTurnEndedTests {
 
 // MARK: - Context summary clearing
 
-@Suite("SessionStore Context Summary")
-@MainActor
-struct SessionStoreContextSummaryTests {
 
-    @Test func clearContextSummaryRemovesFromSession() {
-        let store = SessionStore()
-        store.switchServer(to: "srv1")
-        var session = makeTestSession(id: "s1")
-        session.contextSummary = [
-            ContextSummary(kind: "file_diff", path: "a.swift", addedLines: 3, removedLines: 1),
-        ]
-        store.upsert(session)
-
-        #expect(store.session(id: "s1")?.contextSummary != nil)
-
-        store.clearContextSummary(for: "s1")
-
-        #expect(store.session(id: "s1")?.contextSummary == nil)
-    }
-
-    @Test func clearContextSummaryNoopForMissingSession() {
-        let store = SessionStore()
-        store.switchServer(to: "srv1")
-
-        // Should not crash
-        store.clearContextSummary(for: "nonexistent")
-    }
-
-    @Test func clearContextSummaryNoopWhenAlreadyNil() {
-        let store = SessionStore()
-        store.switchServer(to: "srv1")
-        store.upsert(makeTestSession(id: "s1"))
-
-        #expect(store.session(id: "s1")?.contextSummary == nil)
-
-        store.clearContextSummary(for: "s1")
-
-        #expect(store.session(id: "s1")?.contextSummary == nil)
-    }
-}

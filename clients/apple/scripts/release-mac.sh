@@ -252,6 +252,52 @@ echo "Server seed: $BEFORE_SIZE -> $AFTER_SIZE (after stripping)"
 TOTAL_SIZE=$(du -sh "$RESOURCES" | awk '{print $1}')
 echo "Total Resources: $TOTAL_SIZE (Bun $BUN_SIZE + seed $AFTER_SIZE)"
 
+# ── Step 6c: Verify server-seed integrity ──
+#
+# Static check: verify the bundled server-seed contains everything
+# ServerProcessManager.resolveServerCLIPath() expects at runtime.
+# This catches path mismatches between the server build output (tsconfig rootDir)
+# and the hardcoded paths in the Mac app Swift code.
+
+echo "--- Step 6c: Verifying server-seed integrity ---"
+SEED_CLI="$SERVER_SEED/dist/src/cli.js"
+if [[ ! -f "$SEED_CLI" ]]; then
+    echo "ERROR: Server CLI entrypoint missing!"
+    echo "  Expected: $SEED_CLI"
+    echo "  This means the server build output structure doesn't match"
+    echo "  ServerProcessManager.resolveServerCLIPath()."
+    echo ""
+    echo "  Check server/tsconfig.json rootDir vs the hardcoded paths in"
+    echo "  OppiMac/Server/ServerProcessManager.swift"
+    ls -R "$SERVER_SEED/dist/" 2>/dev/null | head -20
+    exit 1
+fi
+echo "  CLI entrypoint: OK ($SEED_CLI)"
+
+# Verify package.json exists (needed for bun install in runtime dir)
+if [[ ! -f "$SERVER_SEED/package.json" ]]; then
+    echo "ERROR: server-seed/package.json missing!"
+    exit 1
+fi
+echo "  package.json:   OK"
+
+# Verify node_modules has key dependencies
+for dep in "@anthropic-ai/sdk" "@mariozechner/pi-coding-agent"; do
+    dep_dir="$SERVER_SEED/node_modules/$dep"
+    if [[ ! -d "$dep_dir" ]]; then
+        echo "ERROR: Missing required dependency: $dep"
+        exit 1
+    fi
+done
+echo "  Dependencies:   OK"
+
+# Verify .seed-version was written
+if [[ ! -f "$SERVER_SEED/.seed-version" ]]; then
+    echo "ERROR: .seed-version missing!"
+    exit 1
+fi
+echo "  Seed version:   $(cat "$SERVER_SEED/.seed-version")"
+
 # ── Step 7: Codesign (inside-out) ──
 #
 # macOS codesigning requires inside-out: sign leaf Mach-O binaries first with

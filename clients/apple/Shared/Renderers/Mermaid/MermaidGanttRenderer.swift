@@ -362,6 +362,8 @@ enum MermaidGanttRenderer {
         case .milestone:
             // Milestones use diamond marker, not bars.
             return theme.accentPurple
+        case .vert:
+            return theme.foregroundDim.copy(alpha: 0.4) ?? theme.foregroundDim
         }
     }
 

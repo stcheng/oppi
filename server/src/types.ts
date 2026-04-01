@@ -116,9 +116,6 @@ export interface Session {
 
   // Parent-child tree (spawn_agent)
   parentSessionId?: string; // set when spawned by another session
-
-  // Review context (persisted so iOS can restore pills on re-entry)
-  contextSummary?: ContextSummary[];
 }
 
 export interface SessionMessage {
@@ -458,19 +455,12 @@ export interface CreateWorkspaceReviewSessionRequest {
   selectedSessionId?: string;
 }
 
-export interface ContextSummary {
-  kind: "file_diff";
-  path: string;
-  addedLines: number;
-  removedLines: number;
-}
-
 export interface WorkspaceReviewSessionResponse {
   action: WorkspaceReviewSessionAction;
   selectedPathCount: number;
   session: Session;
   visiblePrompt: string;
-  contextSummary: ContextSummary[];
+  filePaths: string[];
 }
 
 // ─── Workspace File Browser ───

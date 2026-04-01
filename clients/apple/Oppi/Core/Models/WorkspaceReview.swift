@@ -111,64 +111,15 @@ struct WorkspaceReviewSessionResponse: Codable, Sendable, Equatable {
     let selectedPathCount: Int
     let session: Session
     let visiblePrompt: String
-    let contextSummary: [ContextSummary]
-}
-
-struct ContextSummary: Codable, Sendable, Equatable {
-    let kind: String
-    let path: String
-    let addedLines: Int
-    let removedLines: Int
-}
-
-/// Display-only context summary for the input bar pill strip.
-struct ContextPill: Identifiable, Sendable, Equatable, Hashable {
-    let id: String
-    let path: String
-    let addedLines: Int
-    let removedLines: Int
-
-    init(from summary: ContextSummary) {
-        self.id = summary.path
-        self.path = summary.path
-        self.addedLines = summary.addedLines
-        self.removedLines = summary.removedLines
-    }
-
-    var displayTitle: String {
-        (path as NSString).lastPathComponent
-    }
-
-    var displaySubtitle: String? {
-        let parts = [
-            addedLines > 0 ? "+\(addedLines)" : nil,
-            removedLines > 0 ? "-\(removedLines)" : nil,
-        ].compactMap { $0 }
-        return parts.isEmpty ? nil : parts.joined(separator: " ")
-    }
-
-    /// Synthesize a review file for presenting the diff detail sheet.
-    /// Context pills come from the review bundle where the file is already known
-    /// to be modified, so "M" is the correct default status.
-    func toReviewFile() -> WorkspaceReviewFile {
-        WorkspaceReviewFile(
-            path: path,
-            status: "M",
-            addedLines: addedLines > 0 ? addedLines : nil,
-            removedLines: removedLines > 0 ? removedLines : nil,
-            isStaged: false,
-            isUnstaged: true,
-            isUntracked: false,
-            selectedSessionTouched: true
-        )
-    }
+    let filePaths: [String]
 }
 
 /// Navigation destination for a created review session.
-/// Pills are now derived from `session.contextSummary` in ChatView.
+/// Carries file paths so the destination ChatView can populate pendingFiles.
 struct ReviewSessionNavDestination: Identifiable, Hashable {
     let id: String
     let inputText: String
+    let filePaths: [String]
 }
 
 struct WorkspaceReviewDiffHunk: Codable, Sendable, Equatable, Identifiable {

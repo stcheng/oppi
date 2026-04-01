@@ -373,16 +373,14 @@ enum MermaidSequenceRenderer {
 
             // Label centered in box.
             let font = CTFontCreateWithName("Helvetica" as CFString, fontSize, nil)
-            let attrs: [NSAttributedString.Key: Any] = [
-                .font: font,
-                .foregroundColor: theme.foreground,
-            ]
-            let attrStr = NSAttributedString(string: p.label, attributes: attrs)
-            let line = CTLineCreateWithAttributedString(attrStr)
-            let bounds = CTLineGetBoundsWithOptions(line, [])
-            let textX = rect.midX - bounds.width / 2
-            let textY = rect.midY - bounds.height / 2
-            drawCTLine(line, at: CGPoint(x: textX, y: textY), fontSize: fontSize, in: ctx)
+            MermaidTextUtils.drawText(
+                p.label,
+                centeredIn: rect,
+                font: font,
+                fontSize: fontSize,
+                foregroundColor: theme.foreground,
+                in: ctx
+            )
         }
     }
 
@@ -439,16 +437,19 @@ enum MermaidSequenceRenderer {
 
         // Label below the figure.
         let font = CTFontCreateWithName("Helvetica" as CFString, fontSize, nil)
-        let attrs: [NSAttributedString.Key: Any] = [
-            .font: font,
-            .foregroundColor: theme.foreground,
-        ]
-        let attrStr = NSAttributedString(string: label, attributes: attrs)
-        let line = CTLineCreateWithAttributedString(attrStr)
-        let bounds = CTLineGetBoundsWithOptions(line, [])
+        let textSize = MermaidTextUtils.measureText(label, font: font, fontSize: fontSize)
         let labelY = bodyEndY + legLen + c.fontSize * 0.3
-        let labelX = centerX - bounds.width / 2
-        drawCTLine(line, at: CGPoint(x: labelX, y: labelY), fontSize: fontSize, in: ctx)
+        let labelX = centerX - textSize.width / 2
+        MermaidTextUtils.drawText(
+            label,
+            at: CGPoint(x: labelX, y: labelY),
+            width: textSize.width,
+            font: font,
+            fontSize: fontSize,
+            foregroundColor: theme.foreground,
+            alignment: .center,
+            in: ctx
+        )
     }
 
     // MARK: - Messages
@@ -528,18 +529,22 @@ enum MermaidSequenceRenderer {
 
         // Draw the label above the arrow.
         if !message.text.isEmpty {
-            let font = CTFontCreateWithName("Helvetica" as CFString, fontSize * 0.85, nil)
-            let attrs: [NSAttributedString.Key: Any] = [
-                .font: font,
-                .foregroundColor: theme.foreground,
-            ]
-            let attrStr = NSAttributedString(string: message.text, attributes: attrs)
-            let line = CTLineCreateWithAttributedString(attrStr)
-            let bounds = CTLineGetBoundsWithOptions(line, [])
+            let msgFontSize = fontSize * 0.85
+            let font = CTFontCreateWithName("Helvetica" as CFString, msgFontSize, nil)
+            let textSize = MermaidTextUtils.measureText(message.text, font: font, fontSize: msgFontSize)
             let midX = (fromX + toX) / 2
-            let textX = midX - bounds.width / 2
-            let textY = y - bounds.height - c.labelGap
-            drawCTLine(line, at: CGPoint(x: textX, y: textY), fontSize: fontSize * 0.85, in: ctx)
+            let textX = midX - textSize.width / 2
+            let textY = y - textSize.height - c.labelGap
+            MermaidTextUtils.drawText(
+                message.text,
+                at: CGPoint(x: textX, y: textY),
+                width: textSize.width,
+                font: font,
+                fontSize: msgFontSize,
+                foregroundColor: theme.foreground,
+                alignment: .center,
+                in: ctx
+            )
         }
     }
 
@@ -587,16 +592,18 @@ enum MermaidSequenceRenderer {
 
         // Label to the right of the loopback.
         if !message.text.isEmpty {
-            let font = CTFontCreateWithName("Helvetica" as CFString, fontSize * 0.85, nil)
-            let attrs: [NSAttributedString.Key: Any] = [
-                .font: font,
-                .foregroundColor: theme.foreground,
-            ]
-            let attrStr = NSAttributedString(string: message.text, attributes: attrs)
-            let line = CTLineCreateWithAttributedString(attrStr)
+            let msgFontSize = fontSize * 0.85
+            let font = CTFontCreateWithName("Helvetica" as CFString, msgFontSize, nil)
             let textX = x + loopW + c.labelGap
             let textY = y + loopH * 0.3 - fontSize * 0.4
-            drawCTLine(line, at: CGPoint(x: textX, y: textY), fontSize: fontSize * 0.85, in: ctx)
+            MermaidTextUtils.drawText(
+                message.text,
+                at: CGPoint(x: textX, y: textY),
+                font: font,
+                fontSize: msgFontSize,
+                foregroundColor: theme.foreground,
+                in: ctx
+            )
         }
     }
 
@@ -613,7 +620,7 @@ enum MermaidSequenceRenderer {
         switch style {
         case .solid, .dashed:
             drawFilledArrowhead(ctx: ctx, at: tip, pointingRight: pointingRight, size: c.arrowSize, theme: theme)
-        case .solidOpen, .dashedOpen:
+        case .solidOpen, .dashedOpen, .solidAsync, .dashedAsync:
             // No end marker — open end.
             break
         case .solidCross, .dashedCross:
@@ -671,26 +678,15 @@ enum MermaidSequenceRenderer {
 
     private static func isDashedStyle(_ style: SequenceArrowStyle) -> Bool {
         switch style {
-        case .dashed, .dashedOpen, .dashedCross: true
-        case .solid, .solidOpen, .solidCross: false
+        case .dashed, .dashedOpen, .dashedCross, .dashedAsync: true
+        case .solid, .solidOpen, .solidCross, .solidAsync: false
         }
     }
 
     private static func measureText(_ text: String, font: CTFont, fontSize: CGFloat) -> CGSize {
-        let attrs: [NSAttributedString.Key: Any] = [.font: font]
-        let attrStr = NSAttributedString(string: text, attributes: attrs)
-        let line = CTLineCreateWithAttributedString(attrStr)
-        let bounds = CTLineGetBoundsWithOptions(line, [])
-        return CGSize(
-            width: max(bounds.width, fontSize * 2),
-            height: max(bounds.height, fontSize * 1.4)
-        )
+        MermaidTextUtils.measureText(text, font: font, fontSize: fontSize)
     }
 
-    /// Draw a CTLine at (x, y) in UIKit top-left coordinates.
-    ///
-    /// Flips locally around the text position so text renders right-side-up
-    /// in a Y-down coordinate system.
     private static func drawCTLine(_ line: CTLine, at point: CGPoint, fontSize: CGFloat, in ctx: CGContext) {
         ctx.saveGState()
         ctx.translateBy(x: point.x, y: point.y + fontSize)

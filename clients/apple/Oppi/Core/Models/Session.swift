@@ -42,8 +42,7 @@ struct Session: Identifiable, Sendable, Equatable {
     // Parent-child tree (spawn_agent)
     var parentSessionId: String?
 
-    // Review context (persisted so pills survive navigation)
-    var contextSummary: [ContextSummary]?
+
 
     /// Display title: name, first message preview, or session ID prefix.
     var displayTitle: String {
@@ -82,7 +81,7 @@ extension Session: Codable {
         case name, status, createdAt, lastActivity
         case model, messageCount, tokens, cost, changeStats
         case contextTokens, contextWindow, firstMessage, lastMessage
-        case thinkingLevel, parentSessionId, contextSummary
+        case thinkingLevel, parentSessionId
     }
 
     init(from decoder: Decoder) throws {
@@ -103,7 +102,7 @@ extension Session: Codable {
         lastMessage = try c.decodeIfPresent(String.self, forKey: .lastMessage)
         thinkingLevel = try c.decodeIfPresent(String.self, forKey: .thinkingLevel)
         parentSessionId = try c.decodeIfPresent(String.self, forKey: .parentSessionId)
-        contextSummary = try c.decodeIfPresent([ContextSummary].self, forKey: .contextSummary)
+
 
         // Server sends Unix milliseconds
         let createdMs = try c.decode(Double.self, forKey: .createdAt)
@@ -131,7 +130,7 @@ extension Session: Codable {
         try c.encodeIfPresent(lastMessage, forKey: .lastMessage)
         try c.encodeIfPresent(thinkingLevel, forKey: .thinkingLevel)
         try c.encodeIfPresent(parentSessionId, forKey: .parentSessionId)
-        try c.encodeIfPresent(contextSummary, forKey: .contextSummary)
+
         try c.encode(createdAt.timeIntervalSince1970 * 1000, forKey: .createdAt)
         try c.encode(lastActivity.timeIntervalSince1970 * 1000, forKey: .lastActivity)
     }
