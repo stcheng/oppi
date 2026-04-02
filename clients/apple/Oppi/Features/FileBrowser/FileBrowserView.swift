@@ -212,7 +212,8 @@ struct FileBrowserView: View {
                                 }
                             } icon: {
                                 let icon = FileIcon.forPath(result.path)
-                                Image(systemName: icon.symbolName)
+                                icon.image
+                                    .renderingMode(icon.isAssetImage ? .template : .original)
                                     .foregroundStyle(icon.color)
                             }
                         }
@@ -282,7 +283,8 @@ struct FileBrowserView: View {
                     }
                 } icon: {
                     let icon = FileIcon.forPath(entry.name)
-                    Image(systemName: icon.symbolName)
+                    icon.image
+                        .renderingMode(icon.isAssetImage ? .template : .original)
                         .foregroundStyle(icon.color)
                 }
             }

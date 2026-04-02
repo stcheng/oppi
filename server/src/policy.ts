@@ -76,6 +76,13 @@ export type {
 } from "./policy-types.js";
 
 const CHAIN_HELPER_EXECUTABLES = new Set(["cd", "echo", "pwd", "true", "false", ":", "#"]);
+
+/** Restriction rank for comparing decisions: deny > ask > allow. */
+function restrictionRank(decision: string): number {
+  if (decision === "deny") return 2;
+  if (decision === "ask") return 1;
+  return 0;
+}
 const FILE_PATH_TOOLS = new Set(["read", "write", "edit", "find", "ls"]);
 
 function executableName(raw: string): string {
@@ -559,8 +566,26 @@ export class PolicyEngine {
       return heuristicDecision;
     }
 
-    const parsed = this.parseRequestContext(req);
     const applicable = rules.filter((rule) => this.isRuleApplicable(rule, sessionId, workspaceId));
+
+    // Bash compound commands: evaluate rules per-segment so that
+    // `git commit && git push` checks each segment independently.
+    // This prevents an allow rule on one segment from hiding an ask/deny
+    // rule on a different segment in the same compound command.
+    if (req.tool === "bash") {
+      const bashApplicable = applicable.filter((rule) => rule.tool === "bash" || rule.tool === "*");
+      const perSegResult = this.evaluateBashRulesPerSegment(req, bashApplicable);
+      if (perSegResult) return perSegResult;
+
+      return {
+        action: this.policy.defaultAction,
+        reason: `No matching rule — using default ${this.policy.defaultAction}`,
+        layer: "default",
+      };
+    }
+
+    // Non-bash tools: existing single-match path
+    const parsed = this.parseRequestContext(req);
     const matching = applicable.filter((rule) => this.matchesUserRule(rule, req, parsed));
 
     if (matching.length === 0) {
@@ -691,6 +716,85 @@ export class PolicyEngine {
     }
 
     return rule.scope === "global";
+  }
+
+  /**
+   * Check if a rule matches a single bash command segment.
+   *
+   * Checks both executable AND pattern against the segment (not the
+   * primary executable of the full chain). This ensures compound
+   * commands like `git commit && git push` evaluate each segment
+   * independently.
+   */
+  private matchesBashRuleForSegment(rule: Rule, segment: string): boolean {
+    if (rule.executable) {
+      const parsed = parseBashCommand(segment);
+      const segExe = executableName(parsed.executable);
+      if (!segExe || segExe !== rule.executable) return false;
+    }
+
+    if (rule.pattern) {
+      return matchBashPattern(segment, rule.pattern);
+    }
+
+    return true;
+  }
+
+  /**
+   * Evaluate user rules against a bash compound command per-segment.
+   *
+   * Splits on && / || / ; and evaluates each segment independently.
+   * Returns the most restrictive result across all segments
+   * (deny > ask > allow) so a `git push` ask rule can't be hidden
+   * by a `git commit` allow rule in the same compound command.
+   */
+  private evaluateBashRulesPerSegment(
+    req: GateRequest,
+    applicable: Rule[],
+  ): PolicyEvalResult | null {
+    const command = (req.input as { command?: string }).command || "";
+    if (command.trim().length === 0) return null;
+
+    const segments = splitBashCommandChain(command);
+    let mostRestrictive: { rule: Rule; decision: Rule["decision"] } | undefined;
+
+    for (const segment of segments) {
+      const segmentMatching = applicable.filter((rule) =>
+        this.matchesBashRuleForSegment(rule, segment),
+      );
+      if (segmentMatching.length === 0) continue;
+
+      // Deny wins within segment — short-circuit
+      const denyRules = segmentMatching.filter((r) => r.decision === "deny");
+      if (denyRules.length > 0) {
+        const best = this.pickMostSpecificRule(denyRules);
+        return {
+          action: "deny",
+          reason: best.label || "Denied by rule",
+          layer: this.layerForScope(best.scope),
+          ruleLabel: best.label,
+          ruleId: best.id,
+        };
+      }
+
+      const best = this.pickMostSpecificRule(segmentMatching);
+      if (
+        !mostRestrictive ||
+        restrictionRank(best.decision) > restrictionRank(mostRestrictive.decision)
+      ) {
+        mostRestrictive = { rule: best, decision: best.decision };
+      }
+    }
+
+    if (!mostRestrictive) return null;
+
+    return {
+      action: mostRestrictive.decision,
+      reason: mostRestrictive.rule.label || `Matched ${mostRestrictive.rule.scope} rule`,
+      layer: this.layerForScope(mostRestrictive.rule.scope),
+      ruleLabel: mostRestrictive.rule.label,
+      ruleId: mostRestrictive.rule.id,
+    };
   }
 
   private matchesUserRule(rule: Rule, req: GateRequest, parsed: ParsedRequestContext): boolean {

@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// SF Symbol and color for a file path, based on extension or well-known filename.
 ///
@@ -8,6 +9,31 @@ import SwiftUI
 struct FileIcon: Equatable, Sendable {
     let symbolName: String
     let color: Color
+    /// Asset catalog image name. When set, preferred over `symbolName`.
+    let assetName: String?
+
+    init(symbolName: String, color: Color, assetName: String? = nil) {
+        self.symbolName = symbolName
+        self.color = color
+        self.assetName = assetName
+    }
+
+    /// Returns a SwiftUI Image using the asset catalog icon when available,
+    /// falling back to the SF Symbol.
+    var image: Image {
+        if let assetName, UIImage(named: assetName) != nil {
+            return Image(assetName)
+        }
+        return Image(systemName: symbolName)
+    }
+
+    /// Whether this icon uses a custom asset (not an SF Symbol).
+    var isAssetImage: Bool {
+        if let assetName, UIImage(named: assetName) != nil {
+            return true
+        }
+        return false
+    }
 
     /// Resolve icon for a file path. Checks well-known filenames first,
     /// then extension, then falls back to a generic doc icon.
@@ -106,31 +132,31 @@ struct FileIcon: Equatable, Sendable {
         switch ext {
         // Swift
         case "swift":
-            return Self(symbolName: "swift", color: .themeOrange)
+            return Self(symbolName: "swift", color: .themeOrange, assetName: "lang-swift")
 
         // TypeScript
         case "ts", "tsx", "mts", "cts":
-            return Self(symbolName: "t.square.fill", color: .themeBlue)
+            return Self(symbolName: "t.square.fill", color: .themeBlue, assetName: "lang-typescript")
 
         // JavaScript
         case "js", "jsx", "mjs", "cjs":
-            return Self(symbolName: "j.square.fill", color: .themeYellow)
+            return Self(symbolName: "j.square.fill", color: .themeYellow, assetName: "lang-nodejs")
 
         // Python
         case "py", "pyi", "pyw":
-            return Self(symbolName: "p.square.fill", color: .themeCyan)
+            return Self(symbolName: "p.square.fill", color: .themeCyan, assetName: "lang-python")
 
         // Go
         case "go":
-            return Self(symbolName: "g.square.fill", color: .themeCyan)
+            return Self(symbolName: "g.square.fill", color: .themeCyan, assetName: "lang-go")
 
         // Rust
         case "rs":
-            return Self(symbolName: "r.square.fill", color: .themeOrange)
+            return Self(symbolName: "r.square.fill", color: .themeOrange, assetName: "lang-rust")
 
         // Ruby
         case "rb", "erb":
-            return Self(symbolName: "r.square.fill", color: .themeRed)
+            return Self(symbolName: "r.square.fill", color: .themeRed, assetName: "lang-ruby")
 
         // Shell
         case "sh", "bash", "zsh", "fish", "ksh", "csh":
@@ -154,7 +180,7 @@ struct FileIcon: Equatable, Sendable {
 
         // Zig
         case "zig":
-            return Self(symbolName: "z.square.fill", color: .themeOrange)
+            return Self(symbolName: "z.square.fill", color: .themeOrange, assetName: "lang-zig")
 
         // HTML / XML / markup
         case "html", "htm", "xml", "xhtml", "svg", "plist", "xib",
@@ -183,7 +209,7 @@ struct FileIcon: Equatable, Sendable {
 
         // Markdown
         case "md", "mdx", "markdown", "rst":
-            return Self(symbolName: "doc.richtext", color: .themeBlue)
+            return Self(symbolName: "doc.richtext", color: .themeBlue, assetName: "lang-markdown")
 
         // Images
         case "png", "jpg", "jpeg", "gif", "webp", "ico", "bmp",

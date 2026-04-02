@@ -162,7 +162,8 @@ struct ComposerFilePill: View {
             : FileIcon.forPath(file.path)
 
         HStack(spacing: 4) {
-            Image(systemName: icon.symbolName)
+            icon.image
+                .renderingMode(icon.isAssetImage ? .template : .original)
                 .font(.appTag)
                 .foregroundStyle(icon.color)
 

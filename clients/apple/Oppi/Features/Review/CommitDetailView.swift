@@ -143,7 +143,8 @@ struct CommitDetailView: View {
             selectedFile = file
         } label: {
             HStack(spacing: 6) {
-                Image(systemName: icon.symbolName)
+                icon.image
+                    .renderingMode(icon.isAssetImage ? .template : .original)
                     .font(.appChip)
                     .foregroundStyle(icon.color)
                     .frame(width: 16, height: 16)

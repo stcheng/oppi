@@ -41,7 +41,8 @@ struct FileSuggestionList: View {
                             .foregroundStyle(.themeYellow)
                     } else {
                         let icon = FileIcon.forPath(suggestion.path)
-                        Image(systemName: icon.symbolName)
+                        icon.image
+                            .renderingMode(icon.isAssetImage ? .template : .original)
                             .foregroundStyle(icon.color)
                     }
                 }

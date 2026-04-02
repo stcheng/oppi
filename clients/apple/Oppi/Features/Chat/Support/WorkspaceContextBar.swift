@@ -579,7 +579,8 @@ struct WorkspaceContextBar: View {
                         .frame(width: 16)
                 }
 
-                Image(systemName: icon.symbolName)
+                icon.image
+                    .renderingMode(icon.isAssetImage ? .template : .original)
                     .font(.appChip)
                     .foregroundStyle(icon.color)
                     .frame(width: 16, height: 16)

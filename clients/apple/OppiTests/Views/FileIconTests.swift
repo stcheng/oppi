@@ -11,47 +11,56 @@ struct FileIconTests {
         let icon = FileIcon.forPath("Sources/main.swift")
         #expect(icon.symbolName == "swift")
         #expect(icon.color == .themeOrange)
+        #expect(icon.assetName == "lang-swift")
     }
 
     @Test func typescriptUsesTSquare() {
         let icon = FileIcon.forPath("src/index.ts")
         #expect(icon.symbolName == "t.square.fill")
         #expect(icon.color == .themeBlue)
+        #expect(icon.assetName == "lang-typescript")
 
         let tsx = FileIcon.forPath("App.tsx")
         #expect(tsx.symbolName == "t.square.fill")
+        #expect(tsx.assetName == "lang-typescript")
     }
 
     @Test func javascriptUsesJSquare() {
         let icon = FileIcon.forPath("index.js")
         #expect(icon.symbolName == "j.square.fill")
         #expect(icon.color == .themeYellow)
+        #expect(icon.assetName == "lang-nodejs")
 
         let jsx = FileIcon.forPath("App.jsx")
         #expect(jsx.symbolName == "j.square.fill")
+        #expect(jsx.assetName == "lang-nodejs")
     }
 
     @Test func pythonUsesPSquare() {
         let icon = FileIcon.forPath("main.py")
         #expect(icon.symbolName == "p.square.fill")
         #expect(icon.color == .themeCyan)
+        #expect(icon.assetName == "lang-python")
     }
 
     @Test func goUsesGSquare() {
         let icon = FileIcon.forPath("main.go")
         #expect(icon.symbolName == "g.square.fill")
+        #expect(icon.assetName == "lang-go")
     }
 
     @Test func rustUsesRSquare() {
         let icon = FileIcon.forPath("lib.rs")
         #expect(icon.symbolName == "r.square.fill")
         #expect(icon.color == .themeOrange)
+        #expect(icon.assetName == "lang-rust")
     }
 
     @Test func rubyUsesRSquareRed() {
         let icon = FileIcon.forPath("app.rb")
         #expect(icon.symbolName == "r.square.fill")
         #expect(icon.color == .themeRed)
+        #expect(icon.assetName == "lang-ruby")
     }
 
     @Test func shellUsesTerminal() {
@@ -90,6 +99,7 @@ struct FileIconTests {
     @Test func zigUsesZSquare() {
         let icon = FileIcon.forPath("main.zig")
         #expect(icon.symbolName == "z.square.fill")
+        #expect(icon.assetName == "lang-zig")
     }
 
     // MARK: - Markup / Data
@@ -130,6 +140,7 @@ struct FileIconTests {
         let icon = FileIcon.forPath("README.md")
         #expect(icon.symbolName == "doc.richtext")
         #expect(icon.color == .themeBlue)
+        #expect(icon.assetName == "lang-markdown")
     }
 
     // MARK: - Media

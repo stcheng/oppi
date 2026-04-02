@@ -127,7 +127,8 @@ struct SessionFilesListView: View {
     ) -> some View {
             HStack(spacing: 10) {
                 // File icon
-                Image(systemName: icon.symbolName)
+                icon.image
+                    .renderingMode(icon.isAssetImage ? .template : .original)
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(icon.color)
                     .frame(width: 28, height: 28)
