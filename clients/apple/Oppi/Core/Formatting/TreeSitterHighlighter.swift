@@ -1,7 +1,8 @@
 import Foundation
 import SwiftTreeSitter
 import TreeSitterBash
-import TreeSitterSwift
+import TreeSitter
+// tree_sitter_swift() is available via Oppi-Bridging-Header.h (vendored grammar)Swift
 import TreeSitter
 
 // MARK: - TreeSitterHighlighter
@@ -169,7 +170,11 @@ enum TreeSitterHighlighter {
             // register(.java, tsLanguage: tree_sitter_java(), name: "Java")
         }
 
-        /// Register a grammar by loading its highlights.scm from the SPM bundle.
+        /// Register a grammar by loading its highlights.scm.
+        ///
+        /// Searches two locations:
+        /// 1. SPM resource bundle: `TreeSitter<Name>_TreeSitter<Name>.bundle/queries/`
+        /// 2. App's own bundle: `Grammars/TreeSitter<Name>/queries/` (for vendored grammars)
         private func register(
             _ syntaxLanguage: SyntaxLanguage,
             tsLanguage: OpaquePointer,
@@ -177,11 +182,23 @@ enum TreeSitterHighlighter {
             supplement: String? = nil
         ) {
             let language = Language(language: tsLanguage)
-            let highlightsQuery = Self.loadHighlightsQuery(
+
+            // Try SPM bundle first (for official tree-sitter packages)
+            let spmBundle = "TreeSitter\(name)_TreeSitter\(name)"
+            var highlightsQuery = Self.loadHighlightsQuery(
                 language: language,
-                bundleName: "TreeSitter\(name)_TreeSitter\(name)",
+                bundleName: spmBundle,
                 supplement: supplement
             )
+
+            // Fall back to vendored grammar in app bundle
+            if highlightsQuery == nil {
+                highlightsQuery = Self.loadVendoredHighlightsQuery(
+                    language: language,
+                    grammarName: "TreeSitter\(name)",
+                    supplement: supplement
+                )
+            }
 
             entries[syntaxLanguage] = Entry(
                 language: language,
@@ -237,6 +254,41 @@ enum TreeSitterHighlighter {
                 } else {
                     print("[TreeSitter] Query compilation failed for \(bundleName): \(error)")
                 }
+                return nil
+            }
+        }
+
+        /// Load highlights.scm from a vendored grammar in the app bundle.
+        ///
+        /// Vendored grammars live in `Oppi/Core/Formatting/Grammars/<name>/queries/highlights.scm`
+        /// and are included in the app bundle as regular resources.
+        private static func loadVendoredHighlightsQuery(
+            language: Language,
+            grammarName: String,
+            supplement: String? = nil
+        ) -> Query? {
+            // XcodeGen folder references are copied as-is into the bundle.
+            // Look for the highlights.scm in the queries/ folder.
+            guard let url = Bundle.main.url(
+                forResource: "highlights",
+                withExtension: "scm",
+                subdirectory: "queries"
+            ) else {
+                return nil
+            }
+
+            guard FileManager.default.isReadableFile(atPath: url.path) else {
+                return nil
+            }
+
+            do {
+                var queryData = try Data(contentsOf: url)
+                if let supplement, let supplementData = supplement.data(using: .utf8) {
+                    queryData.append(supplementData)
+                }
+                return try Query(language: language, data: queryData)
+            } catch {
+                print("[TreeSitter] Vendored query compilation failed for \(grammarName): \(error)")
                 return nil
             }
         }
