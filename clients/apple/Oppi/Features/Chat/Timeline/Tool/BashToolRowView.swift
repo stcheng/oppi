@@ -90,6 +90,19 @@ final class BashToolRowView: UIView, UIScrollViewDelegate {
     private var pendingFollowTail = false
     private var perfSessionId: String?
 
+    // MARK: - Deferred ANSI highlight
+
+    /// Byte threshold above which ANSI highlighting is deferred to a background
+    /// thread. Below this, synchronous parsing is fast enough (< 16ms on device).
+    static let deferredANSIByteThreshold = 4 * 1024
+
+    private var deferredANSITask: Task<Void, Never>?
+    private var deferredANSISignature: Int?
+
+    #if DEBUG
+    nonisolated(unsafe) static var deferredANSIDelayForTesting: Duration?
+    #endif
+
     // MARK: - Streaming append state (step 7)
 
     /// UTF-16 length of plain-text content already rendered during streaming.
@@ -196,8 +209,26 @@ final class BashToolRowView: UIView, UIScrollViewDelegate {
                     didTextChange = prevText != cached.string
                     outputLabel.attributedText = cached
                     streamAppendOffset = 0
+                } else if displayOutput.utf8.count > Self.deferredANSIByteThreshold {
+                    // Large output: show stripped plain text now, parse ANSI in background.
+                    let stripped = ANSIParser.strip(displayOutput)
+                    let prevText = outputLabel.attributedText?.string ?? outputLabel.text ?? ""
+                    didTextChange = prevText != stripped
+                    outputLabel.attributedText = nil
+                    outputLabel.text = stripped
+                    outputLabel.textColor = outputColor
+                    streamAppendOffset = 0
+                    scheduleDeferredANSIHighlight(
+                        text: displayOutput,
+                        isError: input.isError,
+                        signature: signature,
+                        outputColor: outputColor,
+                        unwrapped: input.unwrapped,
+                        sessionId: input.sessionId
+                    )
                 } else {
-                    // Full ANSI parse (done state or small content).
+                    // Small output: synchronous ANSI parse is fast enough.
+                    cancelDeferredANSIHighlight()
                     let p = ToolRowTextRenderer.makeANSIOutputPresentation(
                         displayOutput,
                         isError: input.isError
@@ -216,8 +247,16 @@ final class BashToolRowView: UIView, UIScrollViewDelegate {
                     streamAppendOffset = 0
                 }
 
+                let renderMode: String
+                if tier == .cheap {
+                    renderMode = "bash.output.stream"
+                } else if deferredANSISignature == signature {
+                    renderMode = "bash.output.deferred"
+                } else {
+                    renderMode = "bash.output.ansi"
+                }
                 ChatTimelinePerf.recordRenderStrategy(
-                    mode: tier == .cheap ? "bash.output.stream" : "bash.output.ansi",
+                    mode: renderMode,
                     durationMs: ChatTimelinePerf.elapsedMs(since: startNs),
                     inputBytes: displayOutput.utf8.count,
                     sessionId: input.sessionId
@@ -337,6 +376,7 @@ final class BashToolRowView: UIView, UIScrollViewDelegate {
 
     /// Reset output render state. Called when output container is hidden.
     func resetOutputState(outputColor: UIColor) {
+        cancelDeferredANSIHighlight()
         outputLabel.attributedText = nil
         outputLabel.text = nil
         outputLabel.textColor = outputColor
@@ -355,10 +395,89 @@ final class BashToolRowView: UIView, UIScrollViewDelegate {
 
     /// Reset command render state. Called when command container is hidden.
     func resetCommandState() {
+        cancelDeferredANSIHighlight()
         commandLabel.attributedText = nil
         commandLabel.text = nil
         commandLabel.textColor = UIColor(Color.themeFg)
         commandRenderSignature = nil
+    }
+
+    // MARK: - Deferred ANSI Highlight
+
+    /// Wrapper to send NSAttributedString across isolation boundaries.
+    private struct DeferredANSIResult: @unchecked Sendable {
+        let attributed: NSAttributedString
+    }
+
+    private func cancelDeferredANSIHighlight() {
+        deferredANSITask?.cancel()
+        deferredANSITask = nil
+        deferredANSISignature = nil
+    }
+
+    private func scheduleDeferredANSIHighlight(
+        text: String,
+        isError: Bool,
+        signature: Int,
+        outputColor: UIColor,
+        unwrapped: Bool,
+        sessionId: String?
+    ) {
+        // Skip if already computing this exact signature.
+        if deferredANSISignature == signature,
+           let task = deferredANSITask,
+           !task.isCancelled {
+            return
+        }
+
+        cancelDeferredANSIHighlight()
+        deferredANSISignature = signature
+
+        deferredANSITask = Task.detached(priority: .utility) { [weak self] in
+            #if DEBUG
+            if let artificialDelay = BashToolRowView.deferredANSIDelayForTesting {
+                try? await Task.sleep(for: artificialDelay)
+            }
+            #endif
+
+            let renderStart = ContinuousClock.now
+            let presentation = ToolRowTextRenderer.makeANSIOutputPresentation(
+                text,
+                isError: isError
+            )
+            guard let attributed = presentation.attributedText else { return }
+            let result = DeferredANSIResult(attributed: attributed)
+            let durationMs = Int((ContinuousClock.now - renderStart) / .milliseconds(1))
+
+            await MainActor.run { [weak self] in
+                guard let self,
+                      self.deferredANSISignature == signature else {
+                    return
+                }
+
+                defer {
+                    self.deferredANSITask = nil
+                    self.deferredANSISignature = nil
+                }
+
+                ToolRowRenderCache.set(signature: signature, attributed: result.attributed)
+                ChatTimelinePerf.recordRenderStrategy(
+                    mode: "bash.output.deferred.highlight",
+                    durationMs: durationMs,
+                    inputBytes: text.utf8.count,
+                    sessionId: sessionId
+                )
+
+                // Only apply if cell still shows this signature.
+                guard self.outputRenderSignature == signature else { return }
+
+                self.outputLabel.attributedText = result.attributed
+                self.streamAppendOffset = 0
+                self.outputRenderedText = unwrapped ? result.attributed.string : nil
+                self.updateOutputLabelWidthIfNeeded()
+                self.setNeedsLayout()
+            }
+        }
     }
 
     // MARK: - Vertical Lock
