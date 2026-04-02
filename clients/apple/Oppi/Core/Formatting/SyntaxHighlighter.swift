@@ -299,11 +299,18 @@ enum SyntaxHighlighter {
     /// Each range's `location` is the character offset within `code`.
     /// Used by `makeCodeAttributedText` to apply syntax colors with gutter
     /// offset mapping in a single-pass build.
+    ///
+    /// Uses tree-sitter for languages with grammar support (currently bash),
+    /// falling back to the hand-written scanner for others.
     static func scanTokenRanges(
         _ code: String,
         language: SyntaxLanguage
     ) -> [TokenRange] {
-        scanTokenRangesInternal(Array(truncatedCode(code)), language: language)
+        // Tree-sitter fast path: full AST-based highlighting
+        if let tsRanges = TreeSitterHighlighter.scanTokenRanges(code, language: language) {
+            return tsRanges
+        }
+        return scanTokenRangesInternal(Array(truncatedCode(code)), language: language)
     }
 
     /// ASCII-optimized scanner using raw UTF-8 bytes.
@@ -320,8 +327,13 @@ enum SyntaxHighlighter {
     ) -> [TokenRange] {
         guard language != .unknown else { return [] }
 
-        // Shell has complex state; JSON is already fast. Use existing scanner.
-        if language == .shell || language == .json {
+        // Tree-sitter fast path for supported languages.
+        if let tsRanges = TreeSitterHighlighter.scanTokenRanges(text, language: language) {
+            return tsRanges
+        }
+
+        // JSON is already fast with the hand-written scanner.
+        if language == .json {
             return scanTokenRangesInternal(Array(text), language: language)
         }
 
