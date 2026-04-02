@@ -171,8 +171,7 @@ export class SearchIndex {
     this.getSession = getSession;
     const dbPath = join(dataDir, "session-search.db");
     this.db = openDatabase(dbPath);
-    // Use exec() for pragmas — works in both better-sqlite3 and bun:sqlite
-    // (bun:sqlite lacks the .pragma() method)
+    // Use exec() for pragmas — bun:sqlite lacks the .pragma() method
     this.db.exec("PRAGMA journal_mode = WAL");
     this.db.exec("PRAGMA synchronous = NORMAL");
     this.ensureSchema();

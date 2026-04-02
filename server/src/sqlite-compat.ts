@@ -1,14 +1,10 @@
 /**
- * SQLite compatibility layer — abstracts over better-sqlite3 (Node.js)
- * and bun:sqlite (Bun runtime).
+ * SQLite compatibility layer — abstracts over built-in drivers:
  *
- * Both APIs are nearly identical. The only differences:
- * - Import path: "better-sqlite3" vs "bun:sqlite"
- * - better-sqlite3 has `db.pragma()`, bun:sqlite does not
+ * - Bun:       bun:sqlite (built-in)
+ * - Node 22+:  node:sqlite (built-in)
  *
- * This module detects the runtime and provides a unified `openDatabase()`
- * that returns a standard Database handle usable with .exec(), .prepare(),
- * .transaction(), and .close().
+ * No native addons required.
  */
 
 import { createRequire } from "node:module";
@@ -32,16 +28,13 @@ export interface SqliteStatement {
 const isBun = typeof (globalThis as Record<string, unknown>).Bun !== "undefined";
 
 /**
- * Open a SQLite database file using the best available driver.
- *
- * Under Bun: uses bun:sqlite (built-in, no native addon needed).
- * Under Node.js: uses better-sqlite3 (native addon).
+ * Open a SQLite database file using the best available built-in driver.
  */
 export function openDatabase(path: string): SqliteDatabase {
   if (isBun) {
     return openBunDatabase(path);
   }
-  return openBetterSqlite3Database(path);
+  return openNodeSqliteDatabase(path);
 }
 
 // ---------------------------------------------------------------------------
@@ -73,26 +66,39 @@ interface BunSqliteDb {
 }
 
 // ---------------------------------------------------------------------------
-// Node.js runtime
+// Node.js 22+ runtime (built-in node:sqlite)
 // ---------------------------------------------------------------------------
 
-function openBetterSqlite3Database(path: string): SqliteDatabase {
-  // better-sqlite3 is only needed under Node.js.
-  const BetterSqlite3 = cjsRequire("better-sqlite3") as new (path: string) => BetterSqlite3Db;
-  const db = new BetterSqlite3(path);
+function openNodeSqliteDatabase(path: string): SqliteDatabase {
+  const { DatabaseSync } = cjsRequire("node:sqlite") as {
+    DatabaseSync: new (path: string) => NodeSqliteDb;
+  };
+  const db = new DatabaseSync(path);
 
   return {
     exec: (sql: string) => db.exec(sql),
     prepare: (sql: string) => db.prepare(sql) as SqliteStatement,
-    transaction: <T>(fn: () => T) => db.transaction(fn) as () => T,
+    transaction: <T>(fn: () => T) => {
+      // node:sqlite DatabaseSync lacks .transaction() — emulate with BEGIN/COMMIT/ROLLBACK
+      return () => {
+        db.exec("BEGIN");
+        try {
+          const result = fn();
+          db.exec("COMMIT");
+          return result;
+        } catch (err) {
+          db.exec("ROLLBACK");
+          throw err;
+        }
+      };
+    },
     close: () => db.close(),
   };
 }
 
-/** Minimal better-sqlite3 Database shape. */
-interface BetterSqlite3Db {
-  exec(sql: string): this;
+/** Minimal node:sqlite DatabaseSync shape. */
+interface NodeSqliteDb {
+  exec(sql: string): void;
   prepare(sql: string): SqliteStatement;
-  transaction<T>(fn: () => T): () => T;
   close(): void;
 }

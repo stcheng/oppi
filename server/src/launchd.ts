@@ -17,7 +17,7 @@
 import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { execSync } from "node:child_process";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
 const LABEL = "dev.chenda.oppi";
 
@@ -76,12 +76,19 @@ function resolveRuntimeAbsolute(): string | null {
  *
  * Search order:
  * 1. Mutable runtime dir (seeded from DMG)
- * 2. App bundle seed (direct)
- * 3. Homebrew global
+ * 2. The CLI that's currently running (git clone / local dev)
+ * 3. App bundle seed (direct)
+ * 4. Homebrew global
  */
 function resolveCLIAbsolute(): string | null {
   const runtimeCLI = join(homedir(), ".config", "oppi", "server-runtime", "dist", "src", "cli.js");
   if (existsSync(runtimeCLI)) return runtimeCLI;
+
+  // The CLI that invoked us — works for git clone installs
+  const selfCLI = process.argv[1];
+  if (selfCLI && selfCLI.endsWith("cli.js") && existsSync(selfCLI)) {
+    return resolve(selfCLI);
+  }
 
   const seedCLI = "/Applications/Oppi.app/Contents/Resources/server-seed/dist/src/cli.js";
   if (existsSync(seedCLI)) return seedCLI;

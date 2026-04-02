@@ -74,7 +74,7 @@ struct RuntimeBadge: View {
     }
 }
 
-private extension ServerBadgeColor {
+extension ServerBadgeColor {
     var themeColor: Color {
         switch self {
         case .orange: return .themeOrange

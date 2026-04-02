@@ -2,28 +2,44 @@ import Foundation
 
 /// Configurable icon options for server badges in the UI.
 enum ServerBadgeIcon: String, Codable, CaseIterable, Identifiable, Sendable, Hashable {
+    // Computers
     case macStudio = "macstudio.fill"
     case desktop = "desktopcomputer"
-    case serverRack = "server.rack"
     case laptop = "laptopcomputer"
+    case macMini = "macmini.fill"
+    case macPro = "macpro.gen3.fill"
+    case display = "display"
+
+    // Infrastructure
+    case serverRack = "server.rack"
+    case cpu = "cpu"
+    case memorychip = "memorychip"
+    case externaldrive = "externaldrive.fill"
+
+    // Network & Cloud
+    case cloud = "cloud.fill"
+    case network = "network"
+    case antenna = "antenna.radiowaves.left.and.right"
+    case wifi = "wifi"
+
+    // Dev & Tools
     case terminal = "terminal"
+    case hammer = "hammer.fill"
+    case wrench = "wrench.and.screwdriver.fill"
+    case gearshape = "gearshape.2.fill"
+
+    // Abstract
     case bolt = "bolt.horizontal.circle"
+    case cube = "cube.fill"
+    case hexagon = "hexagon.fill"
+    case atom = "atom"
+    case sparkles = "sparkles"
+    case shield = "shield.checkered"
 
     static let defaultValue: Self = .macStudio
 
     var id: String { rawValue }
     var symbolName: String { rawValue }
-
-    var title: String {
-        switch self {
-        case .macStudio: return "Mac Studio"
-        case .desktop: return "Desktop"
-        case .serverRack: return "Server Rack"
-        case .laptop: return "Laptop"
-        case .terminal: return "Terminal"
-        case .bolt: return "Bolt"
-        }
-    }
 }
 
 /// Configurable color options for server badges in the UI.

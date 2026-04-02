@@ -2,38 +2,31 @@
 
 Server for [Oppi](../README.md). Embeds the [pi SDK](https://github.com/badlogic/pi-mono) to run agent sessions in-process.
 
-## Mac App (recommended on macOS)
-
-On macOS, the recommended way to run the server is the **Oppi for Mac** menu bar app. It handles installation, TCC permissions, server init, and pairing through a guided wizard — no terminal required. See the [main README](../README.md#mac-app-recommended-on-macos) for install steps.
-
-The CLI below remains the primary path on Linux, headless/Docker setups, and for power users. The `serve`, `pair`, `doctor`, and `init` commands are also used internally by the Mac app.
-
----
-
 ## Quickstart
 
 ```bash
 # 1. Install
-git clone https://github.com/duh17/Oppi.git && cd Oppi/server
+git clone https://github.com/duh17/oppi.git && cd oppi/server
 npm install
+npm run build
 
 # 2. Set up pi auth (needed for LLM API calls)
-pi login
+pi auth
 
 # 3. Start (auto-inits config + shows pairing QR on first run)
-npx oppi serve
+node dist/src/cli.js serve
 ```
 
 Optional: enable local HTTPS/WSS (self-signed + cert pin in invite):
 
 ```bash
-oppi config set tls '{"mode":"self-signed"}'
+node dist/src/cli.js config set tls '{"mode":"self-signed"}'
 ```
 
 Optional: enable Tailscale HTTPS/WSS (Let's Encrypt cert via `tailscale cert`):
 
 ```bash
-oppi config set tls '{"mode":"tailscale"}'
+node dist/src/cli.js config set tls '{"mode":"tailscale"}'
 ```
 
 Create a workspace in the app and start a session.
@@ -41,7 +34,7 @@ Create a workspace in the app and start a session.
 ## Requirements
 
 - Node.js 20+
-- [pi](https://github.com/badlogic/pi-mono) CLI installed (`pi login` for LLM auth)
+- [pi](https://github.com/badlogic/pi-mono) CLI installed (`pi auth` for LLM auth)
 - macOS or Linux
 
 ## Docker (skills-ready compose setup)
@@ -117,17 +110,25 @@ docker compose start
 
 ## Commands
 
+All commands run from the `server/` directory:
+
 ```bash
-npx oppi serve [--host <h>]      # start server (auto-inits on first run)
-npx oppi init                    # interactive first-time setup
-npx oppi pair [name]             # regenerate pairing QR
-npx oppi status                  # show server config and connection overview
-npx oppi doctor                  # security + environment diagnostics
-npx oppi config show             # show config
-npx oppi config get <key>        # get a single config value
-npx oppi config set <key> <val>  # update config
-npx oppi config validate         # validate config file
-npx oppi token rotate            # rotate owner bearer token
+node dist/src/cli.js serve [--host <h>]      # start server
+node dist/src/cli.js init                    # interactive first-time setup
+node dist/src/cli.js pair [name]             # regenerate pairing QR
+node dist/src/cli.js status                  # server config overview
+node dist/src/cli.js doctor                  # check prerequisites
+node dist/src/cli.js update                  # update dependencies
+node dist/src/cli.js config show             # show config
+node dist/src/cli.js config get <key>        # get a single config value
+node dist/src/cli.js config set <key> <val>  # update config
+node dist/src/cli.js config validate         # validate config file
+node dist/src/cli.js token rotate            # rotate owner bearer token
+node dist/src/cli.js server install          # install LaunchAgent (macOS)
+node dist/src/cli.js server uninstall        # remove LaunchAgent
+node dist/src/cli.js server status           # check background service
+node dist/src/cli.js server restart          # restart background server
+node dist/src/cli.js server stop             # stop background server
 ```
 
 ## Built-in extensions

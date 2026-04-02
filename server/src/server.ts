@@ -15,7 +15,7 @@ import { dirname, join } from "node:path";
 import { networkInterfaces, type NetworkInterfaceInfo } from "node:os";
 import { fileURLToPath } from "node:url";
 
-import { execFileSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { timingSafeEqual } from "node:crypto";
 import { WebSocketServer, WebSocket } from "ws";
 import { URL } from "node:url";
@@ -260,11 +260,13 @@ export class Server {
 
   static detectPiVersion(piExecutable: string): string {
     try {
-      const output = execFileSync(piExecutable, ["--version"], {
+      // pi --version writes to stderr (not stdout), so capture both.
+      const result = spawnSync(piExecutable, ["--version"], {
         encoding: "utf-8",
         timeout: 5000,
-        stdio: ["ignore", "pipe", "ignore"],
-      }).trim();
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      const output = result.stdout?.trim() || result.stderr?.trim() || "";
       // Output may be "pi 0.8.0" or just "0.8.0"
       const match = output.match(/(\d+\.\d+\.\d+)/);
       return match ? match[1] : output || "unknown";
@@ -275,20 +277,24 @@ export class Server {
 
   /** Read installed @mariozechner/pi-coding-agent version from its package.json. */
   static detectPiAgentVersion(): string {
-    try {
-      const pkgPath = join(
-        dirname(fileURLToPath(import.meta.url)),
-        "..",
-        "node_modules",
-        "@mariozechner",
-        "pi-coding-agent",
-        "package.json",
-      );
-      const pkg = JSON.parse(readFileSync(pkgPath, "utf-8")) as { version?: string };
-      return pkg.version || "unknown";
-    } catch {
-      return "unknown";
+    // import.meta.url points to dist/src/server.js
+    // node_modules is at the project root (two levels up from dist/src/)
+    const srcDir = dirname(fileURLToPath(import.meta.url));
+    const candidates = [
+      // Normal layout: <root>/node_modules/ (src at <root>/dist/src/server.js)
+      join(srcDir, "..", "..", "node_modules", "@mariozechner", "pi-coding-agent", "package.json"),
+      // Flat layout: <root>/node_modules/ (src at <root>/src/server.ts, dev mode)
+      join(srcDir, "..", "node_modules", "@mariozechner", "pi-coding-agent", "package.json"),
+    ];
+    for (const pkgPath of candidates) {
+      try {
+        const pkg = JSON.parse(readFileSync(pkgPath, "utf-8")) as { version?: string };
+        if (pkg.version) return pkg.version;
+      } catch {
+        // Try next candidate
+      }
     }
+    return "unknown";
   }
 
   private storage: Storage;

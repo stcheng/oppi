@@ -1297,14 +1297,19 @@ describe("error handling", () => {
     expect(Array.isArray(body.sessions)).toBe(true);
   });
 
-  it("GET /sessions/search returns 503 when search index unavailable", async () => {
+  it("GET /sessions/search returns empty results for unmatched query", async () => {
     const res = await get("/sessions/search?q=test&limit=10");
-    expect(res.status).toBe(503);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.results).toEqual([]);
+    expect(body.totalResults).toBe(0);
   });
 
-  it("GET /sessions/search without query returns 503 when search index unavailable", async () => {
+  it("GET /sessions/search without query returns empty results", async () => {
     const res = await get("/sessions/search");
-    expect(res.status).toBe(503);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.results).toEqual([]);
   });
 
   it("returns 404 for nonexistent workspace", async () => {

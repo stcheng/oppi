@@ -3,6 +3,6 @@
   "project": ["src/**/*.ts"],
   "ignore": ["src/qrcode-terminal.d.ts", "src/server-hotpath-bench.ts"],
   "ignoreExportsUsedInFile": true,
-  "ignoreDependencies": ["@mariozechner/pi-ai", "better-sqlite3", "@types/better-sqlite3"],
+  "ignoreDependencies": ["@mariozechner/pi-ai"],
   "ignoreBinaries": ["scripts/testing-gates.ts"]
 }

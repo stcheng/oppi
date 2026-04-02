@@ -39,17 +39,14 @@ struct OppiMacApp: App {
             let baseURL = URL(string: "https://localhost:7749")!
             let client = MacAPIClient(baseURL: baseURL, token: token)
 
-            // Always kill any existing server and spawn a fresh one so we have
-            // full lifecycle control (termination handler, pipe capture, log file).
-            // Adopting an orphaned server leaves us blind to crashes.
-            // Skip during unit tests — the test host should not kill the dev server.
-            if !Self.isRunningTests {
-                ServerProcessManager.killExistingServer()
-            }
-            pm.startWithDefaults()
-            hm.startMonitoring(baseURL: baseURL, token: token, processManager: pm)
-            hm.checkPiCLIVersion()
-            sm.startPolling(client: client)
+            Self.startOrAttachServer(
+                processManager: pm,
+                healthMonitor: hm,
+                sessionMonitor: sm,
+                baseURL: baseURL,
+                token: token,
+                client: client
+            )
         }
     }
 
@@ -116,11 +113,7 @@ struct OppiMacApp: App {
         }
     }
 
-    /// Auto-start the server on subsequent launches (config already exists).
-    ///
-    /// Always kills any existing server process first and spawns a fresh one.
-    /// This ensures we have full lifecycle control (termination handler, log pipes,
-    /// crash recovery) instead of adopting an orphan we can't monitor.
+    /// Auto-start or attach to the server on subsequent launches.
     private func autoStartServer() {
         guard processManager.state == .stopped else { return }
 
@@ -131,7 +124,69 @@ struct OppiMacApp: App {
         let client = MacAPIClient(baseURL: baseURL, token: token)
 
         Task {
-            if !Self.isRunningTests {
+            Self.startOrAttachServer(
+                processManager: processManager,
+                healthMonitor: healthMonitor,
+                sessionMonitor: sessionMonitor,
+                baseURL: baseURL,
+                token: token,
+                client: client
+            )
+        }
+    }
+
+    /// Detect whether a launchd-managed server is already running.
+    /// If so, attach to it. Otherwise, spawn a child process as before.
+    ///
+    /// Detection: check if a LaunchAgent plist exists AND the health
+    /// endpoint responds. If health responds, we know launchd has the
+    /// server running — no need to spawn our own.
+    private static func startOrAttachServer(
+        processManager: ServerProcessManager,
+        healthMonitor: ServerHealthMonitor,
+        sessionMonitor: MacSessionMonitor,
+        baseURL: URL,
+        token: String,
+        client: MacAPIClient
+    ) {
+        let plistPath = NSString("~/Library/LaunchAgents/dev.chenda.oppi.plist")
+            .expandingTildeInPath
+        let launchdInstalled = FileManager.default.fileExists(atPath: plistPath)
+
+        if launchdInstalled {
+            // LaunchAgent is installed — probe health to see if it's running.
+            // Don't kill anything; launchd owns the process.
+            Task.detached {
+                let healthy = await client.checkHealth()
+                await MainActor.run {
+                    if healthy {
+                        // Server is running via launchd — attach to it.
+                        // Mark process manager as running so the UI shows green.
+                        processManager.markRunning()
+                        healthMonitor.startMonitoring(
+                            baseURL: baseURL,
+                            token: token,
+                            processManager: processManager
+                        )
+                        healthMonitor.checkPiCLIVersion()
+                        sessionMonitor.startPolling(client: client)
+                    } else {
+                        // LaunchAgent installed but server not responding.
+                        // launchd may still be starting it (ThrottleInterval=5).
+                        // Start health monitoring which will poll and wait.
+                        healthMonitor.startMonitoring(
+                            baseURL: baseURL,
+                            token: token,
+                            processManager: processManager
+                        )
+                        healthMonitor.checkPiCLIVersion()
+                        sessionMonitor.startPolling(client: client)
+                    }
+                }
+            }
+        } else {
+            // No LaunchAgent — use the original child-process model.
+            if !isRunningTests {
                 ServerProcessManager.killExistingServer()
             }
             processManager.startWithDefaults()

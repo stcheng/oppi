@@ -15,22 +15,6 @@ All the code is written by agents. I haven't written or reviewed most of it — 
 
 The approach: [just talk to it](https://steipete.me/posts/just-talk-to-it), [feel it](https://mitchellh.com/writing/feel-it) by using it to build itself, and [measure everything](https://lucumr.pocoo.org/2025/6/17/measuring/). It mostly works, but there are [booboos everywhere](https://mariozechner.at/posts/2026-03-25-thoughts-on-slowing-the-fuck-down/). Unlike Mario, I have a high tolerance for booboos.
 
-## Mac App (recommended on macOS)
-
-**Oppi for Mac** is a menu bar companion app that manages the local server and handles onboarding. It's the easiest way to get started.
-
-**Requirements:** macOS 15+, [pi](https://github.com/badlogic/pi-mono) CLI. The app bundles its own JS runtime (Bun); no separate Node.js install needed.
-
-**Install:**
-1. Download the DMG from [Releases](../../releases)
-2. Drag Oppi to Applications and launch it
-3. Follow the setup wizard (checks prerequisites, requests permissions, initializes the server)
-4. Scan the QR code from the Oppi iOS app
-
-The Mac app manages the server process automatically — start, stop, restart, and crash recovery. It also shows a stats dashboard with session counts, costs, and model breakdowns. For Linux, headless servers, or manual control, use the [CLI](#install) instead.
-
----
-
 ## How it works
 
 The server embeds the [pi SDK](https://github.com/badlogic/pi-mono) directly — no separate CLI process. Each session runs an in-process agent with tool execution, streaming, and a policy-driven permission gate. The iOS app connects over WebSocket to stream output and handle approvals.
@@ -51,26 +35,31 @@ The server embeds the [pi SDK](https://github.com/badlogic/pi-mono) directly —
 
 ## Install
 
+Requires [Bun](https://bun.sh) (recommended) or Node.js 22+, and [pi](https://github.com/badlogic/pi-mono) with at least one provider authenticated (`pi auth`).
+
 ```bash
 git clone https://github.com/duh17/oppi.git
-cd Oppi/server
-npm install
+cd oppi/server
+bash setup.sh              # install deps, build, start foreground
+bash setup.sh --install    # same, but install as macOS background service
 ```
 
-Requires Node.js 20+ and a [pi](https://github.com/badlogic/pi-mono) auth setup (`pi login`).
+`setup.sh` detects Bun or Node.js, installs dependencies, builds, and either starts the server or installs a LaunchAgent. On first run, the server shows a pairing QR code — scan it in the Oppi iOS app.
 
-## Run
+Your phone and server need to be on the same local network, or reachable via Tailscale:
 
 ```bash
-npx oppi serve
+bun dist/src/cli.js serve --host <your-host>.ts.net
 ```
 
-On first run, the server auto-initializes config and shows a pairing QR code. Scan it in the Oppi iOS app. Your phone and server need to be on the same local network. For off-LAN access via Tailscale, pair with your tailnet host: `npx oppi pair --host <your-host>.ts.net`.
+### Background service (macOS)
 
-If the auto-detected hostname isn't reachable from your phone, pass one explicitly:
+If you used `bash setup.sh --install`, the server runs as a LaunchAgent that starts on login and restarts on crash. Manage it with:
 
 ```bash
-npx oppi serve --host my-machine.local
+bun dist/src/cli.js server status     # check if running
+bun dist/src/cli.js server restart    # restart
+bun dist/src/cli.js server uninstall  # remove
 ```
 
 ## What you can do
@@ -79,18 +68,38 @@ npx oppi serve --host my-machine.local
 
 ## Commands
 
+All commands run from the `server/` directory. Replace `bun` with `node` if you don't have Bun.
+
 ```
-npx oppi serve [--host <h>]      start server (auto-inits on first run)
-npx oppi pair [--host <h>]       regenerate pairing QR
-npx oppi status                  server config and connection overview
-npx oppi doctor                  check prerequisites
-npx oppi init                    interactive first-time setup
-npx oppi config show             current config
-npx oppi config set <k> <v>      update config value
-npx oppi config get <k>          get single config value
-npx oppi config validate         validate config file
-npx oppi token rotate            rotate owner auth token
+bun dist/src/cli.js serve [--host <h>]      start server
+bun dist/src/cli.js pair [--host <h>]       regenerate pairing QR
+bun dist/src/cli.js status                  server config overview
+bun dist/src/cli.js doctor                  check prerequisites
+bun dist/src/cli.js update                  update dependencies
+bun dist/src/cli.js init                    interactive first-time setup
+bun dist/src/cli.js config show             current config
+bun dist/src/cli.js config set <k> <v>      update config value
+bun dist/src/cli.js config validate         validate config file
+bun dist/src/cli.js token rotate            rotate owner auth token
+bun dist/src/cli.js server install          install LaunchAgent (macOS)
+bun dist/src/cli.js server uninstall        remove LaunchAgent
+bun dist/src/cli.js server status           check background service
+bun dist/src/cli.js server restart          restart background server
+bun dist/src/cli.js server stop             stop background server
 ```
+
+## Mac App (experimental)
+
+On macOS, there's also a menu bar companion app that manages the server and handles onboarding through a guided wizard. It bundles its own JS runtime (Bun) — no separate Node.js install needed.
+
+The Mac app is experimental. For a more predictable setup, use the CLI above.
+
+Requirements: macOS 15+, [pi](https://github.com/badlogic/pi-mono) CLI.
+
+1. Download the DMG from [Releases](../../releases)
+2. Drag Oppi to Applications and launch
+3. Follow the setup wizard
+4. Scan the QR code from the iOS app
 
 ## Docs
 

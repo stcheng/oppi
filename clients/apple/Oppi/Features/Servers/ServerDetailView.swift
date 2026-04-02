@@ -57,37 +57,28 @@ struct ServerDetailView: View {
                     LabeledContent("Skills", value: String(info.stats.skillCount))
                 }
 
-                if let runtime = info.runtimeUpdate {
-                    Section("Runtime") {
-                        LabeledContent("Pi Version", value: runtime.currentVersion)
-                    }
+                Section("Runtime") {
+                    LabeledContent("Agent", value: info.runtimeUpdate?.currentVersion ?? "n/a")
+                    LabeledContent("Server", value: info.version)
                 }
             }
 
-            Section("Badge") {
+            Section {
                 HStack {
                     Text("Preview")
                     Spacer()
                     RuntimeBadge(
-                        compact: true,
+                        compact: false,
                         icon: pairedServer.resolvedBadgeIcon,
                         badgeColor: pairedServer.resolvedBadgeColor
                     )
                 }
 
-                Picker("Icon", selection: badgeIconSelection) {
-                    ForEach(ServerBadgeIcon.allCases) { icon in
-                        Label(icon.title, systemImage: icon.symbolName)
-                            .tag(icon)
-                    }
-                }
+                BadgeIconGrid(selection: badgeIconSelection, tint: pairedServer.resolvedBadgeColor.themeColor)
 
-                Picker("Color", selection: badgeColorSelection) {
-                    ForEach(ServerBadgeColor.allCases) { color in
-                        Text(color.title)
-                            .tag(color)
-                    }
-                }
+                BadgeColorGrid(selection: badgeColorSelection)
+            } header: {
+                Text("Badge")
             }
 
             Section("Workspaces") {
