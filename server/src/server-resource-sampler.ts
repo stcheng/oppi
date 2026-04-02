@@ -90,6 +90,24 @@ export class ServerResourceSampler {
     try {
       const now = Date.now();
       const mem = process.memoryUsage();
+
+      // Bun's JSC reports unreliable heapTotal — use bun:jsc for accurate values
+      let heapUsed = mem.heapUsed;
+      let heapTotal = mem.heapTotal;
+      if (typeof (globalThis as Record<string, unknown>).Bun !== "undefined") {
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-require-imports
+          const jsc = require("bun:jsc") as {
+            heapStats(): { heapSize: number; heapCapacity: number };
+          };
+          const stats = jsc.heapStats();
+          heapUsed = stats.heapSize;
+          heapTotal = stats.heapCapacity;
+        } catch {
+          if (heapUsed > heapTotal) heapTotal = heapUsed;
+        }
+      }
+
       const sessions = this.deps.getSessionCounts();
       const wsCount = this.deps.getWebSocketCount();
 
@@ -139,8 +157,8 @@ export class ServerResourceSampler {
           total: round2(cpuUser + cpuSystem),
         },
         memory: {
-          heapUsed: round2(mem.heapUsed / 1024 / 1024),
-          heapTotal: round2(mem.heapTotal / 1024 / 1024),
+          heapUsed: round2(heapUsed / 1024 / 1024),
+          heapTotal: round2(heapTotal / 1024 / 1024),
           rss: round2(mem.rss / 1024 / 1024),
           external: round2(mem.external / 1024 / 1024),
         },

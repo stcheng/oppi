@@ -142,11 +142,33 @@ function sessionTokens(s: Session): number {
 
 // ─── Memory ───
 
+/**
+ * Bun's JSC engine reports unreliable heapTotal via process.memoryUsage() —
+ * heapUsed can exceed heapTotal, producing nonsensical utilization fractions.
+ * When running under Bun, use bun:jsc heapStats() for accurate JSC heap
+ * metrics (heapSize → heapUsed, heapCapacity → heapTotal).
+ */
 export function getMemoryStats(): StatsMemory {
   const mem = process.memoryUsage();
+  let heapUsed = mem.heapUsed;
+  let heapTotal = mem.heapTotal;
+
+  if (typeof (globalThis as Record<string, unknown>).Bun !== "undefined") {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const jsc = require("bun:jsc") as { heapStats(): { heapSize: number; heapCapacity: number } };
+      const stats = jsc.heapStats();
+      heapUsed = stats.heapSize;
+      heapTotal = stats.heapCapacity;
+    } catch {
+      // Fallback: clamp to prevent heapUsed > heapTotal
+      if (heapUsed > heapTotal) heapTotal = heapUsed;
+    }
+  }
+
   return {
-    heapUsed: round2(mem.heapUsed / 1024 / 1024),
-    heapTotal: round2(mem.heapTotal / 1024 / 1024),
+    heapUsed: round2(heapUsed / 1024 / 1024),
+    heapTotal: round2(heapTotal / 1024 / 1024),
     rss: round2(mem.rss / 1024 / 1024),
     external: round2(mem.external / 1024 / 1024),
   };

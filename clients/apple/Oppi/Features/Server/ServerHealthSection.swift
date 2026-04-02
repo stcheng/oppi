@@ -31,20 +31,22 @@ struct ServerHealthSection: View {
     private var heapTotalMB: Int { Int(memory.heapTotal.rounded()) }
     private var rssMB: Int { Int(memory.rss.rounded()) }
 
-    private var heapFraction: Double {
-        guard memory.heapTotal > 0 else { return 0 }
-        return min(memory.heapUsed / memory.heapTotal, 1.0)
+    /// RSS is the real process memory footprint. Thresholds:
+    /// green < 256 MB, orange < 512 MB, red >= 512 MB.
+    private var rssBarColor: Color {
+        if memory.rss >= 512 { return .themeRed }
+        if memory.rss >= 256 { return .themeOrange }
+        return .themeGreen
     }
 
-    private var barColor: Color {
-        if heapFraction >= 0.9 { return .themeRed }
-        if heapFraction >= 0.7 { return .themeOrange }
-        return .themeGreen
+    /// Bar fill as fraction of 1 GB ceiling for visual scaling.
+    private var rssFraction: Double {
+        min(memory.rss / 1024, 1.0)
     }
 
     private var memoryBar: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("Heap: \(heapUsedMB) MB / \(heapTotalMB) MB")
+            Text("RSS: \(rssMB) MB")
                 .font(.caption.monospacedDigit())
                 .foregroundStyle(.themeFg)
 
@@ -54,13 +56,13 @@ struct ServerHealthSection: View {
                         .fill(Color.themeComment.opacity(0.2))
                         .frame(height: 6)
                     Capsule()
-                        .fill(barColor)
-                        .frame(width: geo.size.width * heapFraction, height: 6)
+                        .fill(rssBarColor)
+                        .frame(width: geo.size.width * rssFraction, height: 6)
                 }
             }
             .frame(height: 6)
 
-            Text("RSS: \(rssMB) MB")
+            Text("Heap: \(heapUsedMB) MB / \(heapTotalMB) MB")
                 .font(.caption2.monospacedDigit())
                 .foregroundStyle(.themeComment)
         }

@@ -33,20 +33,22 @@ struct MacServerHealthView: View {
     private var heapTotalMB: Int { Int(memory.heapTotal.rounded()) }
     private var rssMB: Int { Int(memory.rss.rounded()) }
 
-    private var heapFraction: Double {
-        guard memory.heapTotal > 0 else { return 0 }
-        return min(memory.heapUsed / memory.heapTotal, 1.0)
+    /// RSS is the real process memory footprint. Thresholds:
+    /// green < 256 MB, orange < 512 MB, red >= 512 MB.
+    private var rssBarColor: Color {
+        if memory.rss >= 512 { return .red }
+        if memory.rss >= 256 { return .orange }
+        return .green
     }
 
-    private var barColor: Color {
-        if heapFraction >= 0.9 { return .red }
-        if heapFraction >= 0.7 { return .orange }
-        return .green
+    /// Bar fill as fraction of 1 GB ceiling for visual scaling.
+    private var rssFraction: Double {
+        min(memory.rss / 1024, 1.0)
     }
 
     private var memoryBar: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("Heap: \(heapUsedMB) MB / \(heapTotalMB) MB")
+            Text("RSS: \(rssMB) MB")
                 .font(.caption2.monospacedDigit())
 
             GeometryReader { geo in
@@ -55,13 +57,13 @@ struct MacServerHealthView: View {
                         .fill(Color.secondary.opacity(0.15))
                         .frame(height: 4)
                     Capsule()
-                        .fill(barColor)
-                        .frame(width: geo.size.width * heapFraction, height: 4)
+                        .fill(rssBarColor)
+                        .frame(width: geo.size.width * rssFraction, height: 4)
                 }
             }
             .frame(height: 4)
 
-            Text("RSS: \(rssMB) MB")
+            Text("Heap: \(heapUsedMB) MB / \(heapTotalMB) MB")
                 .font(.system(size: 9).monospacedDigit())
                 .foregroundStyle(.tertiary)
         }
