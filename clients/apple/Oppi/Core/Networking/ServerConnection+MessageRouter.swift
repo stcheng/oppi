@@ -22,13 +22,15 @@ extension ServerConnection {
                request.method == "ask",
                let questions = request.askQuestions,
                !questions.isEmpty {
-                pendingAskRequests[sessionId] = AskRequest(
+                let ask = AskRequest(
                     id: request.id,
                     sessionId: request.sessionId,
                     questions: questions,
                     allowCustom: request.allowCustom ?? true,
                     timeout: request.timeout
                 )
+                pendingAskRequests[sessionId] = ask
+                askRequestStore.set(ask, for: sessionId)
             }
             return
         }
@@ -55,13 +57,15 @@ extension ServerConnection {
         case .extensionUIRequest(let request):
             if request.method == "ask", let questions = request.askQuestions, !questions.isEmpty {
                 // Route to inline ask card
-                activeAskRequest = AskRequest(
+                let ask = AskRequest(
                     id: request.id,
                     sessionId: request.sessionId,
                     questions: questions,
                     allowCustom: request.allowCustom ?? true,
                     timeout: request.timeout
                 )
+                activeAskRequest = ask
+                askRequestStore.set(ask, for: sessionId)
             } else {
                 // Existing generic dialog path
                 extensionTimeoutTask?.cancel()
@@ -96,6 +100,7 @@ extension ServerConnection {
             silenceWatchdog.stop()
             activeAskRequest = nil
             askAnswerMode = false
+            askRequestStore.remove(for: sessionId)
             messageQueueStore.clear(sessionId: sessionId)
 
         case .sessionDeleted(let deletedId):
@@ -105,6 +110,7 @@ extension ServerConnection {
             silenceWatchdog.stop()
             activeAskRequest = nil
             askAnswerMode = false
+            askRequestStore.remove(for: sessionId)
 
         default:
             break

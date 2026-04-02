@@ -284,6 +284,9 @@ extension ServerConnection {
 
         if !streamAlive {
             activeExtensionDialog = nil
+            if let activeSessionId {
+                askRequestStore.remove(for: activeSessionId)
+            }
             activeAskRequest = nil
             askAnswerMode = false
             extensionTimeoutTask?.cancel()

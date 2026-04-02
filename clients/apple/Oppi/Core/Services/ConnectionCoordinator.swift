@@ -85,6 +85,7 @@ final class ConnectionCoordinator {
         // Initialize the stores' active partition to this server
         conn.sessionStore.switchServer(to: serverId)
         conn.permissionStore.switchServer(to: serverId)
+        conn.askRequestStore.switchServer(to: serverId)
         conn.workspaceStore.switchServer(to: serverId)
         conn.setDiscoveredLANEndpoint(bestLANEndpoint(forServerId: serverId))
 

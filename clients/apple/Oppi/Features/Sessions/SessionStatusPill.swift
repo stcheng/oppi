@@ -6,14 +6,18 @@ import SwiftUI
 /// satisfying HIG accessibility (status must not rely on color alone).
 enum SessionPillVariant: Equatable {
     case waiting
+    case asking
     case idle
     case working
     case done
     case error
 
     /// Derive the pill variant from session state.
-    static func from(status: SessionStatus, pendingCount: Int) -> SessionPillVariant {
+    ///
+    /// Priority: permission (waiting) > ask (asking) > status-based.
+    static func from(status: SessionStatus, pendingCount: Int, pendingAskCount: Int = 0) -> SessionPillVariant {
         if pendingCount > 0 { return .waiting }
+        if pendingAskCount > 0 { return .asking }
 
         switch status {
         case .busy, .starting:
@@ -32,6 +36,7 @@ enum SessionPillVariant: Equatable {
     var label: String {
         switch self {
         case .waiting: "Waiting"
+        case .asking: "Question"
         case .idle: "Idle"
         case .working: "Working"
         case .done: "Done"
@@ -42,6 +47,7 @@ enum SessionPillVariant: Equatable {
     var foregroundColor: Color {
         switch self {
         case .waiting: .themeOrange
+        case .asking: .themeBlue
         case .idle: .themeComment
         case .working: .themeCyan
         case .done: .themeGreen
@@ -52,6 +58,7 @@ enum SessionPillVariant: Equatable {
     var backgroundColor: Color {
         switch self {
         case .waiting: .themeOrange.opacity(0.12)
+        case .asking: .themeBlue.opacity(0.12)
         case .idle: .themeComment.opacity(0.1)
         case .working: .themeCyan.opacity(0.12)
         case .done: .themeGreen.opacity(0.12)

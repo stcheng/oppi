@@ -17,6 +17,7 @@ import SwiftUI
 struct SessionRow: View {
     let session: Session
     let pendingCount: Int
+    let pendingAskCount: Int
     let activitySummary: String?
     let lineageHint: String?
     let children: ChildSummary?
@@ -32,6 +33,7 @@ struct SessionRow: View {
     init(
         session: Session,
         pendingCount: Int,
+        pendingAskCount: Int = 0,
         activitySummary: String? = nil,
         lineageHint: String? = nil,
         children: ChildSummary? = nil,
@@ -39,6 +41,7 @@ struct SessionRow: View {
     ) {
         self.session = session
         self.pendingCount = pendingCount
+        self.pendingAskCount = pendingAskCount
         self.activitySummary = activitySummary
         self.lineageHint = lineageHint
         self.children = children
@@ -57,7 +60,7 @@ struct SessionRow: View {
     }
 
     private var pillVariant: SessionPillVariant {
-        .from(status: session.status, pendingCount: pendingCount)
+        .from(status: session.status, pendingCount: pendingCount, pendingAskCount: pendingAskCount)
     }
 
     var body: some View {
@@ -79,7 +82,7 @@ struct SessionRow: View {
                 // Row 1: title
                 Text(title)
                     .font(.body)
-                    .fontWeight(pendingCount > 0 ? .semibold : .regular)
+                    .fontWeight((pendingCount > 0 || pendingAskCount > 0) ? .semibold : .regular)
                     .foregroundStyle(.themeFg)
                     .lineLimit(1)
 
@@ -155,6 +158,10 @@ struct SessionRow: View {
                         .padding(.horizontal, 6)
                         .padding(.vertical, 2)
                         .background(.themeOrange, in: Capsule())
+                } else if pendingAskCount > 0 {
+                    Image(systemName: "questionmark.circle.fill")
+                        .font(.caption)
+                        .foregroundStyle(.themeBlue)
                 }
             }
         }
@@ -220,11 +227,17 @@ enum SessionActivitySummary {
         session: Session,
         pendingCount: Int,
         pendingPermissions: [PermissionRequest],
+        pendingAsk: AskRequest? = nil,
         activity: SessionActivityStore.Activity?
     ) -> String? {
         // Pending permissions take priority
         if pendingCount > 0, let first = pendingPermissions.first {
             return permissionDescription(first)
+        }
+
+        // Pending ask questions (after permissions)
+        if let ask = pendingAsk, let first = ask.questions.first {
+            return askDescription(first)
         }
 
         // Working: show current tool
@@ -254,6 +267,12 @@ enum SessionActivitySummary {
         }
 
         return nil
+    }
+
+    private static func askDescription(_ question: AskQuestion) -> String {
+        let text = question.question
+        let truncated = text.count > 40 ? String(text.prefix(40)) + "..." : text
+        return "question: \(truncated)"
     }
 
     private static func permissionDescription(_ perm: PermissionRequest) -> String {

@@ -1,0 +1,71 @@
+import Foundation
+
+/// Observable store for pending ask requests (agent questions to the user).
+///
+/// Similar to PermissionStore but for the `ask` extension tool.
+/// Each session can have at most one pending ask at a time.
+///
+/// Separate from ServerConnection so session list views can observe
+/// ask state without depending on the full connection.
+@MainActor @Observable
+final class AskRequestStore {
+    // Per-server backing storage
+    private var serverPending: [String: [String: AskRequest]] = [:]
+
+    /// Which server's asks are currently active.
+    private(set) var activeServerId: String?
+
+    // MARK: - Active server API
+
+    /// All pending ask requests for the currently active server.
+    var pending: [String: AskRequest] {
+        get { serverPending[activeServerId ?? ""] ?? [:] }
+        set { serverPending[activeServerId ?? ""] = newValue }
+    }
+
+    /// Total pending count for the active server.
+    var count: Int { pending.count }
+
+    /// Set a pending ask for a session (replaces any existing).
+    func set(_ ask: AskRequest, for sessionId: String) {
+        var dict = pending
+        dict[sessionId] = ask
+        pending = dict
+    }
+
+    /// Remove the pending ask for a session.
+    func remove(for sessionId: String) {
+        var dict = pending
+        dict.removeValue(forKey: sessionId)
+        pending = dict
+    }
+
+    /// Get the pending ask for a specific session, if any.
+    func pending(for sessionId: String) -> AskRequest? {
+        pending[sessionId]
+    }
+
+    /// Check whether a session has a pending ask.
+    func hasPending(for sessionId: String) -> Bool {
+        pending[sessionId] != nil
+    }
+
+    // MARK: - Server switching
+
+    /// Switch the active server partition.
+    func switchServer(to serverId: String) {
+        guard serverId != activeServerId else { return }
+        activeServerId = serverId
+        if serverPending[serverId] == nil {
+            serverPending[serverId] = [:]
+        }
+    }
+
+    /// Remove all data for a server (on unpair).
+    func removeServer(_ serverId: String) {
+        serverPending.removeValue(forKey: serverId)
+        if activeServerId == serverId {
+            activeServerId = nil
+        }
+    }
+}

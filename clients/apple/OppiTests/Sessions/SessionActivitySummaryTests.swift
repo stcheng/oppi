@@ -246,4 +246,103 @@ struct SessionActivitySummaryTests {
         let result = SessionActivitySummary.formatToolActivity(activity)
         #expect(result == "writing src/file.swift")
     }
+
+    // MARK: - Pending ask questions
+
+    @Test func pendingAsk_showsFirstQuestion() {
+        let session = makeSession(status: .busy)
+        let ask = AskRequest(
+            id: "ask-1",
+            sessionId: "s1",
+            questions: [AskQuestion(id: "q1", question: "What prefix do you want?", options: [
+                AskOption(value: "a", label: "Option A"),
+            ], multiSelect: false)],
+            allowCustom: true,
+            timeout: nil
+        )
+        let result = SessionActivitySummary.text(
+            session: session,
+            pendingCount: 0,
+            pendingPermissions: [],
+            pendingAsk: ask,
+            activity: nil
+        )
+        #expect(result == "question: What prefix do you want?")
+    }
+
+    @Test func pendingAsk_truncatesLongQuestion() {
+        let session = makeSession(status: .busy)
+        let longQuestion = String(repeating: "x", count: 60)
+        let ask = AskRequest(
+            id: "ask-1",
+            sessionId: "s1",
+            questions: [AskQuestion(id: "q1", question: longQuestion, options: [], multiSelect: false)],
+            allowCustom: true,
+            timeout: nil
+        )
+        let result = SessionActivitySummary.text(
+            session: session,
+            pendingCount: 0,
+            pendingPermissions: [],
+            pendingAsk: ask,
+            activity: nil
+        )
+        #expect(result != nil)
+        #expect(result!.hasPrefix("question:"))
+        #expect(result!.hasSuffix("..."))
+    }
+
+    @Test func pendingPermission_takesPriorityOverAsk() {
+        let session = makeSession(status: .busy)
+        let perms = [makePermission()]
+        let ask = AskRequest(
+            id: "ask-1",
+            sessionId: "s1",
+            questions: [AskQuestion(id: "q1", question: "Pick one?", options: [], multiSelect: false)],
+            allowCustom: true,
+            timeout: nil
+        )
+        let result = SessionActivitySummary.text(
+            session: session,
+            pendingCount: 1,
+            pendingPermissions: perms,
+            pendingAsk: ask,
+            activity: nil
+        )
+        // Permission should win over ask
+        #expect(result?.hasPrefix("permission:") == true)
+    }
+
+    @Test func pendingAsk_overridesToolActivity() {
+        let session = makeSession(status: .busy)
+        let ask = AskRequest(
+            id: "ask-1",
+            sessionId: "s1",
+            questions: [AskQuestion(id: "q1", question: "Which approach?", options: [], multiSelect: false)],
+            allowCustom: true,
+            timeout: nil
+        )
+        let activity = SessionActivityStore.Activity(toolName: "Read", keyArg: "file.swift")
+        let result = SessionActivitySummary.text(
+            session: session,
+            pendingCount: 0,
+            pendingPermissions: [],
+            pendingAsk: ask,
+            activity: activity
+        )
+        #expect(result?.hasPrefix("question:") == true)
+    }
+
+    @Test func nilAsk_fallsBackToNormalBehavior() {
+        let session = makeSession(status: .busy)
+        let activity = SessionActivityStore.Activity(toolName: "Read", keyArg: "server/src/types.ts")
+        let result = SessionActivitySummary.text(
+            session: session,
+            pendingCount: 0,
+            pendingPermissions: [],
+            pendingAsk: nil,
+            activity: activity
+        )
+        #expect(result == "reading src/types.ts")
+    }
 }

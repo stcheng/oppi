@@ -10,6 +10,7 @@ struct WorkspaceDetailView: View {
     @Environment(\.apiClient) private var apiClient
     @Environment(SessionStore.self) private var sessionStore
     @Environment(PermissionStore.self) private var permissionStore
+    @Environment(AskRequestStore.self) private var askRequestStore
     @Environment(WorkspaceStore.self) private var workspaceStore
     @Environment(GitStatusStore.self) private var gitStatusStore
     @Environment(SessionActivityStore.self) private var activityStore
@@ -182,6 +183,13 @@ struct WorkspaceDetailView: View {
         )
         if pendingCount > 0 { return .yourTurn }
 
+        // Pending ask questions also count as "your turn"
+        let askCount = SessionTreeHelper.aggregatePendingCount(
+            of: session.id, in: activeSessions,
+            pendingForSession: { askRequestStore.hasPending(for: $0) ? 1 : 0 }
+        )
+        if askCount > 0 { return .yourTurn }
+
         // Parent is idle but has working children → tree is still working.
         let descendants = childIndex.allDescendants(of: session.id)
         let workingCount = descendants.filter {
@@ -238,15 +246,25 @@ struct WorkspaceDetailView: View {
                 ? yourTurnUnfiltered.filter { rootOrDescendantMatchesSearch($0, using: activeChildIndex) }
                 : yourTurnUnfiltered
             return filtered.sorted { lhs, rhs in
-                let lhsPending = SessionTreeHelper.aggregatePendingCount(
+                let lhsPermPending = SessionTreeHelper.aggregatePendingCount(
                     of: lhs.id, in: activeSessions,
                     pendingForSession: { permissionStore.pending(for: $0).count }
                 ) > 0
-                let rhsPending = SessionTreeHelper.aggregatePendingCount(
+                let rhsPermPending = SessionTreeHelper.aggregatePendingCount(
                     of: rhs.id, in: activeSessions,
                     pendingForSession: { permissionStore.pending(for: $0).count }
                 ) > 0
-                if lhsPending != rhsPending { return lhsPending }
+                // Permission pending sorts first, then ask pending
+                if lhsPermPending != rhsPermPending { return lhsPermPending }
+                let lhsAskPending = SessionTreeHelper.aggregatePendingCount(
+                    of: lhs.id, in: activeSessions,
+                    pendingForSession: { askRequestStore.hasPending(for: $0) ? 1 : 0 }
+                ) > 0
+                let rhsAskPending = SessionTreeHelper.aggregatePendingCount(
+                    of: rhs.id, in: activeSessions,
+                    pendingForSession: { askRequestStore.hasPending(for: $0) ? 1 : 0 }
+                ) > 0
+                if lhsAskPending != rhsAskPending { return lhsAskPending }
 
                 // Within same priority: oldest turnEndedDate first (FIFO queue)
                 let lhsDate = sessionStore.turnEndedDate(for: lhs.id) ?? lhs.createdAt
@@ -538,10 +556,15 @@ struct WorkspaceDetailView: View {
             of: session.id, in: activeSessions,
             pendingForSession: { permissionStore.pending(for: $0).count }
         )
+        let askPending = SessionTreeHelper.aggregatePendingCount(
+            of: session.id, in: activeSessions,
+            pendingForSession: { askRequestStore.hasPending(for: $0) ? 1 : 0 }
+        )
         let summary = SessionActivitySummary.text(
             session: session,
             pendingCount: pending,
             pendingPermissions: permissionStore.pending(for: session.id),
+            pendingAsk: askRequestStore.pending(for: session.id),
             activity: activityStore.lastActivity(for: session.id)
         )
         let children = childSummary(for: session.id, using: childIndex)
@@ -554,6 +577,7 @@ struct WorkspaceDetailView: View {
         SessionRow(
             session: session,
             pendingCount: pending,
+            pendingAskCount: askPending,
             activitySummary: summary,
             children: children,
             searchSnippet: searchStore.snippetsBySessionId[session.id]

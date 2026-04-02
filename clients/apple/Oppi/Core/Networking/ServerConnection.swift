@@ -30,6 +30,7 @@ final class ServerConnection {
     // Stores
     let sessionStore = SessionStore()
     let permissionStore = PermissionStore()
+    let askRequestStore = AskRequestStore()
     let workspaceStore = WorkspaceStore()
     let gitStatusStore = GitStatusStore()
     let fileIndexStore = FileIndexStore()
@@ -755,6 +756,9 @@ final class ServerConnection {
         guard let wsClient else { throw WebSocketError.notConnected }
         try await wsClient.send(.extensionUIResponse(id: id, value: value, confirmed: confirmed, cancelled: cancelled), sessionId: activeSessionId)
         activeExtensionDialog = nil
+        if let activeSessionId {
+            askRequestStore.remove(for: activeSessionId)
+        }
         activeAskRequest = nil
         askAnswerMode = false
         extensionTimeoutTask?.cancel()
