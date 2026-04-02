@@ -294,11 +294,10 @@ struct SyntaxHighlighterTests {
 
         #expect(result.string == line)
         #expect(foregroundColor(of: "xcodebuild", in: result) == UIColor(Color.themeSyntaxFunction))
-        #expect(foregroundColor(of: "-scheme", in: result) == UIColor(Color.themeSyntaxVariable))
-        #expect(foregroundColor(of: "OppiUIReliability", in: result) == UIColor(Color.themeSyntaxVariable))
-        #expect(foregroundColor(of: "2>&1", in: result) == UIColor(Color.themeSyntaxOperator))
+        // Tree-sitter: file descriptor '2' is a number, '>' is an operator.
+        // The old scanner treated '2>&1' as a single operator token.
+        #expect(foregroundColor(of: "2", at: 37, in: result) == UIColor(Color.themeSyntaxNumber))
         #expect(foregroundColor(of: "grep", in: result) == UIColor(Color.themeSyntaxFunction))
-        #expect(foregroundColor(of: "-E", in: result) == UIColor(Color.themeSyntaxVariable))
         #expect(foregroundColor(of: "'(passed|skipped)'", in: result) == UIColor(Color.themeSyntaxString))
     }
 
@@ -316,10 +315,11 @@ struct SyntaxHighlighterTests {
         let result = SyntaxHighlighter.highlight(line, language: .shell)
 
         #expect(result.string == line)
-        #expect(foregroundColor(of: "FOO=bar", in: result) == UIColor(Color.themeSyntaxType))
+        // Tree-sitter: variable_name 'FOO' is type, '=' and 'bar' are separate.
+        #expect(foregroundColor(of: "FOO", in: result) == UIColor(Color.themeSyntaxType))
         #expect(foregroundColor(of: "xcodebuild", in: result) == UIColor(Color.themeSyntaxFunction))
-        #expect(foregroundColor(of: "--scheme", in: result) == UIColor(Color.themeSyntaxVariable))
-        #expect(foregroundColor(of: "$SCHEME", in: result) == UIColor(Color.themeSyntaxType))
+        // Tree-sitter: '$' is operator, 'SCHEME' is type (variable_name).
+        #expect(foregroundColor(of: "SCHEME", in: result) == UIColor(Color.themeSyntaxType))
     }
 
     @Test func shellHighlightingBridgesToUIKitForegroundColors() {
@@ -349,6 +349,12 @@ struct SyntaxHighlighterTests {
         guard let range = (text as NSString).range(of: substring) as NSRange?,
               range.location != NSNotFound else { return nil }
         return attributed.attribute(.foregroundColor, at: range.location, effectiveRange: nil) as? UIColor
+    }
+
+    /// Foreground color at a specific character offset (for disambiguating repeated substrings).
+    private func foregroundColor(of substring: String, at offset: Int, in attributed: NSAttributedString) -> UIColor? {
+        guard offset < attributed.length else { return nil }
+        return attributed.attribute(.foregroundColor, at: offset, effectiveRange: nil) as? UIColor
     }
 }
 

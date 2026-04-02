@@ -360,8 +360,14 @@ enum SyntaxHighlighter {
         // Build the full attributed string with default variable color.
         let result = NSMutableAttributedString(string: truncated, attributes: attrs.variable)
 
-        // Scan for token ranges using the shared single-array scanner.
-        let tokenRanges = scanTokenRangesInternal(Array(truncated), language: language)
+        // Scan for token ranges. Tree-sitter for supported languages,
+        // hand-written scanner as fallback.
+        let tokenRanges: [TokenRange]
+        if let tsRanges = TreeSitterHighlighter.scanTokenRanges(truncated, language: language) {
+            tokenRanges = tsRanges
+        } else {
+            tokenRanges = scanTokenRangesInternal(Array(truncated), language: language)
+        }
 
         // Pre-extract UIColors to avoid dictionary lookup + cast per token.
         let commentColor = attrs.comment[.foregroundColor] as? UIColor
