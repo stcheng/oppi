@@ -23,6 +23,7 @@ struct FileIcon: Equatable, Sendable {
     var image: Image {
         if let assetName, UIImage(named: assetName) != nil {
             return Image(assetName)
+                .resizable()
         }
         return Image(systemName: symbolName)
     }

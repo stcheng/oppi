@@ -538,16 +538,40 @@ enum FileShareService {
     /// Fallback: render HTML to PDF first, then rasterize the first page.
     private static func rasterizeHTMLViaPDF(_ source: String) async -> UIImage {
         let pdfData = await renderHTMLToPDF(source)
-        guard !pdfData.isEmpty,
-              let provider = CGDataProvider(data: pdfData as CFData),
-              let pdfDoc = CGPDFDocument(provider),
-              let page = pdfDoc.page(at: 1) else {
+        guard !pdfData.isEmpty else {
             return placeholderImage()
         }
 
-        let pageRect = page.getBoxRect(.mediaBox)
+        // PDF parsing + rasterization is pure CPU work — dispatch off the
+        // main thread to avoid blocking UI during drawPDFPage (2s+ for
+        // large pages at 3x scale).
         let scale = imageScale
-        let size = CGSize(width: pageRect.width * scale, height: pageRect.height * scale)
+        let image = await Task.detached(priority: .userInitiated) {
+            Self.rasterizePDFPage(from: pdfData, scale: scale)
+        }.value
+
+        return image ?? placeholderImage()
+    }
+
+    /// Parse PDF data and rasterize the first page to a UIImage.
+    ///
+    /// Pure CPU work (CGPDFDocument + UIGraphicsImageRenderer) — safe to
+    /// call from any thread. Extracted so callers can dispatch off the
+    /// main actor.
+    private nonisolated static func rasterizePDFPage(
+        from pdfData: Data, scale: CGFloat
+    ) -> UIImage? {
+        guard let provider = CGDataProvider(data: pdfData as CFData),
+              let pdfDoc = CGPDFDocument(provider),
+              let page = pdfDoc.page(at: 1) else {
+            return nil
+        }
+
+        let pageRect = page.getBoxRect(.mediaBox)
+        let size = CGSize(
+            width: pageRect.width * scale,
+            height: pageRect.height * scale
+        )
 
         let renderer = UIGraphicsImageRenderer(size: size)
         return renderer.image { ctx in
