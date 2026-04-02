@@ -36,6 +36,10 @@ interface SloThreshold {
   group: string;
   /** Short display name for narrow output (max 14 chars). */
   short: string;
+  /** If true, lower values are worse (e.g. available memory). SLO means "tm99 should be >= threshold". */
+  lowerIsBad?: boolean;
+  /** Override display unit for formatting (e.g. "mb" for MB values stored as unit=count). */
+  displayUnit?: string;
 }
 
 interface MetricSample {
@@ -160,6 +164,19 @@ export const SLO_THRESHOLDS: Record<string, SloThreshold> = {
   "chat.session_list_compute_ms":    { p95: 60,   label: "List compute",             group: "Session List", short: "list_compute" },
   "chat.session_list_row_compute_ms":{ p95: 10,   label: "List row compute",         group: "Session List", short: "list_row" },
   "chat.session_list_body_rate":     { p95: 20,   label: "List body evals/5s",       group: "Session List", short: "list_body" },
+
+  // Device resources (10s samples)
+  "device.cpu_pct":              { p95: 80,    label: "CPU usage %",              group: "Device", short: "cpu_pct", displayUnit: "pct" },
+  "device.memory_mb":            { p95: 400,   label: "Memory footprint",         group: "Device", short: "mem_mb", displayUnit: "mb" },
+  "device.memory_available_mb":  { p95: 100,   label: "Memory avail (low=bad)",   group: "Device", short: "mem_avail", lowerIsBad: true, displayUnit: "mb" },
+  "device.thermal_state":        { p95: 1,     label: "Thermal (0-3)",            group: "Device", short: "thermal" },
+
+  // Server resources (30s samples)
+  "server.cpu_total":            { p95: 50,    label: "Server CPU %",             group: "Server", short: "srv_cpu", displayUnit: "pct" },
+  "server.rss_mb":               { p95: 1024,  label: "Server RSS",               group: "Server", short: "srv_rss", displayUnit: "mb" },
+  "server.heap_mb":              { p95: 512,   label: "Server heap",              group: "Server", short: "srv_heap", displayUnit: "mb" },
+  "server.ws_connections":       { p95: 10,    label: "WS connections",           group: "Server", short: "srv_ws" },
+  "server.sessions_total":       { p95: 20,    label: "Active sessions",          group: "Server", short: "srv_sess" },
 };
 
 // ─── Data Loading ───
@@ -232,7 +249,61 @@ export function loadSamples(telemetryDir: string, daysBack: number): LoadResult 
     }
   }
 
+  // Also load server metrics (different JSONL format)
+  loadServerMetrics(telemetryDir, cutoffMs, values);
+
   return { values, byBuild, buildSummary, totalSamples, filesRead };
+}
+
+/**
+ * Load server-metrics-*.jsonl files and flatten into the same values map.
+ * Server records have shape: { ts, cpu: { total }, memory: { rss, heapUsed }, sessions: { total }, wsConnections }
+ */
+function loadServerMetrics(
+  telemetryDir: string,
+  cutoffMs: number,
+  values: Record<string, MetricBucket>,
+): void {
+  let files: string[];
+  try {
+    files = readdirSync(telemetryDir)
+      .filter((f) => f.startsWith("server-metrics-") && f.endsWith(".jsonl"))
+      .sort();
+  } catch {
+    return;
+  }
+
+  for (const file of files) {
+    const text = readFileSync(join(telemetryDir, file), "utf8");
+    for (const line of text.split("\n")) {
+      if (!line.trim()) continue;
+      let rec: {
+        ts?: number;
+        cpu?: { total?: number };
+        memory?: { rss?: number; heapUsed?: number };
+        sessions?: { total?: number };
+        wsConnections?: number;
+      };
+      try {
+        rec = JSON.parse(line);
+      } catch {
+        continue;
+      }
+      if (typeof rec.ts !== "number" || rec.ts < cutoffMs) continue;
+
+      const push = (metric: string, val: number | undefined, unit: string) => {
+        if (typeof val !== "number" || !Number.isFinite(val)) return;
+        if (!values[metric]) values[metric] = { vals: [], unit };
+        values[metric].vals.push(val);
+      };
+
+      push("server.cpu_total", rec.cpu?.total, "pct");
+      push("server.rss_mb", rec.memory?.rss, "mb");
+      push("server.heap_mb", rec.memory?.heapUsed, "mb");
+      push("server.ws_connections", rec.wsConnections, "count");
+      push("server.sessions_total", rec.sessions?.total, "count");
+    }
+  }
 }
 
 // ─── Statistics ───
@@ -274,10 +345,14 @@ export function review(data: LoadResult): ReviewOutput {
     const slo = SLO_THRESHOLDS[metric];
     metrics[metric] = {
       ...stats,
-      unit,
+      unit: slo?.displayUnit ?? unit,
       slo_p95: slo?.p95 ?? null,
       group: slo?.group ?? "other",
-      status: slo ? (stats.tm99 <= slo.p95 ? "pass" : "over") : "no_slo",
+      status: slo
+        ? (slo.lowerIsBad ? stats.tm99 >= slo.p95 : stats.tm99 <= slo.p95)
+          ? "pass"
+          : "over"
+        : "no_slo",
     };
   }
 
@@ -334,6 +409,15 @@ export function fmtValue(n: number, unit: string = "ms"): string {
     if (n >= 100) return `${Math.round(n)}ms`;
     if (n >= 10) return `${n.toFixed(1)}ms`;
     return `${n.toFixed(0)}ms`;
+  }
+  if (unit === "mb") {
+    if (n >= 1_024) return `${(n / 1_024).toFixed(1)}GB`;
+    if (n >= 100) return `${Math.round(n)}MB`;
+    if (n >= 10) return `${n.toFixed(0)}MB`;
+    return `${n.toFixed(1)}MB`;
+  }
+  if (unit === "pct") {
+    return `${n.toFixed(1)}%`;
   }
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
@@ -494,7 +578,7 @@ function printNarrow(result: ReviewOutput, args: ParsedArgs): void {
     for (const metric of metrics) {
       const slo = SLO_THRESHOLDS[metric];
       const r = result.metrics[metric];
-      const name = (slo?.short ?? metric.replace("chat.", "")).slice(0, NAME_W);
+      const name = (slo?.short ?? metric.replace(/^\w+\./, "")).slice(0, NAME_W);
 
       if (!r || r.count === 0) {
         console.log(`  ${name.padEnd(NAME_W)} ${c.dim}no data${c.reset}`);
