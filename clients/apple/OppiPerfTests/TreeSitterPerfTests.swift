@@ -90,68 +90,6 @@ class TreeSitterPerfTests: XCTestCase {
         }
     }
 
-    // MARK: - Swift Benchmarks
-
-    /// Typical Swift snippet (~100 chars)
-    func testSwiftTypicalCode() {
-        let code = "let result = try await api.fetchSessions().filter { $0.isActive }"
-        measure {
-            for _ in 0..<100 {
-                _ = TreeSitterHighlighter.scanTokenRanges(code, language: .swift)
-            }
-        }
-    }
-
-    /// Swift class declaration (~500 chars)
-    func testSwiftClassDeclaration() {
-        let code = """
-        @Observable
-        final class SessionStore {
-            private(set) var sessions: [Session] = []
-            private let api: APIClient
-            
-            init(api: APIClient) {
-                self.api = api
-            }
-            
-            func load() async throws {
-                let fetched = try await api.fetchSessions()
-                sessions = fetched.sorted { $0.updatedAt > $1.updatedAt }
-            }
-            
-            func delete(_ session: Session) async throws {
-                try await api.deleteSession(session.id)
-                sessions.removeAll { $0.id == session.id }
-            }
-        }
-        """
-        measure {
-            for _ in 0..<100 {
-                _ = TreeSitterHighlighter.scanTokenRanges(code, language: .swift)
-            }
-        }
-    }
-
-    /// Large Swift file (~5K chars)
-    func testSwiftLargeFile() {
-        var lines: [String] = ["import Foundation", ""]
-        for i in 0..<50 {
-            lines.append("struct Item\(i): Codable, Hashable {")
-            lines.append("    let id: Int")
-            lines.append("    let name: String")
-            lines.append("    var isActive: Bool = true")
-            lines.append("    func display() -> String { return \"Item \\(name)\" }")
-            lines.append("}")
-            lines.append("")
-        }
-        let code = lines.joined(separator: "\n")
-        measure {
-            for _ in 0..<10 {
-                _ = TreeSitterHighlighter.scanTokenRanges(code, language: .swift)
-            }
-        }
-    }
-
     // MARK: - Registry Initialization
 
     /// Measure one-time grammar registration cost (query compilation).

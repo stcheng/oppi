@@ -37,7 +37,6 @@ settings:
   base:
     SWIFT_VERSION: "6.0"
     SWIFT_STRICT_CONCURRENCY: complete
-    SWIFT_OBJC_BRIDGING_HEADER: Oppi/Core/Formatting/Grammars/TreeSitterSwift/Oppi-Bridging-Header.h
     TARGETED_DEVICE_FAMILY: 1
     INFOPLIST_KEY_UISupportedInterfaceOrientations: "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
     INFOPLIST_KEY_UILaunchScreen_Generation: true
@@ -57,11 +56,7 @@ targets:
         type: group
         excludes:
           - "Resources/AppIcon.icon"
-          - "Core/Formatting/Grammars/*/queries"
       - path: Oppi/Resources/AppIcon.icon
-        type: folder
-        buildPhase: resources
-      - path: Oppi/Core/Formatting/Grammars/TreeSitterSwift/queries
         type: folder
         buildPhase: resources
       - path: Shared
@@ -77,8 +72,6 @@ targets:
         DEVELOPMENT_TEAM: AZAQMY4SPZ
         INFOPLIST_KEY_NSSupportsLiveActivities: true
         ENABLE_USER_SCRIPT_SANDBOXING: false
-        # Header search path for vendored tree-sitter grammars
-        HEADER_SEARCH_PATHS: $(inherited) $(SRCROOT)/Oppi/Core/Formatting/Grammars/TreeSitterSwift/src
     entitlements:
       path: Oppi/Resources/Oppi.entitlements
       properties:

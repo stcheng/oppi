@@ -221,8 +221,6 @@ struct DiffSyntaxHighlightOffsetTests {
         let rColor = result.attribute(
             .foregroundColor, at: returnRange.location, effectiveRange: nil
         ) as? UIColor
-        // tree-sitter may tokenize differently in batch-concatenated diff context.
-        // The key invariant is that the diff renders without crashing.
-        _ = rColor // verified manually: return is highlighted in actual diff view
+        #expect(rColor == keywordColor, "'r' of 'return' must be keyword color")
     }
 }
