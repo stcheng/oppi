@@ -337,10 +337,13 @@ struct ConnectionCoordinatorTests {
     @Test func lanDiscoveryPrefersCandidateThatPassesTLSPinValidation() async {
         let (coordinator, _) = makeCoordinator()
 
+        // Use an IP-based host so HTTPS hostname preservation doesn't
+        // replace the discovered LAN IP in the URL (hostname-based hosts
+        // keep the paired hostname for TLS CN/SAN compat).
         let server = makeServer(
             id: "sha256:SERVERFINGERPRINTABCDEF",
             name: "LAN",
-            host: "my-server.tail00000.ts.net",
+            host: "10.0.0.1",
             scheme: .https,
             tlsFingerprint: "sha256:TLSFINGERPRINTABCDEF"
         )
@@ -370,10 +373,12 @@ struct ConnectionCoordinatorTests {
     @Test func lanDiscoveryPrefersMoreSpecificFingerprintCandidate() async {
         let (coordinator, _) = makeCoordinator()
 
+        // Use an IP-based host so HTTPS hostname preservation doesn't
+        // replace the discovered LAN IP in the URL.
         let server = makeServer(
             id: "sha256:SERVERFINGERPRINTABCDEF",
             name: "LAN",
-            host: "my-server.tail00000.ts.net",
+            host: "10.0.0.1",
             scheme: .https,
             tlsFingerprint: "sha256:TLSFINGERPRINTABCDEF"
         )
