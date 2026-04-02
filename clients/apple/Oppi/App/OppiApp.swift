@@ -112,6 +112,7 @@ struct OppiApp: App {
             .environment(coordinator.activeConnection.sessionStore)
             .environment(coordinator.activeConnection.workspaceStore)
             .environment(coordinator.activeConnection.permissionStore)
+            .environment(coordinator.activeConnection.askRequestStore)
             .environment(coordinator.activeConnection.audioPlayer)
             .environment(coordinator.activeConnection.gitStatusStore)
             .environment(coordinator.activeConnection.fileIndexStore)
@@ -154,6 +155,7 @@ struct OppiApp: App {
                 AppFont.rebuild()
                 await SentryService.shared.configure()
                 MetricKitService.shared.configure()
+                DeviceResourceSampler.shared.configure()
 #if DEBUG
                 configureWatchdogHooks()
                 mainThreadLagWatchdog.start()

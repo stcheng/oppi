@@ -239,6 +239,7 @@ struct SettingsView: View {
                         AppPreferences.Telemetry.setEnabled(newValue)
                         // Reconnect telemetry services with new preference
                         MetricKitService.shared.refreshAfterPreferenceChange()
+                        DeviceResourceSampler.shared.refreshAfterPreferenceChange()
                     }
             } header: {
                 Text("Diagnostics")

@@ -79,7 +79,7 @@ describe("routes modules", () => {
       const source = readFileSync(metricModelsPath, "utf8");
       const iosMetricNames = [...source.matchAll(/case\s+\w+\s*=\s*"([^"]+)"/g)]
         .map((match) => match[1])
-        .filter((metric) => metric.startsWith("chat.") || metric.startsWith("plot."));
+        .filter((metric) => metric.startsWith("chat.") || metric.startsWith("plot.") || metric.startsWith("device."));
 
       expect([...new Set(iosMetricNames)].sort()).toEqual([...CHAT_METRIC_NAME_VALUES].sort());
     });

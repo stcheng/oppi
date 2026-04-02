@@ -838,6 +838,25 @@ export const CHAT_METRIC_REGISTRY = {
     description:
       "Aggregate per-row computation latency for visible session rows. Tags: row_count, workspace_id.",
   },
+
+  // ── Device resource samples (10s interval) ──
+  "device.cpu_pct": {
+    unit: "count",
+    description:
+      "Device CPU usage percentage (0-100+) computed from Mach task_info deltas over 10s window.",
+  },
+  "device.memory_mb": {
+    unit: "count",
+    description: "Device physical memory footprint in MB (phys_footprint from task_vm_info).",
+  },
+  "device.memory_available_mb": {
+    unit: "count",
+    description: "Available memory headroom in MB before jetsam (os_proc_available_memory).",
+  },
+  "device.thermal_state": {
+    unit: "count",
+    description: "Device thermal state: 0=nominal, 1=fair, 2=serious, 3=critical.",
+  },
 } as const satisfies Readonly<Record<string, ChatMetricDefinition>>;
 
 export type ChatMetricName = keyof typeof CHAT_METRIC_REGISTRY;

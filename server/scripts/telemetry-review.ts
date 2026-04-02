@@ -59,6 +59,7 @@ interface MetricBucket {
 
 interface MetricStats {
   count: number;
+  tm99: number;
   p50: number;
   p95: number;
   p99: number;
@@ -85,6 +86,7 @@ interface LoadResult {
 
 interface MetricResult {
   count: number;
+  tm99: number;
   p50: number;
   p95: number;
   p99: number;
@@ -241,10 +243,20 @@ export function percentile(sorted: number[], p: number): number {
   return sorted[idx];
 }
 
+/** Mean of bottom 99% of values — trims the worst 1% outliers. */
+export function trimmedMean99(sorted: number[]): number {
+  if (sorted.length === 0) return 0;
+  const cutIdx = Math.max(1, Math.floor(sorted.length * 0.99));
+  let sum = 0;
+  for (let i = 0; i < cutIdx; i++) sum += sorted[i];
+  return sum / cutIdx;
+}
+
 export function computeStats(vals: number[]): MetricStats {
   const sorted = [...vals].sort((a, b) => a - b);
   return {
     count: sorted.length,
+    tm99: trimmedMean99(sorted),
     p50: percentile(sorted, 50),
     p95: percentile(sorted, 95),
     p99: percentile(sorted, 99),
@@ -265,7 +277,7 @@ export function review(data: LoadResult): ReviewOutput {
       unit,
       slo_p95: slo?.p95 ?? null,
       group: slo?.group ?? "other",
-      status: slo ? (stats.p95 <= slo.p95 ? "pass" : "over") : "no_slo",
+      status: slo ? (stats.tm99 <= slo.p95 ? "pass" : "over") : "no_slo",
     };
   }
 
@@ -398,6 +410,7 @@ function printCompact(result: ReviewOutput, fields: Set<string> | null): void {
     const entry: Record<string, number | string | null> = {};
     const f = fields ?? new Set(["p95", "slo", "status"]);
     if (f.has("count")) entry.n = r.count;
+    if (f.has("tm99")) entry.tm99 = r.tm99;
     if (f.has("p50")) entry.p50 = r.p50;
     if (f.has("p95")) entry.p95 = r.p95;
     if (f.has("p99")) entry.p99 = r.p99;
@@ -490,12 +503,12 @@ function printNarrow(result: ReviewOutput, args: ParsedArgs): void {
 
       const f = (n: number) => fmtValue(n, r.unit);
       const over = r.status === "over";
-      const p95Str = f(r.p95).padStart(VAL_W);
+      const tmStr = f(r.tm99).padStart(VAL_W);
       const sloStr = f(r.slo_p95!).padStart(SLO_W);
       const status = over ? `${c.red}OVER${c.reset}` : `${c.green}  ok${c.reset}`;
-      const p95Part = over ? `${c.red}${p95Str}${c.reset}` : p95Str;
+      const tmPart = over ? `${c.red}${tmStr}${c.reset}` : tmStr;
 
-      console.log(`  ${name.padEnd(NAME_W)} ${p95Part} /${sloStr}  ${status}`);
+      console.log(`  ${name.padEnd(NAME_W)} ${tmPart} /${sloStr}  ${status}`);
     }
     console.log();
   }
@@ -507,7 +520,7 @@ function printNarrow(result: ReviewOutput, args: ParsedArgs): void {
 function printWide(result: ReviewOutput, args: ParsedArgs): void {
   const c = makeColors(!args.noColor);
   const { summary } = result;
-  const fields = args.fields ?? new Set(["count", "p50", "p95", "p99", "max", "slo", "status"]);
+  const fields = args.fields ?? new Set(["count", "tm99", "p50", "p95", "p99", "max", "slo", "status"]);
 
   console.error();
   console.error(
@@ -526,11 +539,12 @@ function printWide(result: ReviewOutput, args: ParsedArgs): void {
 
     const cols: string[] = [`  ${"Metric".padEnd(34)}`];
     if (fields.has("count")) cols.push("Count".padStart(8));
+    if (fields.has("tm99")) cols.push("tm99".padStart(8));
     if (fields.has("p50")) cols.push("p50".padStart(8));
     if (fields.has("p95")) cols.push("p95".padStart(8));
     if (fields.has("p99")) cols.push("p99".padStart(8));
     if (fields.has("max")) cols.push("max".padStart(8));
-    if (fields.has("slo")) cols.push("SLO p95".padStart(8));
+    if (fields.has("slo")) cols.push("SLO".padStart(8));
     if (fields.has("status")) cols.push("Status");
     console.log(`${c.dim}${cols.join(" ")}${c.reset}`);
 
@@ -546,6 +560,7 @@ function printWide(result: ReviewOutput, args: ParsedArgs): void {
       const statusIcon = over ? `${c.red}- OVER${c.reset}` : `${c.green}+ ok${c.reset}`;
       const vals: string[] = [`  ${metric.padEnd(34)}`];
       if (fields.has("count")) vals.push(r.count.toLocaleString().padStart(8));
+      if (fields.has("tm99")) vals.push(f(r.tm99).padStart(8));
       if (fields.has("p50")) vals.push(f(r.p50).padStart(8));
       if (fields.has("p95")) {
         const p95s = f(r.p95).padStart(8);
