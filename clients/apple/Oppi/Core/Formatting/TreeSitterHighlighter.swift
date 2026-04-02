@@ -1,6 +1,7 @@
 import Foundation
 import SwiftTreeSitter
 import TreeSitterBash
+import TreeSitterSwift
 import TreeSitter
 
 // MARK: - TreeSitterHighlighter
@@ -142,7 +143,17 @@ enum TreeSitterHighlighter {
         /// Register all available grammars.
         /// Add new grammars here as SPM dependencies are added.
         private func registerAll() {
-            register(.shell, tsLanguage: tree_sitter_bash(), name: "Bash")
+            register(
+                .shell,
+                tsLanguage: tree_sitter_bash(),
+                name: "Bash",
+                supplement: """
+                
+                ;; Oppi supplements — operators missing from upstream bash highlights.scm
+                ["||" "|&" "<<<" ">|" "&>" "&>>" ";;" ";&" ";;&"] @operator
+                """
+            )
+            register(.swift, tsLanguage: tree_sitter_swift(), name: "Swift")
             // TODO: Register more grammars as SPM deps are added:
             // register(.typescript, tsLanguage: tree_sitter_typescript(), name: "TypeScript")
             // register(.javascript, tsLanguage: tree_sitter_javascript(), name: "JavaScript")
@@ -162,12 +173,14 @@ enum TreeSitterHighlighter {
         private func register(
             _ syntaxLanguage: SyntaxLanguage,
             tsLanguage: OpaquePointer,
-            name: String
+            name: String,
+            supplement: String? = nil
         ) {
             let language = Language(language: tsLanguage)
             let highlightsQuery = Self.loadHighlightsQuery(
                 language: language,
-                bundleName: "TreeSitter\(name)_TreeSitter\(name)"
+                bundleName: "TreeSitter\(name)_TreeSitter\(name)",
+                supplement: supplement
             )
 
             entries[syntaxLanguage] = Entry(
@@ -182,7 +195,8 @@ enum TreeSitterHighlighter {
         /// The naming convention is `TreeSitter<Name>_TreeSitter<Name>.bundle/queries/highlights.scm`.
         private static func loadHighlightsQuery(
             language: Language,
-            bundleName: String
+            bundleName: String,
+            supplement: String? = nil
         ) -> Query? {
             // Find the resource bundle embedded in the app.
             guard let bundleURL = Bundle.main.url(
@@ -205,20 +219,24 @@ enum TreeSitterHighlighter {
                 // Load upstream highlights.scm
                 var queryData = try Data(contentsOf: highlightsURL)
 
-                // Append supplementary patterns for operators that the upstream
-                // highlights.scm doesn't cover. This keeps us conformant with
-                // upstream while filling gaps for common shell operators.
-                let supplement = """
-                
-                ;; Oppi supplements — operators missing from upstream highlights.scm
-                ["||" "|&" "<<<" ">|" "&>" "&>>" ";;" ";&" ";;&"] @operator
-                """
-                if let supplementData = supplement.data(using: .utf8) {
+                // Append per-language supplementary patterns if provided.
+                if let supplement, let supplementData = supplement.data(using: .utf8) {
                     queryData.append(supplementData)
                 }
 
                 return try Query(language: language, data: queryData)
             } catch {
+                // Log query compilation errors to help debug grammar issues.
+                // Common cause: highlights.scm uses syntax not supported by
+                // the installed tree-sitter version.
+                // Print detailed error info for debugging grammar issues.
+                if case QueryError.nodeType(let offset) = error {
+                    let data = (try? Data(contentsOf: highlightsURL)) ?? Data()
+                    let context = String(data: data.prefix(Int(offset) + 50), encoding: .utf8)?.suffix(80) ?? ""
+                    print("[TreeSitter] Query nodeType error at offset \(offset) in \(bundleName): ...\(context)")
+                } else {
+                    print("[TreeSitter] Query compilation failed for \(bundleName): \(error)")
+                }
                 return nil
             }
         }
@@ -276,7 +294,7 @@ enum TreeSitterHighlighter {
 
         // If we have a highlights query, use it (preferred path).
         if let query = registry.highlightsQuery(for: language) {
-            return scanWithQuery(query: query, tree: mutableTree)
+            return scanWithQuery(query: query, tree: mutableTree, source: code)
         }
 
         // Fallback: no highlights query. Walk AST manually.
@@ -297,13 +315,26 @@ enum TreeSitterHighlighter {
     /// which is exactly what we want for last-write-wins in NSAttributedString.
     private static func scanWithQuery(
         query: Query,
-        tree: MutableTree
+        tree: MutableTree,
+        source: String
     ) -> [SyntaxHighlighter.TokenRange] {
         let cursor = query.execute(in: tree)
         var ranges: [SyntaxHighlighter.TokenRange] = []
         ranges.reserveCapacity(256)
 
-        for match in cursor {
+        // Use predicate-aware iteration. Some highlights.scm patterns
+        // use predicates like (#match? @name "^[A-Z]") which need the
+        // source text to evaluate.
+        let nsSource = source as NSString
+        let context = Predicate.Context(textProvider: { range, _ in
+            guard range.location >= 0, range.location + range.length <= nsSource.length else {
+                return nil
+            }
+            return nsSource.substring(with: range)
+        })
+
+        let resolving = cursor.resolve(with: context)
+        for match in resolving {
             for capture in match.captures {
                 guard let name = capture.name else { continue }
                 guard let kind = tokenKind(for: name) else { continue }
@@ -319,15 +350,33 @@ enum TreeSitterHighlighter {
             }
         }
 
-        // Sort: position ascending, then length descending (broad first).
-        // This ensures last-write-wins gives priority to specific captures.
-        ranges.sort { a, b in
-            if a.location != b.location {
-                return a.location < b.location
+        // Deduplicate: when multiple captures cover the same range,
+        // keep only the most specific one (highest pattern index).
+        // tree-sitter returns captures sorted by position, and within
+        // the same position, the broadest pattern (e.g. @variable)
+        // comes AFTER more specific patterns (e.g. @function.method).
+        // We want the specific one to win.
+        //
+        // Strategy: group by (location, length), keep the one with
+        // the highest patternIndex (most specific in highlights.scm).
+        // Since captures are already in document order, we just
+        // track the last-seen range and replace if same position.
+        if ranges.count <= 1 { return ranges }
+
+        var deduped: [SyntaxHighlighter.TokenRange] = []
+        deduped.reserveCapacity(ranges.count)
+
+        for range in ranges {
+            if let last = deduped.last,
+               last.location == range.location,
+               last.length == range.length {
+                // Same range — later capture is broader (@variable).
+                // Keep the earlier, more specific one.
+                continue
             }
-            return a.length > b.length
+            deduped.append(range)
         }
 
-        return ranges
+        return deduped
     }
 }

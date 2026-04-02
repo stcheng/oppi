@@ -21,6 +21,9 @@ packages:
   tree-sitter-bash:
     url: https://github.com/tree-sitter/tree-sitter-bash
     from: "0.25.0"
+  tree-sitter-swift:
+    url: https://github.com/alex-pinkus/tree-sitter-swift
+    revision: 0.7.1-with-generated-files
 options:
   bundleIdPrefix: dev.chenda
   deploymentTarget:
@@ -193,6 +196,8 @@ targets:
         product: SwiftTreeSitter
       - package: tree-sitter-bash
         product: TreeSitterBash
+      - package: tree-sitter-swift
+        product: TreeSitterSwift
       - target: OppiActivityExtension
         embed: true
       - target: OppiControlWidget
