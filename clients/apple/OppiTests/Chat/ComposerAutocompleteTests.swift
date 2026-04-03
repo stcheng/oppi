@@ -112,6 +112,74 @@ struct ComposerAutocompleteTests {
         #expect(suggestions.isEmpty)
     }
 
+    // MARK: - Busy Mode (Steering / Follow-up)
+
+    @Test func atFileAvailableWhenBusy() {
+        #expect(
+            ComposerAutocomplete.context(for: "open @src", isBusy: true)
+            == .atFile(query: "src")
+        )
+    }
+
+    @Test func atFileWithEmptyQueryAvailableWhenBusy() {
+        #expect(
+            ComposerAutocomplete.context(for: "@", isBusy: true)
+            == .atFile(query: "")
+        )
+    }
+
+    @Test func slashBlockedWhenBusy() {
+        #expect(
+            ComposerAutocomplete.context(for: "/co", isBusy: true)
+            == .none
+        )
+    }
+
+    @Test func slashAllowedWhenNotBusy() {
+        #expect(
+            ComposerAutocomplete.context(for: "/co", isBusy: false)
+            == .slash(query: "co")
+        )
+    }
+
+    @Test func atFileAvailableWhenNotBusy() {
+        #expect(
+            ComposerAutocomplete.context(for: "@src/chat", isBusy: false)
+            == .atFile(query: "src/chat")
+        )
+    }
+
+    @Test func plainTextReturnsNoneWhenBusy() {
+        #expect(
+            ComposerAutocomplete.context(for: "just some text", isBusy: true)
+            == .none
+        )
+    }
+
+    @Test @MainActor func fileSuggestionQueryFiresWhenBusy() {
+        var receivedQuery: String??
+        var callCount = 0
+        ComposerShared.notifyFileSuggestionContext(
+            for: "check @main",
+            isBusy: true,
+            onFileSuggestionQuery: { q in receivedQuery = q; callCount += 1 }
+        )
+        #expect(callCount == 1)
+        #expect(receivedQuery == "main")
+    }
+
+    @Test @MainActor func fileSuggestionQueryClearedForPlainTextWhenBusy() {
+        var called = false
+        var receivedNil = false
+        ComposerShared.notifyFileSuggestionContext(
+            for: "just text",
+            isBusy: true,
+            onFileSuggestionQuery: { q in called = true; receivedNil = (q == nil) }
+        )
+        #expect(called)
+        #expect(receivedNil) // query should be nil for plain text
+    }
+
     // File suggestion insertion, model, and parsing tests live in
     // FileSuggestionInsertionTests.swift (27 tests with thorough edge cases).
 

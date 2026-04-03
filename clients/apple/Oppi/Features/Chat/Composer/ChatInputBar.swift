@@ -119,10 +119,7 @@ struct ChatInputBar<ActionRow: View>: View {
     }
 
     private var autocompleteContext: ComposerAutocompleteContext {
-        guard !isBusy else {
-            return .none
-        }
-        return ComposerAutocomplete.context(for: text)
+        ComposerAutocomplete.context(for: text, isBusy: isBusy)
     }
 
     private var slashSuggestions: [SlashCommand] {

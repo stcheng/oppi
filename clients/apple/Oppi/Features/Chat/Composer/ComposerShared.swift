@@ -121,7 +121,7 @@ enum ComposerShared {
         onFileSuggestionQuery: ((String?) -> Void)?
     ) {
         let ctx = ComposerAutocomplete.context(for: newText)
-        if case .atFile(let query) = ctx, !isBusy {
+        if case .atFile(let query) = ctx {
             onFileSuggestionQuery?(query)
         } else {
             onFileSuggestionQuery?(nil)
@@ -162,10 +162,7 @@ struct ComposerFilePill: View {
             : FileIcon.forPath(file.path)
 
         HStack(spacing: 4) {
-            icon.image
-                .renderingMode(icon.isAssetImage ? .template : .original)
-                .font(.appTag)
-                .foregroundStyle(icon.color)
+            icon.iconView(size: 12, font: .appTag)
 
             Text(file.displayName)
                 .font(.caption2.monospaced())

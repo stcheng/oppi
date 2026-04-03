@@ -10,6 +10,16 @@ enum ComposerAutocompleteContext: Equatable {
 enum ComposerAutocomplete {
     static let maxSuggestions = 8
 
+    /// Resolve autocomplete context for the composer, accounting for busy state.
+    ///
+    /// When the session is busy (streaming), slash commands are blocked (not meaningful
+    /// mid-turn) but `@file` references remain available for steers and follow-ups.
+    static func context(for text: String, isBusy: Bool) -> ComposerAutocompleteContext {
+        let ctx = context(for: text)
+        if isBusy, case .slash = ctx { return .none }
+        return ctx
+    }
+
     /// Parse autocomplete context from the trailing token in the composer text.
     ///
     /// Phase 1 slash contract:
