@@ -49,6 +49,72 @@ Python Sidecar (managed child process)
 - **Accumulate-and-retranscribe** — server owns the audio buffer, always transcribes the full thing
 - **Auto-discovery** — dictation works as soon as the Oppi server is connected (iOS already knows the server)
 
+## Audio Preservation
+
+All dictation audio is saved server-side as lossless FLAC files. This is the user's own audio on their own server — no privacy concerns.
+
+### Storage Layout
+
+```
+~/.config/oppi/dictation/
+  2026/
+    04/
+      03/
+        session-abc123.flac       # Full audio for one dictation session
+        session-abc123.json        # Metadata: transcript, timestamps, duration, model
+```
+
+### Metadata (`session-abc123.json`)
+
+```json
+{
+  "session_id": "abc123",
+  "agent_session_id": "sess_xyz",
+  "started_at": "2026-04-03T14:30:00Z",
+  "duration_s": 23.5,
+  "audio_file": "session-abc123.flac",
+  "audio_bytes": 24000,
+  "sample_rate": 16000,
+  "transcript": "The quick brown fox jumped over the lazy dog",
+  "language": "English",
+  "model": "Qwen3-ASR-1.7B-bf16",
+  "wer_estimate": null
+}
+```
+
+### Storage Budget
+
+| Usage | Raw PCM | FLAC (~50%) | Per year |
+|---|---|---|---|
+| Light (5 min/day) | 9.6 MB | ~5 MB | ~1.8 GB |
+| Normal (15 min/day) | 28.8 MB | ~15 MB | ~5.4 GB |
+| Heavy (30 min/day) | 57.6 MB | ~30 MB | ~10.8 GB |
+
+### What It Enables
+
+1. **Playback in session timeline** — iOS can fetch and play the audio for any voice message
+2. **Re-transcription** — when a better model arrives, re-process saved audio
+3. **Quality debugging** — compare audio vs transcript to find model weaknesses
+4. **Voice search** — search your dictation history by transcript text
+5. **Export** — user can download their audio archive
+
+### API
+
+```
+GET /v1/dictation/:session_id/audio     → FLAC file (streamable)
+GET /v1/dictation/:session_id/metadata   → JSON metadata
+GET /v1/dictation/history?days=7         → List of recent sessions
+POST /v1/dictation/:session_id/retranscribe → Re-run ASR on saved audio
+```
+
+### Implementation
+
+In `DictationManager`, on `finalize()`:
+1. Concatenate all PCM chunks into a single buffer
+2. Encode as FLAC (Node.js: use the sidecar, or shell out to `ffmpeg`/`flac`)
+3. Write to storage directory with metadata JSON
+4. Link audio to the session entry (so timeline can show a play button)
+
 ## Performance Budget
 
 At 28× RTFx on M3 Ultra, Qwen3-ASR-1.7B can retranscribe:
