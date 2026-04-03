@@ -102,4 +102,118 @@ struct ANSIParserPerfTests {
         let median = durationsMs[durationsMs.count / 2]
         print("METRIC strip_p50_ms=\(String(format: "%.2f", median))")
     }
+
+    // MARK: - Streaming Scenario: Full Strip vs Incremental
+
+    @Test("benchmark streaming strip O(n^2) vs incremental O(n)")
+    func benchmarkStreamingStripComparison() {
+        // Simulate streaming: 100 chunks, each adding ~3KB of ANSI output.
+        // Total: ~300KB. Full strip on each chunk = O(n^2). Incremental = O(n).
+        let chunkCount = 100
+        var chunks: [String] = []
+        var accumulated = ""
+        for i in 0..<chunkCount {
+            let line = "\u{1B}[32m\u{2713}\u{1B}[39m test_suite_\(i) "
+                + "\u{1B}[2m(\(i * 7 + 42)ms)\u{1B}[22m "
+                + "\u{1B}[90msrc/module/file_\(i).test.ts\u{1B}[39m\n"
+                + "  \u{1B}[32m\u{2713}\u{1B}[39m should handle case \(i)\n"
+                + "  \u{1B}[32m\u{2713}\u{1B}[39m should validate input \(i)\n"
+            accumulated += line
+            chunks.append(accumulated)
+        }
+
+        let inputBytes = accumulated.utf8.count
+
+        // Measure: full strip on each chunk (O(n^2) total)
+        let fullStripStart = CFAbsoluteTimeGetCurrent()
+        var fullStripResult = ""
+        for chunk in chunks {
+            fullStripResult = ANSIParser.strip(chunk)
+        }
+        let fullStripMs = (CFAbsoluteTimeGetCurrent() - fullStripStart) * 1000.0
+
+        // Measure: incremental strip (O(n) total)
+        let incrementalStart = CFAbsoluteTimeGetCurrent()
+        var stripper = ANSIParser.IncrementalStripper()
+        var incrementalResult = ""
+        for chunk in chunks {
+            if let delta = stripper.delta(chunk) {
+                incrementalResult += delta
+            }
+        }
+        let incrementalMs = (CFAbsoluteTimeGetCurrent() - incrementalStart) * 1000.0
+
+        // Verify correctness: both produce the same result.
+        #expect(incrementalResult == fullStripResult,
+            "Incremental stripper must produce identical output to full strip")
+
+        let speedup = fullStripMs / max(0.001, incrementalMs)
+
+        print("METRIC streaming_full_strip_ms=\(String(format: "%.2f", fullStripMs))")
+        print("METRIC streaming_incremental_ms=\(String(format: "%.2f", incrementalMs))")
+        print("METRIC streaming_speedup_x=\(String(format: "%.1f", speedup))")
+        print("METRIC streaming_total_bytes=\(inputBytes)")
+        print("METRIC streaming_chunk_count=\(chunkCount)")
+
+        // The incremental approach should be significantly faster.
+        // Full strip: ~O(n^2/2) total bytes processed.
+        // Incremental: ~O(n) total bytes processed.
+        #expect(speedup > 2.0,
+            "Incremental strip should be at least 2x faster than full strip for 100 chunks")
+    }
+
+    @Test("benchmark stripPrefix bounded performance")
+    func benchmarkStripPrefix() {
+        let input = Self.testInput
+        let iterations = 100
+
+        // stripPrefix(512 bytes) should be constant-time regardless of input size.
+        var durationsMs: [Double] = []
+        for _ in 0..<iterations {
+            let start = CFAbsoluteTimeGetCurrent()
+            _ = ANSIParser.stripPrefix(input, maxInputBytes: 512)
+            let elapsed = (CFAbsoluteTimeGetCurrent() - start) * 1000.0
+            durationsMs.append(elapsed)
+        }
+
+        durationsMs.sort()
+        let median = durationsMs[durationsMs.count / 2]
+        print("METRIC stripPrefix_p50_ms=\(String(format: "%.4f", median))")
+
+        // Should be sub-millisecond for any input size.
+        #expect(median < 1.0,
+            "stripPrefix(512 bytes) should be sub-millisecond; got \(String(format: "%.2f", median))ms")
+    }
+}
+
+// MARK: - IncrementalStripper Correctness Under Stress
+
+@Suite("ANSIParser IncrementalStripper stress", .tags(.perf))
+struct IncrementalStripperStressTests {
+
+    @Test("1000 chunks of mixed ANSI content match full strip")
+    func stressMatchesFullStrip() {
+        let patterns: [String] = [
+            "\u{1B}[32m\u{2713}\u{1B}[39m passed\n",
+            "\u{1B}[31m\u{2717}\u{1B}[39m FAILED\n",
+            "\u{1B}[1m\u{1B}[46m RUN \u{1B}[49m\u{1B}[22m test\n",
+            "\u{1B}[38;5;196mred-256\u{1B}[39m\n",
+            "\u{1B}[38;2;128;200;50mrgb-color\u{1B}[0m\n",
+            "plain text line\n",
+            "\u{1B}[2mdim output\u{1B}[22m\n",
+        ]
+
+        var full = ""
+        var stripper = ANSIParser.IncrementalStripper()
+        var accumulated = ""
+
+        for i in 0..<1000 {
+            full += patterns[i % patterns.count]
+            if let delta = stripper.delta(full) {
+                accumulated += delta
+            }
+        }
+
+        #expect(accumulated == ANSIParser.strip(full))
+    }
 }

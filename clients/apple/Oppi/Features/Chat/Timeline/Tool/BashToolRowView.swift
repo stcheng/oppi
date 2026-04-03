@@ -109,6 +109,11 @@ final class BashToolRowView: UIView, UIScrollViewDelegate {
     /// Used to append only the delta on each streaming chunk.
     private var streamAppendOffset = 0
 
+    /// Incremental ANSI stripper for streaming — avoids O(n^2) by only
+    /// processing new bytes on each chunk instead of re-stripping the full
+    /// accumulated output.
+    private var incrementalStripper = ANSIParser.IncrementalStripper()
+
     // MARK: - Internal layout
 
     private let internalStack: UIStackView = {
@@ -209,15 +214,22 @@ final class BashToolRowView: UIView, UIScrollViewDelegate {
                     didTextChange = prevText != cached.string
                     outputLabel.attributedText = cached
                     streamAppendOffset = 0
+                    incrementalStripper.reset()
                 } else if displayOutput.utf8.count > Self.deferredANSIByteThreshold {
-                    // Large output: show stripped plain text now, parse ANSI in background.
-                    let stripped = ANSIParser.strip(displayOutput)
+                    // Large output: show placeholder now, parse ANSI in background.
+                    // Plain text (no ESC byte): strip is O(1), use full text.
+                    // ANSI content: use bounded prefix to avoid blocking main thread.
+                    let hasANSI = displayOutput.utf8.contains(0x1B)
+                    let placeholder = hasANSI
+                        ? ANSIParser.stripPrefix(displayOutput, maxInputBytes: 512)
+                        : displayOutput
                     let prevText = outputLabel.attributedText?.string ?? outputLabel.text ?? ""
-                    didTextChange = prevText != stripped
+                    didTextChange = prevText != placeholder
                     outputLabel.attributedText = nil
-                    outputLabel.text = stripped
+                    outputLabel.text = placeholder
                     outputLabel.textColor = outputColor
                     streamAppendOffset = 0
+                    incrementalStripper.reset()
                     scheduleDeferredANSIHighlight(
                         text: displayOutput,
                         isError: input.isError,
@@ -245,6 +257,7 @@ final class BashToolRowView: UIView, UIScrollViewDelegate {
                         plainTextColor: outputColor
                     )
                     streamAppendOffset = 0
+                    incrementalStripper.reset()
                 }
 
                 let renderMode: String
@@ -320,56 +333,56 @@ final class BashToolRowView: UIView, UIScrollViewDelegate {
 
     // MARK: - Streaming Append (step 7)
 
-    /// Apply streaming output using incremental plain-text append when possible.
+    /// Apply streaming output using incremental ANSI stripping.
     ///
-    /// Tracks how many UTF-16 code units have already been rendered. On each
-    /// new chunk, if the stripped text is a monotonic extension of what's
-    /// already displayed, only the delta is appended — avoiding a full
-    /// NSAttributedString rebuild for large growing outputs.
+    /// Uses `ANSIParser.IncrementalStripper` to process only new bytes
+    /// on each chunk, keeping per-chunk cost O(delta) instead of O(n).
+    /// Appends the stripped delta directly to the label.
     ///
-    /// Falls back to a full rebuild when content is replaced/truncated.
+    /// Falls back to a full rebuild when the stripper returns nil
+    /// (unchanged input) or when the label state is inconsistent.
     /// Returns whether the visible content changed.
     private func applyStreamingOutput(_ displayOutput: String, outputColor: UIColor) -> Bool {
-        let stripped = ANSIParser.strip(displayOutput)
-        let strippedNS = stripped as NSString
-        let newLen = strippedNS.length
-
-        if streamAppendOffset > 0, newLen > streamAppendOffset {
-            let existingLen = (outputLabel.text as NSString?)?.length ?? 0
-            if existingLen == streamAppendOffset {
-                // Delta is everything beyond what we already rendered.
-                let deltaRange = NSRange(location: streamAppendOffset, length: newLen - streamAppendOffset)
-                let delta = strippedNS.substring(with: deltaRange)
-
-                let font = ToolFont.regular
-                let attrs: [NSAttributedString.Key: Any] = [
-                    .font: font,
-                    .foregroundColor: outputColor,
-                ]
-
-                if let existing = outputLabel.attributedText, existing.length > 0 {
-                    let mutable = NSMutableAttributedString(attributedString: existing)
-                    mutable.append(NSAttributedString(string: delta, attributes: attrs))
-                    outputLabel.attributedText = mutable
-                } else {
-                    // First attributed append: set full content with attrs.
-                    outputLabel.attributedText = NSAttributedString(
-                        string: stripped,
-                        attributes: attrs
-                    )
-                }
-                streamAppendOffset = newLen
-                return true
-            }
+        guard let delta = incrementalStripper.delta(displayOutput) else {
+            return false
         }
 
-        // Full rebuild.
-        let prevText = outputLabel.text
-        outputLabel.attributedText = nil
-        outputLabel.text = stripped
-        outputLabel.textColor = outputColor
-        streamAppendOffset = newLen
-        return prevText != stripped
+        let font = ToolFont.regular
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: font,
+            .foregroundColor: outputColor,
+        ]
+
+        let existingLen = (outputLabel.attributedText?.length)
+            ?? (outputLabel.text as NSString?)?.length
+            ?? 0
+
+        if existingLen == streamAppendOffset, streamAppendOffset > 0 {
+            // Append delta to existing attributed text.
+            if let existing = outputLabel.attributedText, existing.length > 0 {
+                let mutable = NSMutableAttributedString(attributedString: existing)
+                mutable.append(NSAttributedString(string: delta, attributes: attrs))
+                outputLabel.attributedText = mutable
+            } else {
+                // Label was set via .text — rebuild as attributed.
+                let fullText = (outputLabel.text ?? "") + delta
+                outputLabel.attributedText = NSAttributedString(
+                    string: fullText,
+                    attributes: attrs
+                )
+            }
+        } else {
+            // First chunk or label is inconsistent — set full stripped text.
+            // Use the stripper's total output length to reconstruct.
+            let stripped = ANSIParser.strip(displayOutput)
+            outputLabel.attributedText = NSAttributedString(
+                string: stripped,
+                attributes: attrs
+            )
+        }
+
+        streamAppendOffset = incrementalStripper.strippedUTF16Length
+        return true
     }
 
     // MARK: - Reset
@@ -390,6 +403,7 @@ final class BashToolRowView: UIView, UIScrollViewDelegate {
         outputUsesViewport = false
         outputShouldAutoFollow = true
         streamAppendOffset = 0
+        incrementalStripper.reset()
         ToolTimelineRowUIHelpers.resetScrollPosition(outputScrollView)
     }
 
@@ -473,6 +487,7 @@ final class BashToolRowView: UIView, UIScrollViewDelegate {
 
                 self.outputLabel.attributedText = result.attributed
                 self.streamAppendOffset = 0
+                self.incrementalStripper.reset()
                 self.outputRenderedText = unwrapped ? result.attributed.string : nil
                 self.updateOutputLabelWidthIfNeeded()
                 self.setNeedsLayout()

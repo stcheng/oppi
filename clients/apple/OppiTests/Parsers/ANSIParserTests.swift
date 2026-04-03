@@ -119,6 +119,42 @@ struct ANSIParserTests {
         #expect(ANSIParser.attributedString(from: "").string.isEmpty)
     }
 
+    // MARK: - stripPrefix
+
+    @Test("stripPrefix returns stripped text within byte limit")
+    func stripPrefixBasic() {
+        let input = "\u{1B}[32mHello\u{1B}[0m World"
+        // First 20 bytes should cover the full input
+        let result = ANSIParser.stripPrefix(input, maxInputBytes: 100)
+        #expect(result == "Hello World")
+    }
+
+    @Test("stripPrefix truncates at byte limit")
+    func stripPrefixTruncated() {
+        // "\u{1B}[32m" = 5 bytes, "Hello" = 5 bytes
+        // First 10 bytes = ESC[32m + Hello
+        let input = "\u{1B}[32mHello\u{1B}[0m World"
+        let result = ANSIParser.stripPrefix(input, maxInputBytes: 10)
+        #expect(result == "Hello")
+    }
+
+    @Test("stripPrefix on plain text returns prefix")
+    func stripPrefixPlainText() {
+        let input = "Just plain text here"
+        let result = ANSIParser.stripPrefix(input, maxInputBytes: 10)
+        #expect(result == "Just plain")
+    }
+
+    @Test("stripPrefix with zero bytes returns empty")
+    func stripPrefixZero() {
+        #expect(ANSIParser.stripPrefix("hello", maxInputBytes: 0) == "")
+    }
+
+    @Test("stripPrefix handles empty input")
+    func stripPrefixEmpty() {
+        #expect(ANSIParser.stripPrefix("", maxInputBytes: 100) == "")
+    }
+
     // MARK: - Background colors
 
     @Test("background color 41 (red) is emitted as .backgroundColor attribute")
@@ -198,6 +234,106 @@ struct ANSIParserTests {
         }
         let bg = result.attribute(.backgroundColor, at: range.location, effectiveRange: nil) as? UIColor
         #expect(bg != nil, "Expected .backgroundColor for 256-color bg code")
+    }
+
+    // MARK: - IncrementalStripper
+
+    @Test("incremental stripper produces same result as full strip")
+    func incrementalMatchesFullStrip() {
+        let chunks = [
+            "\u{1B}[32mHello",
+            "\u{1B}[32mHello\u{1B}[0m World",
+            "\u{1B}[32mHello\u{1B}[0m World\n\u{1B}[31mError\u{1B}[0m line",
+        ]
+        var stripper = ANSIParser.IncrementalStripper()
+        var accumulated = ""
+        for chunk in chunks {
+            if let delta = stripper.delta(chunk) {
+                accumulated += delta
+            }
+        }
+        let fullStrip = ANSIParser.strip(chunks.last!)
+        #expect(accumulated == fullStrip)
+    }
+
+    @Test("incremental stripper returns nil when input unchanged")
+    func incrementalNilOnUnchanged() {
+        var stripper = ANSIParser.IncrementalStripper()
+        let input = "\u{1B}[32mHello\u{1B}[0m"
+        _ = stripper.delta(input)
+        #expect(stripper.delta(input) == nil)
+    }
+
+    @Test("incremental stripper handles plain text growth")
+    func incrementalPlainText() {
+        var stripper = ANSIParser.IncrementalStripper()
+        let d1 = stripper.delta("Hello")
+        #expect(d1 == "Hello")
+        let d2 = stripper.delta("Hello World")
+        #expect(d2 == " World")
+    }
+
+    @Test("incremental stripper handles escape at chunk boundary")
+    func incrementalEscapeAtBoundary() {
+        var stripper = ANSIParser.IncrementalStripper()
+        // First chunk ends mid-escape: ESC[ but no terminator
+        let partial = "text\u{1B}["
+        let d1 = stripper.delta(partial)
+        #expect(d1 == "text")
+        // Second chunk completes the escape and adds more text
+        let full = "text\u{1B}[32mcolored"
+        let d2 = stripper.delta(full)
+        #expect(d2 == "colored")
+    }
+
+    @Test("incremental stripper tracks UTF-16 length")
+    func incrementalUTF16Length() {
+        var stripper = ANSIParser.IncrementalStripper()
+        _ = stripper.delta("\u{1B}[32mcaf\u{00E9}\u{1B}[0m")
+        // "cafe\u{0301}" stripped = "caf\u{00E9}" = 4 UTF-16 units
+        #expect(stripper.strippedUTF16Length == 4)
+    }
+
+    @Test("incremental stripper reset clears state")
+    func incrementalReset() {
+        var stripper = ANSIParser.IncrementalStripper()
+        _ = stripper.delta("Hello")
+        #expect(stripper.processedInputBytes == 5)
+        stripper.reset()
+        #expect(stripper.processedInputBytes == 0)
+        #expect(stripper.strippedUTF16Length == 0)
+    }
+
+    @Test("incremental stripper handles 256-color codes at boundary")
+    func incrementalExtendedColorBoundary() {
+        var stripper = ANSIParser.IncrementalStripper()
+        // Chunk 1: text + start of extended color
+        let c1 = "before\u{1B}[38;5"
+        _ = stripper.delta(c1)
+        // Chunk 2: complete the color + text
+        let c2 = "before\u{1B}[38;5;196mRed\u{1B}[0m after"
+        let d = stripper.delta(c2)
+        // Total stripped should be "beforeRed after"
+        #expect(d == "Red after")
+    }
+
+    @Test("incremental stripper simulates streaming build log")
+    func incrementalStreamingBuildLog() {
+        // Simulate 20 streaming chunks of growing ANSI output
+        var fullOutput = ""
+        var stripper = ANSIParser.IncrementalStripper()
+        var accumulated = ""
+
+        for i in 0..<20 {
+            let line = "\u{1B}[32m\u{2713}\u{1B}[39m test_\(i) \u{1B}[2m(\(i)ms)\u{1B}[22m\n"
+            fullOutput += line
+            if let delta = stripper.delta(fullOutput) {
+                accumulated += delta
+            }
+        }
+
+        let expected = ANSIParser.strip(fullOutput)
+        #expect(accumulated == expected)
     }
 
     @Test("RGB background 48;2;r;g;b renders as .backgroundColor")

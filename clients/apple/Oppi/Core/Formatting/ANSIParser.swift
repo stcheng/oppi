@@ -16,6 +16,180 @@ import UIKit
 /// Builds `NSMutableAttributedString` directly, consistent with `SyntaxHighlighter`.
 enum ANSIParser {
 
+    // MARK: - Incremental Stripper
+
+    /// Tracks state for incremental ANSI stripping of monotonically growing content.
+    ///
+    /// During streaming, each chunk delivers the full accumulated output. Calling
+    /// `strip()` on the whole string every time creates O(n^2) total work.
+    /// `IncrementalStripper` only processes new bytes, keeping each update O(delta).
+    ///
+    /// Usage:
+    /// ```
+    /// var stripper = ANSIParser.IncrementalStripper()
+    /// // On each streaming chunk (fullOutput grows monotonically):
+    /// if let delta = stripper.delta(fullOutput) {
+    ///     label.text?.append(delta)
+    /// }
+    /// ```
+    struct IncrementalStripper {
+
+        /// Input byte count fully processed so far.
+        private(set) var processedInputBytes: Int = 0
+
+        /// UTF-16 length of all stripped output produced so far.
+        private(set) var strippedUTF16Length: Int = 0
+
+        /// Whether the last processed byte was inside an incomplete escape sequence.
+        private var pendingEscapeStart: Int = -1
+
+        /// Return stripped delta text from new bytes in a growing input.
+        ///
+        /// Returns `nil` when the input hasn't grown (or only added bytes
+        /// inside an incomplete escape sequence at the tail).
+        mutating func delta(_ fullInput: String) -> String? {
+            // Use withUTF8 for contiguous access without copying.
+            var result: String?
+            var input = fullInput
+            input.withUTF8 { buffer in
+                result = processDelta(buffer)
+            }
+            return result
+        }
+
+        /// Reset state. Call when the input is replaced (not just appended),
+        /// e.g., cell reuse for a different tool's output.
+        mutating func reset() {
+            processedInputBytes = 0
+            strippedUTF16Length = 0
+            pendingEscapeStart = -1
+        }
+
+        // MARK: - Private
+
+        private mutating func processDelta(
+            _ buf: UnsafeBufferPointer<UInt8>
+        ) -> String? {
+            let count = buf.count
+            guard count > processedInputBytes else { return nil }
+
+            // Start scanning from where we left off.
+            // If there was a pending incomplete escape, re-scan from its start.
+            let scanStart: Int
+            if pendingEscapeStart >= 0 {
+                scanStart = pendingEscapeStart
+            } else {
+                scanStart = processedInputBytes
+            }
+            pendingEscapeStart = -1
+
+            // Only emit bytes at or past the processedInputBytes boundary.
+            let emitBoundary = processedInputBytes
+
+            var out = [UInt8]()
+            out.reserveCapacity(count - scanStart)
+
+            var i = scanStart
+            while i < count {
+                if buf[i] == 0x1B, i + 1 < count, buf[i + 1] == 0x5B {
+                    // Start of CSI sequence.
+                    let escStart = i
+                    var j = i + 2
+                    var foundTerminator = false
+                    while j < count {
+                        let b = buf[j]
+                        if b >= 0x40 && b <= 0x7E {
+                            j += 1
+                            foundTerminator = true
+                            break
+                        }
+                        j += 1
+                    }
+                    if !foundTerminator {
+                        // Incomplete escape — save position for re-scan.
+                        pendingEscapeStart = escStart
+                        processedInputBytes = escStart
+                        break
+                    }
+                    i = j
+                } else {
+                    // Scan forward through non-ESC bytes.
+                    let start = i
+                    while i < count && buf[i] != 0x1B {
+                        i += 1
+                    }
+                    // Only emit bytes past the boundary.
+                    let emitStart = max(start, emitBoundary)
+                    if emitStart < i {
+                        for idx in emitStart..<i {
+                            out.append(buf[idx])
+                        }
+                    }
+                }
+            }
+
+            if pendingEscapeStart < 0 {
+                processedInputBytes = count
+            }
+
+            guard !out.isEmpty else { return nil }
+            let delta = String(decoding: out, as: UTF8.self)
+            strippedUTF16Length += (delta as NSString).length
+            return delta
+        }
+    }
+
+    /// Strip ANSI codes from at most `maxInputBytes` of the input.
+    ///
+    /// O(min(n, maxInputBytes)) — safe for main-thread use on any input size.
+    /// Returns the stripped prefix; the result may end mid-character if the
+    /// byte boundary falls inside a multi-byte UTF-8 sequence, but
+    /// `String(decoding:as:)` handles that gracefully.
+    static func stripPrefix(_ input: String, maxInputBytes: Int) -> String {
+        guard maxInputBytes > 0 else { return "" }
+        var result: String = ""
+        var mutableInput = input
+        mutableInput.withUTF8 { buffer in
+            let limit = min(buffer.count, maxInputBytes)
+            guard limit > 0 else { return }
+            // Fast path: no ESC in the prefix region.
+            var hasEsc = false
+            for idx in 0..<limit where buffer[idx] == 0x1B {
+                hasEsc = true
+                break
+            }
+            guard hasEsc else {
+                result = String(decoding: buffer[..<limit], as: UTF8.self)
+                return
+            }
+            var out = [UInt8]()
+            out.reserveCapacity(limit)
+            var i = 0
+            while i < limit {
+                if buffer[i] == 0x1B, i + 1 < limit, buffer[i + 1] == 0x5B {
+                    var j = i + 2
+                    while j < limit {
+                        let b = buffer[j]
+                        if b >= 0x40 && b <= 0x7E {
+                            j += 1
+                            break
+                        }
+                        j += 1
+                    }
+                    i = j
+                } else {
+                    let start = i
+                    while i < limit && buffer[i] != 0x1B { i += 1 }
+                    for idx in start..<i {
+                        out.append(buffer[idx])
+                    }
+                }
+            }
+            result = String(decoding: out, as: UTF8.self)
+        }
+        return result
+    }
+
     /// Strip all ANSI escape sequences, returning plain text.
     static func strip(_ input: String) -> String {
         // Fast path: no ESC byte means no ANSI codes.

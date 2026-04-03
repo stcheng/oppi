@@ -207,6 +207,62 @@ struct BashToolRowViewTests {
         #expect(text.contains("new output"))
     }
 
+    // MARK: - Deferred path uses stripPrefix (not full strip)
+
+    @Test("large output deferred path shows prefix placeholder, not full strip")
+    func deferredPathUsesStripPrefix() {
+        let view = BashToolRowView()
+        // Build output larger than deferredANSIByteThreshold (4KB)
+        let line = "\u{1B}[32m\u{2713}\u{1B}[0m test passed\n"
+        let largeOutput = String(repeating: line, count: 500) // ~10KB
+        #expect(largeOutput.utf8.count > BashToolRowView.deferredANSIByteThreshold)
+
+        let input = BashRenderInput(
+            command: nil,
+            output: largeOutput,
+            unwrapped: false,
+            isError: false,
+            isStreaming: false
+        )
+        _ = view.apply(input: input, outputColor: .white, wasOutputVisible: false)
+
+        // Should show a short placeholder (not the full stripped content)
+        let displayed = view.outputLabel.text ?? view.outputLabel.attributedText?.string ?? ""
+        let fullStripped = ANSIParser.strip(largeOutput)
+
+        // Placeholder should be much shorter than the full strip
+        #expect(displayed.count < fullStripped.count,
+            "Deferred path should show a short placeholder, not the full stripped output")
+        // But it should contain some of the beginning
+        #expect(displayed.contains("test passed"),
+            "Placeholder should show the beginning of the output")
+    }
+
+    @Test("streaming path uses incremental stripping")
+    func streamingPathIncremental() {
+        let view = BashToolRowView()
+        let outputColor = UIColor.white
+
+        // Send 10 growing chunks of ANSI output
+        var fullOutput = ""
+        for i in 0..<10 {
+            fullOutput += "\u{1B}[32m\u{2713}\u{1B}[0m test_\(i)\n"
+            let input = BashRenderInput(
+                command: nil,
+                output: fullOutput,
+                unwrapped: false,
+                isError: false,
+                isStreaming: true
+            )
+            _ = view.apply(input: input, outputColor: outputColor, wasOutputVisible: i > 0)
+        }
+
+        let displayed = view.outputLabel.text ?? view.outputLabel.attributedText?.string ?? ""
+        let expected = ANSIParser.strip(fullOutput)
+        #expect(displayed == expected,
+            "Incremental streaming should produce identical output to full strip")
+    }
+
     // MARK: - Signature dedup
 
     @Test("same input twice does not re-render command")
