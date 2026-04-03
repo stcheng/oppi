@@ -252,8 +252,8 @@ export class SearchIndex {
     // Column weights: title=10, user_messages=5, assistant_messages=1, tool_names=2
     this.stmtSearch = this.db.prepare(`
       SELECT
-        session_id,
-        workspace_id,
+        session_id AS sessionId,
+        workspace_id AS workspaceId,
         title,
         COALESCE(
           NULLIF(snippet(session_fts, 3, '<b>', '</b>', '...', 40), ''),
@@ -269,8 +269,8 @@ export class SearchIndex {
     // Search within a specific workspace
     this.stmtSearchWorkspace = this.db.prepare(`
       SELECT
-        session_id,
-        workspace_id,
+        session_id AS sessionId,
+        workspace_id AS workspaceId,
         title,
         COALESCE(
           NULLIF(snippet(session_fts, 3, '<b>', '</b>', '...', 40), ''),
