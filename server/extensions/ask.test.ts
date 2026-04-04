@@ -99,4 +99,128 @@ describe("createAskFactory", () => {
     const second = await tool!.execute("tc-3", params, undefined, undefined, ctx);
     expect(second.content[0]?.text).toContain("Defaults");
   });
+
+  it("returns all selected values for multi-select questions", async () => {
+    const api = createMockAPI();
+    createAskFactory()(api as never);
+    const tool = api.tools.get("ask")!;
+
+    // Simulate server returning JSON-encoded array of labels for multi-select
+    const ctx = {
+      hasUI: true,
+      ui: {
+        custom: async () => undefined,
+        select: async (_question: string, _options: string[]) => {
+          // Server resolves multi-select as JSON array of labels
+          return JSON.stringify(["Ruff", "Mypy"]);
+        },
+      },
+    };
+
+    const params = {
+      questions: [
+        {
+          id: "tools",
+          question: "Which linting tools?",
+          options: [
+            { value: "ruff", label: "Ruff" },
+            { value: "mypy", label: "Mypy" },
+            { value: "pylint", label: "Pylint" },
+          ],
+          multiSelect: true,
+        },
+      ],
+    };
+
+    const result = await tool.execute("tc-multi", params, undefined, undefined, ctx);
+    const details = result.details as { answers: Record<string, string | string[]> };
+    expect(details.answers["tools"]).toEqual(["ruff", "mypy"]);
+    expect(result.content[0]?.text).toContain("ruff");
+    expect(result.content[0]?.text).toContain("mypy");
+  });
+
+  it("handles single-select alongside multi-select questions", async () => {
+    const api = createMockAPI();
+    createAskFactory()(api as never);
+    const tool = api.tools.get("ask")!;
+
+    let callIndex = 0;
+    const ctx = {
+      hasUI: true,
+      ui: {
+        custom: async () => undefined,
+        select: async (_question: string, _options: string[]) => {
+          callIndex++;
+          if (callIndex === 1) {
+            // First question: single-select returns plain label
+            return "Unit tests";
+          } else {
+            // Second question: multi-select returns JSON array of labels
+            return JSON.stringify(["Jest", "Vitest"]);
+          }
+        },
+      },
+    };
+
+    const params = {
+      questions: [
+        {
+          id: "approach",
+          question: "Testing approach?",
+          options: [
+            { value: "unit", label: "Unit tests" },
+            { value: "integration", label: "Integration tests" },
+          ],
+        },
+        {
+          id: "frameworks",
+          question: "Which frameworks?",
+          options: [
+            { value: "jest", label: "Jest" },
+            { value: "vitest", label: "Vitest" },
+            { value: "playwright", label: "Playwright" },
+          ],
+          multiSelect: true,
+        },
+      ],
+    };
+
+    const result = await tool.execute("tc-mixed", params, undefined, undefined, ctx);
+    const details = result.details as { answers: Record<string, string | string[]> };
+    expect(details.answers["approach"]).toBe("unit");
+    expect(details.answers["frameworks"]).toEqual(["jest", "vitest"]);
+  });
+
+  it("falls back to single value array when select returns non-JSON for multi-select", async () => {
+    const api = createMockAPI();
+    createAskFactory()(api as never);
+    const tool = api.tools.get("ask")!;
+
+    const ctx = {
+      hasUI: true,
+      ui: {
+        custom: async () => undefined,
+        select: async () => "Ruff", // plain string, not JSON
+      },
+    };
+
+    const params = {
+      questions: [
+        {
+          id: "tools",
+          question: "Which tools?",
+          options: [
+            { value: "ruff", label: "Ruff" },
+            { value: "mypy", label: "Mypy" },
+          ],
+          multiSelect: true,
+        },
+      ],
+    };
+
+    const result = await tool.execute("tc-fallback", params, undefined, undefined, ctx);
+    const details = result.details as { answers: Record<string, string | string[]> };
+    // Falls back to wrapping single value in array
+    expect(details.answers["tools"]).toEqual(["ruff"]);
+  });
 });

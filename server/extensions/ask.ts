@@ -119,9 +119,25 @@ export function createAskFactory(): ExtensionFactory {
           }
 
           allIgnored = false;
-          const matched = q.options.find((o) => o.label === selected);
-          const value = matched?.value ?? selected;
-          answers[q.id] = q.multiSelect ? [value] : value;
+
+          if (q.multiSelect) {
+            // Multi-select: server sends JSON array of labels.
+            // Decode and map each label back to its option value.
+            let labels: string[];
+            try {
+              const parsed = JSON.parse(selected);
+              labels = Array.isArray(parsed) ? parsed : [selected];
+            } catch {
+              labels = [selected];
+            }
+            answers[q.id] = labels.map((label) => {
+              const matched = q.options.find((o) => o.label === label);
+              return matched?.value ?? label;
+            });
+          } else {
+            const matched = q.options.find((o) => o.label === selected);
+            answers[q.id] = matched?.value ?? selected;
+          }
         }
 
         if (allIgnored) {

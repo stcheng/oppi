@@ -422,13 +422,31 @@ export class SessionEventProcessor {
         // Ignored — cancel this select so the extension skips it
         this.deps.respondToUIRequest(key, { type: "extension_ui_response", id, cancelled: true });
       } else if (req.method === "select" && req.options) {
-        // Match answer value back to option label
-        const value = Array.isArray(answer) ? answer[0] : answer;
-        const label =
-          req.options.find((o) => o.toLowerCase().includes(value?.toLowerCase() ?? "")) ??
-          req.options.find((o) => o === value) ??
-          value;
-        this.deps.respondToUIRequest(key, { type: "extension_ui_response", id, value: label });
+        if (question.multiSelect && Array.isArray(answer)) {
+          // Multi-select: map ALL values to labels and encode as JSON array.
+          // The ask extension decodes this back into individual option values.
+          const opts = req.options ?? [];
+          const labels = answer.map((v) => {
+            return (
+              opts.find((o) => o.toLowerCase().includes(v.toLowerCase())) ??
+              opts.find((o) => o === v) ??
+              v
+            );
+          });
+          this.deps.respondToUIRequest(key, {
+            type: "extension_ui_response",
+            id,
+            value: JSON.stringify(labels),
+          });
+        } else {
+          // Single-select: match answer value back to option label
+          const value = Array.isArray(answer) ? answer[0] : answer;
+          const label =
+            req.options.find((o) => o.toLowerCase().includes(value?.toLowerCase() ?? "")) ??
+            req.options.find((o) => o === value) ??
+            value;
+          this.deps.respondToUIRequest(key, { type: "extension_ui_response", id, value: label });
+        }
       } else {
         const text = Array.isArray(answer) ? answer.join(", ") : answer;
         this.deps.respondToUIRequest(key, { type: "extension_ui_response", id, value: text });
