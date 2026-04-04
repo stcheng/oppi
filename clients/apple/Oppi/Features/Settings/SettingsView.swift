@@ -231,13 +231,13 @@ struct SettingsView: View {
 
     @ViewBuilder
     private var diagnosticsSection: some View {
-        // Only show in release builds — internal/debug always uploads.
         if TelemetryMode.current == .public {
+            // Release builds: opt-in toggle for metrics to user's own server.
+            // Sentry (external crash reporting) is always disabled in release.
             Section {
-                Toggle("Send Diagnostics", isOn: $telemetryEnabled)
+                Toggle("Send Performance Metrics", isOn: $telemetryEnabled)
                     .onChange(of: telemetryEnabled) { _, newValue in
                         AppPreferences.Telemetry.setEnabled(newValue)
-                        // Reconnect telemetry services with new preference
                         MetricKitService.shared.refreshAfterPreferenceChange()
                         DeviceResourceSampler.shared.refreshAfterPreferenceChange()
                     }
@@ -245,9 +245,19 @@ struct SettingsView: View {
                 Text("Diagnostics")
             } footer: {
                 Text(
-                    "Send performance metrics and crash diagnostics to your oppi server. "
+                    "Send performance metrics to your server. "
                     + "Data stays on your server and is never shared externally."
                 )
+            }
+        } else {
+            // Internal/debug builds: always active, no toggle needed.
+            Section {
+                Text("Diagnostics are active (internal build)")
+                    .foregroundStyle(.themeComment)
+            } header: {
+                Text("Diagnostics")
+            } footer: {
+                Text("Performance metrics are uploaded automatically in internal builds.")
             }
         }
     }

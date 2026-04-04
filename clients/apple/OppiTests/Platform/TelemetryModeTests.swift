@@ -81,9 +81,11 @@ struct TelemetryModeTests {
         )
     }
 
-    // MARK: - User opt-in for release builds
+    // MARK: - Public mode metrics opt-in
+    // Sentry is always disabled in public mode (checked via mode.allowsRemoteDiagnosticsUpload).
+    // Metrics upload to the user's own server is opt-in.
 
-    @Test func publicModeAllowsUploadWhenUserOptsIn() {
+    @Test func publicModeAllowsMetricsWhenUserOptsIn() {
         #expect(
             TelemetrySettings.allowsRemoteDiagnosticsUpload(
                 mode: .public,
@@ -93,7 +95,7 @@ struct TelemetryModeTests {
         )
     }
 
-    @Test func publicModeDeniesUploadWhenUserDoesNotOptIn() {
+    @Test func publicModeDeniesMetricsWithoutOptIn() {
         #expect(
             !TelemetrySettings.allowsRemoteDiagnosticsUpload(
                 mode: .public,

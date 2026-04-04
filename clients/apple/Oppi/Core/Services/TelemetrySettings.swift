@@ -96,12 +96,16 @@ enum TelemetrySettings {
             return false
         }
 
-        // Internal/debug builds always upload.
+        // Internal/debug builds always upload metrics to the user's server.
         if mode.allowsRemoteDiagnosticsUpload {
             return true
         }
 
-        // Release builds require explicit user opt-in.
+        // Release/public builds upload metrics to the user's own server
+        // only if the user explicitly opts in via Settings.
+        // Note: Sentry (external crash reporting) is always disabled in
+        // public mode — SentryService checks mode.allowsRemoteDiagnosticsUpload
+        // directly, bypassing this opt-in path.
         return userOptIn
     }
 
