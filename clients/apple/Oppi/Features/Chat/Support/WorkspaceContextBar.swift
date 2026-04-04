@@ -579,11 +579,7 @@ struct WorkspaceContextBar: View {
                         .frame(width: 16)
                 }
 
-                icon.image
-                    .renderingMode(icon.isAssetImage ? .template : .original)
-                    .font(.appChip)
-                    .foregroundStyle(icon.color)
-                    .frame(width: 16, height: 16)
+                icon.iconView(size: 16, font: .appChip)
 
                 Text(file.path.shortenedPath)
                     .font(.caption2.monospaced())

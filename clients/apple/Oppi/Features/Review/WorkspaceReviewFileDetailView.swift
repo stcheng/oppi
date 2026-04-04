@@ -148,10 +148,20 @@ struct WorkspaceReviewFileDetailView: View {
         file.status.trimmingCharacters(in: .whitespaces) == "D"
     }
 
-    /// Build shareable content from the current file content in the review.
+    /// Build shareable content from the review, switching on the active tab.
+    ///
+    /// Diff tab: shares the rendered diff with colored backgrounds and gutter bars.
+    /// Current tab (or new/deleted files): shares the full file content.
     private func shareableContentForReview(
         diff: WorkspaceReviewDiffResponse
     ) -> FileShareService.ShareableContent? {
+        let showingDiff = selectedTab == .diff && !isNewFile && !isDeletedFile
+            || isDeletedFile  // deleted files always show diff
+
+        if showingDiff, !diff.hunks.isEmpty {
+            return .diff(diff.hunks, filePath: file.path)
+        }
+
         guard !diff.currentText.isEmpty else { return nil }
         return .fromText(diff.currentText, filePath: file.path)
     }
@@ -229,9 +239,7 @@ struct WorkspaceReviewFileDetailView: View {
     @ViewBuilder
     private func summaryBar(diff: WorkspaceReviewDiffResponse) -> some View {
         HStack(alignment: .top, spacing: 12) {
-            Image(systemName: fileIcon.symbolName)
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(fileIcon.color)
+            fileIcon.iconView(size: 17, font: .subheadline.weight(.semibold))
                 .frame(width: 26, height: 26)
                 .background(
                     RoundedRectangle(cornerRadius: 8, style: .continuous)

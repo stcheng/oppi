@@ -143,11 +143,7 @@ struct CommitDetailView: View {
             selectedFile = file
         } label: {
             HStack(spacing: 6) {
-                icon.image
-                    .renderingMode(icon.isAssetImage ? .template : .original)
-                    .font(.appChip)
-                    .foregroundStyle(icon.color)
-                    .frame(width: 16, height: 16)
+                icon.iconView(size: 16, font: .appChip)
 
                 Text(file.path.shortenedPath)
                     .font(.caption2.monospaced())
@@ -282,9 +278,7 @@ struct CommitFileDiffView: View {
 
     private var summaryBar: some View {
         HStack(alignment: .top, spacing: 12) {
-            Image(systemName: fileIcon.symbolName)
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(fileIcon.color)
+            fileIcon.iconView(size: 17, font: .subheadline.weight(.semibold))
                 .frame(width: 26, height: 26)
                 .background(
                     RoundedRectangle(cornerRadius: 8, style: .continuous)

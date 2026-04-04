@@ -127,10 +127,7 @@ struct SessionFilesListView: View {
     ) -> some View {
             HStack(spacing: 10) {
                 // File icon
-                icon.image
-                    .renderingMode(icon.isAssetImage ? .template : .original)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(icon.color)
+                icon.iconView(size: 18, font: .subheadline.weight(.semibold))
                     .frame(width: 28, height: 28)
                     .background(
                         RoundedRectangle(cornerRadius: 7, style: .continuous)

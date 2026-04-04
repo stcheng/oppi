@@ -211,10 +211,8 @@ struct FileBrowserView: View {
                                     }
                                 }
                             } icon: {
-                                let icon = FileIcon.forPath(result.path)
-                                icon.image
-                                    .renderingMode(icon.isAssetImage ? .template : .original)
-                                    .foregroundStyle(icon.color)
+                                FileIcon.forPath(result.path)
+                                    .iconView(size: 20)
                             }
                         }
                     }
@@ -282,10 +280,8 @@ struct FileBrowserView: View {
                             .foregroundStyle(entry.isRecentlyModified ? .themeGreen : .themeComment)
                     }
                 } icon: {
-                    let icon = FileIcon.forPath(entry.name)
-                    icon.image
-                        .renderingMode(icon.isAssetImage ? .template : .original)
-                        .foregroundStyle(icon.color)
+                    FileIcon.forPath(entry.name)
+                        .iconView(size: 20)
                 }
             }
         }

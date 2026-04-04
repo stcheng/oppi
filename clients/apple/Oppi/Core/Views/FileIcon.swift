@@ -36,6 +36,34 @@ struct FileIcon: Equatable, Sendable {
         return false
     }
 
+    /// Returns a properly-sized icon view with correct aspect ratio.
+    ///
+    /// Asset images get `.scaledToFit()` so they don't stretch to fill the frame.
+    /// SF Symbols get font-based sizing. The `size` sets both width and height of the frame.
+    ///
+    /// For icons inside a larger background (e.g. 28pt rounded rect), use a smaller `size`
+    /// for the icon and add an outer `.frame()` + `.background()`:
+    /// ```
+    /// icon.iconView(size: 18)
+    ///     .frame(width: 28, height: 28)
+    ///     .background(...)
+    /// ```
+    @ViewBuilder
+    func iconView(size: CGFloat, font: Font? = nil) -> some View {
+        if isAssetImage {
+            image  // .resizable() already applied
+                .renderingMode(.template)
+                .scaledToFit()
+                .foregroundStyle(color)
+                .frame(width: size, height: size)
+        } else {
+            Image(systemName: symbolName)
+                .font(font ?? .system(size: max(9, size * 0.6), weight: .medium))
+                .foregroundStyle(color)
+                .frame(width: size, height: size)
+        }
+    }
+
     /// Resolve icon for a file path. Checks well-known filenames first,
     /// then extension, then falls back to a generic doc icon.
     static func forPath(_ path: String) -> Self {

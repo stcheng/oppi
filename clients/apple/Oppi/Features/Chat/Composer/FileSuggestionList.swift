@@ -37,17 +37,13 @@ struct FileSuggestionList: View {
             HStack(spacing: 8) {
                 Group {
                     if suggestion.isDirectory {
-                        Image(systemName: "folder.fill")
-                            .foregroundStyle(.themeYellow)
+                        FileIcon(symbolName: "folder.fill", color: .themeYellow)
+                            .iconView(size: 16, font: .caption)
                     } else {
-                        let icon = FileIcon.forPath(suggestion.path)
-                        icon.image
-                            .renderingMode(icon.isAssetImage ? .template : .original)
-                            .foregroundStyle(icon.color)
+                        FileIcon.forPath(suggestion.path)
+                            .iconView(size: 16, font: .caption)
                     }
                 }
-                .font(.caption)
-                .frame(width: 16)
 
                 VStack(alignment: .leading, spacing: 1) {
                     if suggestion.matchPositions.isEmpty {
