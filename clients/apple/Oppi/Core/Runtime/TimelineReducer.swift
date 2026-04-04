@@ -1490,7 +1490,7 @@ final class TimelineReducer { // swiftlint:disable:this type_body_length
             return answer.displayString
         }
 
-        // Multiple questions: show question text with answers
+        // Multiple questions: quote the question, answer below
         var lines: [String] = []
         for q in questions {
             guard case .object(let qObj) = q,
@@ -1502,9 +1502,9 @@ final class TimelineReducer { // swiftlint:disable:this type_body_length
                 label = qId
             }
             if let answer = answers[qId] {
-                lines.append("\(label)\n→ \(answer.displayString)")
+                lines.append("> \(label)\n\(answer.displayString)")
             } else {
-                lines.append("\(label)\n→ (skipped)")
+                lines.append("> \(label)\n(skipped)")
             }
         }
         return lines.joined(separator: "\n\n")

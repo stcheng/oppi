@@ -22,7 +22,7 @@ struct TimelineReducerAskTests {
             ]),
             "allIgnored": .bool(false),
         ])
-        #expect(TimelineReducer.formatAskAnswers(details: details) == "Pick a color\n→ blue\n\nPick a size\n→ large")
+        #expect(TimelineReducer.formatAskAnswers(details: details) == "> Pick a color\nblue\n\n> Pick a size\nlarge")
     }
 
     @Test("formatAskAnswers with skipped question")
@@ -35,7 +35,7 @@ struct TimelineReducerAskTests {
             "answers": .object(["color": .string("red")]),
             "allIgnored": .bool(false),
         ])
-        #expect(TimelineReducer.formatAskAnswers(details: details) == "Pick a color\n→ red\n\nPick a size\n→ (skipped)")
+        #expect(TimelineReducer.formatAskAnswers(details: details) == "> Pick a color\nred\n\n> Pick a size\n(skipped)")
     }
 
     @Test("formatAskAnswers single question uses compact format")
@@ -75,7 +75,7 @@ struct TimelineReducerAskTests {
             ]),
             "allIgnored": .bool(false),
         ])
-        #expect(TimelineReducer.formatAskAnswers(details: details) == "color\n→ blue\n\nsize\n→ large")
+        #expect(TimelineReducer.formatAskAnswers(details: details) == "> color\nblue\n\n> size\nlarge")
     }
 
     @Test("formatAskAnswers with allIgnored returns empty")
@@ -101,7 +101,7 @@ struct TimelineReducerAskTests {
             ]),
             "allIgnored": .bool(false),
         ])
-        #expect(TimelineReducer.formatAskAnswers(details: details) == "Which tools?\n→ ruff, mypy\n\nScope?\n→ full")
+        #expect(TimelineReducer.formatAskAnswers(details: details) == "> Which tools?\nruff, mypy\n\n> Scope?\nfull")
     }
 
     @Test("formatAskAnswers with nil details returns empty")
