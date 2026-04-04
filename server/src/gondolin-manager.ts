@@ -8,7 +8,7 @@
 
 import type { Workspace } from "./types.js";
 import type { GondolinVm } from "./gondolin-ops.js";
-import { ts } from "./log-utils.js";
+import { ts, safeErrorMessage } from "./log-utils.js";
 
 /**
  * Factory function that creates a Gondolin VM.
@@ -27,6 +27,8 @@ export interface VmFactoryOptions {
   secrets?: Record<string, { value: string; headerName?: string }>;
   /** Additional host paths to mount read-only at the same path inside the VM. */
   readonlyMounts?: string[];
+  /** Extra environment variables for the guest VM. */
+  extraEnv?: Record<string, string>;
 }
 
 /**
@@ -72,10 +74,13 @@ export async function defaultVmFactory(
     }
   }
 
+  // Merge httpHooks env (secret placeholders) with workspace-level extra env.
+  const mergedEnv = options.extraEnv ? { ...env, ...options.extraEnv } : env;
+
   const vm = await VM.create({
     vfs: { mounts },
     httpHooks,
-    env,
+    env: mergedEnv,
   });
 
   return vm;
@@ -103,6 +108,7 @@ export class GondolinManager {
     hostCwd: string,
     secrets?: Record<string, { value: string; headerName?: string }>,
     readonlyMounts?: string[],
+    extraEnv?: Record<string, string>,
   ): Promise<GondolinVm> {
     const id = workspace.id;
 
@@ -114,7 +120,7 @@ export class GondolinManager {
     const inflight = this.starting.get(id);
     if (inflight) return inflight;
 
-    const promise = this.startVm(workspace, hostCwd, secrets, readonlyMounts);
+    const promise = this.startVm(workspace, hostCwd, secrets, readonlyMounts, extraEnv);
     this.starting.set(id, promise);
 
     try {
@@ -136,7 +142,11 @@ export class GondolinManager {
     try {
       await vm.close();
     } catch (err) {
-      console.error("[gondolin] error stopping VM", { workspaceId, err, ts: ts() });
+      console.error("[gondolin] error stopping VM", {
+        workspaceId,
+        error: safeErrorMessage(err),
+        ts: ts(),
+      });
     }
   }
 
@@ -158,6 +168,7 @@ export class GondolinManager {
     hostCwd: string,
     secrets?: Record<string, { value: string; headerName?: string }>,
     readonlyMounts?: string[],
+    extraEnv?: Record<string, string>,
   ): Promise<GondolinVm & { close(): Promise<void> }> {
     const allowedHosts = workspace.sandboxConfig?.allowedHosts ?? ["*"];
     console.log("[gondolin] starting VM", {
@@ -168,7 +179,7 @@ export class GondolinManager {
       ts: ts(),
     });
 
-    const vm = await this.factory({ hostCwd, allowedHosts, secrets, readonlyMounts });
+    const vm = await this.factory({ hostCwd, allowedHosts, secrets, readonlyMounts, extraEnv });
 
     console.log("[gondolin] VM ready", { workspaceId: workspace.id, ts: ts() });
     return vm;

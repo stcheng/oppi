@@ -41,6 +41,8 @@ export interface Workspace {
   sandboxConfig?: {
     /** Allowed egress hosts for network access. Default: ["*"] (all). */
     allowedHosts?: string[];
+    /** Extra environment variables injected into the sandbox VM. */
+    env?: Record<string, string>;
   };
 
   // Metadata
@@ -534,7 +536,7 @@ export interface CreateWorkspaceRequest {
   defaultModel?: string;
   gitStatusEnabled?: boolean;
   runtime?: "host" | "sandbox";
-  sandboxConfig?: { allowedHosts?: string[] };
+  sandboxConfig?: { allowedHosts?: string[]; env?: Record<string, string> };
 }
 
 export interface UpdateWorkspaceRequest {
@@ -551,7 +553,7 @@ export interface UpdateWorkspaceRequest {
   defaultModel?: string | null;
   gitStatusEnabled?: boolean;
   runtime?: "host" | "sandbox";
-  sandboxConfig?: { allowedHosts?: string[] } | null;
+  sandboxConfig?: { allowedHosts?: string[]; env?: Record<string, string> } | null;
 }
 
 export function telemetryUploadsEnabledFromEnv(mode = process.env.OPPI_TELEMETRY_MODE): boolean {

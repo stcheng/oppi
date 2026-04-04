@@ -35,6 +35,35 @@ function normalizeOptionalString(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
 
+function normalizeSandboxConfig(
+  raw: unknown,
+): { allowedHosts?: string[]; env?: Record<string, string> } | undefined {
+  if (!raw || typeof raw !== "object") {
+    return undefined;
+  }
+
+  const obj = raw as Record<string, unknown>;
+  const result: { allowedHosts?: string[]; env?: Record<string, string> } = {};
+
+  if (Array.isArray(obj.allowedHosts)) {
+    result.allowedHosts = obj.allowedHosts.filter((h): h is string => typeof h === "string");
+  }
+
+  if (obj.env && typeof obj.env === "object" && !Array.isArray(obj.env)) {
+    const filtered: Record<string, string> = {};
+    for (const [key, value] of Object.entries(obj.env as Record<string, unknown>)) {
+      if (typeof value === "string") {
+        filtered[key] = value;
+      }
+    }
+    if (Object.keys(filtered).length > 0) {
+      result.env = filtered;
+    }
+  }
+
+  return result.allowedHosts || result.env ? result : undefined;
+}
+
 function normalizeSystemPromptMode(value: unknown): WorkspaceSystemPromptMode {
   return value === "replace" ? "replace" : "append";
 }
@@ -65,7 +94,7 @@ export class WorkspaceStore {
       defaultModel: normalizeOptionalString(req.defaultModel),
       gitStatusEnabled: req.gitStatusEnabled,
       runtime: req.runtime,
-      sandboxConfig: req.sandboxConfig,
+      sandboxConfig: normalizeSandboxConfig(req.sandboxConfig),
       createdAt: now,
       updatedAt: now,
     };
@@ -110,10 +139,7 @@ export class WorkspaceStore {
       gitStatusEnabled:
         typeof raw.gitStatusEnabled === "boolean" ? raw.gitStatusEnabled : undefined,
       runtime: raw.runtime === "host" || raw.runtime === "sandbox" ? raw.runtime : undefined,
-      sandboxConfig:
-        raw.sandboxConfig && typeof raw.sandboxConfig === "object"
-          ? (raw.sandboxConfig as Workspace["sandboxConfig"])
-          : undefined,
+      sandboxConfig: normalizeSandboxConfig(raw.sandboxConfig),
       createdAt: typeof raw.createdAt === "number" ? raw.createdAt : Date.now(),
       updatedAt: typeof raw.updatedAt === "number" ? raw.updatedAt : Date.now(),
     };
@@ -188,7 +214,8 @@ export class WorkspaceStore {
       workspace.gitStatusEnabled = updates.gitStatusEnabled;
     if (updates.runtime !== undefined) workspace.runtime = updates.runtime;
     if (updates.sandboxConfig !== undefined)
-      workspace.sandboxConfig = updates.sandboxConfig ?? undefined;
+      workspace.sandboxConfig =
+        updates.sandboxConfig === null ? undefined : normalizeSandboxConfig(updates.sandboxConfig);
 
     workspace.updatedAt = Date.now();
 
