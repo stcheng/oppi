@@ -1482,16 +1482,31 @@ final class TimelineReducer { // swiftlint:disable:this type_body_length
             }.joined(separator: "\n")
         }
 
+        // Single question: compact format — just the answer(s)
+        if questions.count == 1,
+           case .object(let qObj) = questions[0],
+           case .string(let qId) = qObj["id"],
+           let answer = answers[qId] {
+            return answer.displayString
+        }
+
+        // Multiple questions: show question text with answers
         var lines: [String] = []
         for q in questions {
             guard case .object(let qObj) = q,
                   case .string(let qId) = qObj["id"] else { continue }
-            if let answer = answers[qId] {
-                lines.append("\(qId) → \(answer.displayString)")
+            let label: String
+            if case .string(let questionText) = qObj["question"] {
+                label = questionText
             } else {
-                lines.append("\(qId) → (skipped)")
+                label = qId
+            }
+            if let answer = answers[qId] {
+                lines.append("\(label)\n→ \(answer.displayString)")
+            } else {
+                lines.append("\(label)\n→ (skipped)")
             }
         }
-        return lines.joined(separator: "\n")
+        return lines.joined(separator: "\n\n")
     }
 }

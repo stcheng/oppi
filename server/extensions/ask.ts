@@ -155,12 +155,13 @@ export function createAskFactory(): ExtensionFactory {
         const lines: string[] = [];
         for (const q of params.questions) {
           const answer = answers[q.id];
+          const label = q.question || q.id;
           if (answer === undefined) {
-            lines.push(`${q.id}: (ignored)`);
+            lines.push(`${label}: (ignored)`);
           } else if (Array.isArray(answer)) {
-            lines.push(`${q.id}: ${answer.join(", ")}`);
+            lines.push(`${label}: ${answer.join(", ")}`);
           } else {
-            lines.push(`${q.id}: ${answer}`);
+            lines.push(`${label}: ${answer}`);
           }
         }
 

@@ -9,7 +9,7 @@ struct TimelineReducerAskTests {
 
     // MARK: - formatAskAnswers
 
-    @Test("formatAskAnswers with full answers")
+    @Test("formatAskAnswers with full answers uses question text")
     func formatAskAnswersFullAnswers() {
         let details: JSONValue = .object([
             "questions": .array([
@@ -22,7 +22,7 @@ struct TimelineReducerAskTests {
             ]),
             "allIgnored": .bool(false),
         ])
-        #expect(TimelineReducer.formatAskAnswers(details: details) == "color → blue\nsize → large")
+        #expect(TimelineReducer.formatAskAnswers(details: details) == "Pick a color\n→ blue\n\nPick a size\n→ large")
     }
 
     @Test("formatAskAnswers with skipped question")
@@ -35,7 +35,47 @@ struct TimelineReducerAskTests {
             "answers": .object(["color": .string("red")]),
             "allIgnored": .bool(false),
         ])
-        #expect(TimelineReducer.formatAskAnswers(details: details) == "color → red\nsize → (skipped)")
+        #expect(TimelineReducer.formatAskAnswers(details: details) == "Pick a color\n→ red\n\nPick a size\n→ (skipped)")
+    }
+
+    @Test("formatAskAnswers single question uses compact format")
+    func formatAskAnswersSingleQuestion() {
+        let details: JSONValue = .object([
+            "questions": .array([
+                .object(["id": .string("threads"), "question": .string("Which threads?")]),
+            ]),
+            "answers": .object(["threads": .string("47618223")]),
+            "allIgnored": .bool(false),
+        ])
+        #expect(TimelineReducer.formatAskAnswers(details: details) == "47618223")
+    }
+
+    @Test("formatAskAnswers single question multi-select compact")
+    func formatAskAnswersSingleQuestionMultiSelect() {
+        let details: JSONValue = .object([
+            "questions": .array([
+                .object(["id": .string("threads"), "question": .string("Which threads?")]),
+            ]),
+            "answers": .object(["threads": .array([.string("123"), .string("456")])]),
+            "allIgnored": .bool(false),
+        ])
+        #expect(TimelineReducer.formatAskAnswers(details: details) == "123, 456")
+    }
+
+    @Test("formatAskAnswers falls back to id when question text missing")
+    func formatAskAnswersFallbackToId() {
+        let details: JSONValue = .object([
+            "questions": .array([
+                .object(["id": .string("color")]),
+                .object(["id": .string("size")]),
+            ]),
+            "answers": .object([
+                "color": .string("blue"),
+                "size": .string("large"),
+            ]),
+            "allIgnored": .bool(false),
+        ])
+        #expect(TimelineReducer.formatAskAnswers(details: details) == "color\n→ blue\n\nsize\n→ large")
     }
 
     @Test("formatAskAnswers with allIgnored returns empty")
@@ -48,14 +88,20 @@ struct TimelineReducerAskTests {
         #expect(TimelineReducer.formatAskAnswers(details: details).isEmpty)
     }
 
-    @Test("formatAskAnswers with multi-select array")
+    @Test("formatAskAnswers with multi-select array (multi-question)")
     func formatAskAnswersMultiSelect() {
         let details: JSONValue = .object([
-            "questions": .array([.object(["id": .string("tools")])]),
-            "answers": .object(["tools": .array([.string("ruff"), .string("mypy")])]),
+            "questions": .array([
+                .object(["id": .string("tools"), "question": .string("Which tools?")]),
+                .object(["id": .string("scope"), "question": .string("Scope?")]),
+            ]),
+            "answers": .object([
+                "tools": .array([.string("ruff"), .string("mypy")]),
+                "scope": .string("full"),
+            ]),
             "allIgnored": .bool(false),
         ])
-        #expect(TimelineReducer.formatAskAnswers(details: details) == "tools → ruff, mypy")
+        #expect(TimelineReducer.formatAskAnswers(details: details) == "Which tools?\n→ ruff, mypy\n\nScope?\n→ full")
     }
 
     @Test("formatAskAnswers with nil details returns empty")
@@ -79,7 +125,7 @@ struct TimelineReducerAskTests {
         }))
     }
 
-    @Test("ask toolEnd injects user message with answers")
+    @Test("ask toolEnd injects user message with answers (single question compact)")
     func askToolEndInjectsUserMessage() {
         let reducer = TimelineReducer()
         reducer.process(.toolStart(
@@ -99,7 +145,7 @@ struct TimelineReducerAskTests {
                 foundText = text
             }
         }
-        #expect(foundText == "approach → full_rewrite")
+        #expect(foundText == "full_rewrite")
     }
 
     @Test("ask toolEnd clears any leaked output from tool row")
