@@ -98,6 +98,30 @@ struct FileShareArtifactTests {
             No formatting, no syntax highlighting.
             Just raw text — shared as a .txt file.
             """)),
+        ("diff", .diff([
+            WorkspaceReviewDiffHunk(
+                oldStart: 38, oldCount: 17, newStart: 38, newCount: 13,
+                lines: [
+                    WorkspaceReviewDiffLine(kind: .context, text: "                Group {", oldLine: 38, newLine: 38, spans: nil),
+                    WorkspaceReviewDiffLine(kind: .context, text: "                    if suggestion.isDirectory {", oldLine: 39, newLine: 39, spans: nil),
+                    WorkspaceReviewDiffLine(kind: .removed, text: "                        Image(systemName: \"folder.fill\")", oldLine: 41, newLine: nil, spans: [
+                        WorkspaceReviewDiffSpan(start: 24, end: 49, kind: .changed),
+                    ]),
+                    WorkspaceReviewDiffLine(kind: .removed, text: "                            .foregroundStyle(.secondary)", oldLine: 42, newLine: nil, spans: nil),
+                    WorkspaceReviewDiffLine(kind: .added, text: "                        FileIcon(symbolName: \"folder.fill\", color: .teal)", oldLine: nil, newLine: 41, spans: [
+                        WorkspaceReviewDiffSpan(start: 24, end: 67, kind: .changed),
+                    ]),
+                    WorkspaceReviewDiffLine(kind: .added, text: "                            .iconView(size: 16)", oldLine: nil, newLine: 42, spans: nil),
+                    WorkspaceReviewDiffLine(kind: .context, text: "                    } else {", oldLine: 43, newLine: 43, spans: nil),
+                    WorkspaceReviewDiffLine(kind: .removed, text: "                        let icon = FileIcon.forPath(suggestion.path)", oldLine: 44, newLine: nil, spans: nil),
+                    WorkspaceReviewDiffLine(kind: .removed, text: "                        icon.image", oldLine: 45, newLine: nil, spans: nil),
+                    WorkspaceReviewDiffLine(kind: .added, text: "                        FileIcon.forPath(suggestion.path)", oldLine: nil, newLine: 44, spans: nil),
+                    WorkspaceReviewDiffLine(kind: .added, text: "                            .iconView(size: 16)", oldLine: nil, newLine: 45, spans: nil),
+                    WorkspaceReviewDiffLine(kind: .context, text: "                    }", oldLine: 48, newLine: 46, spans: nil),
+                    WorkspaceReviewDiffLine(kind: .context, text: "                }", oldLine: 49, newLine: 47, spans: nil),
+                ]
+            ),
+        ], filePath: "Oppi/Features/Chat/FileSuggestionRow.swift")),
     ]
 
     private struct ExportResult {
@@ -354,6 +378,8 @@ struct FileShareArtifactTests {
             return t
         case .code(let t, _):
             return t
+        case .diff:
+            return ""
         case .imageData, .pdfData:
             return ""
         }

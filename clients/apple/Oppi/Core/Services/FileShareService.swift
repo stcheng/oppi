@@ -1,4 +1,5 @@
 import CoreGraphics
+import SwiftUI
 import UIKit
 import WebKit
 
@@ -71,6 +72,7 @@ enum FileShareService {
         case html(String)
         case json(String)
         case plainText(String)
+        case diff([WorkspaceReviewDiffHunk], filePath: String)
         case imageData(Data, filename: String)
         case pdfData(Data, filename: String)
 
@@ -231,6 +233,15 @@ enum FileShareService {
                 sourceExtension: "txt",
                 pdfFilename: "text.pdf"
             )
+        case .diff:
+            return ContentExportSpec(
+                defaultFormat: .image,
+                formats: [.image, .pdf, .source],
+                sourceLabel: "Diff File",
+                sourceBaseName: "diff",
+                sourceExtension: "diff",
+                pdfFilename: "diff.pdf"
+            )
         case .imageData(_, let filename):
             return ContentExportSpec(
                 defaultFormat: .image,
@@ -344,6 +355,8 @@ enum FileShareService {
             image = renderCodeToImage(source, language: "json")
         case .plainText(let source):
             image = renderCodeToImage(source, language: nil)
+        case .diff(let hunks, let filePath):
+            image = renderDiffToImage(hunks: hunks, filePath: filePath)
         case .imageData(let data, _):
             image = UIImage(data: data) ?? placeholderImage()
         case .pdfData:
@@ -658,6 +671,179 @@ enum FileShareService {
         }
     }
 
+    // MARK: - Diff Rendering
+
+    /// Render diff to image with full-width line backgrounds and gutter bars.
+    ///
+    /// Uses NSLayoutManager to get line fragment rects, then draws:
+    /// 1. Full-width backgrounds for added/removed/header lines
+    /// 2. Left gutter bars for added/removed lines
+    /// 3. Word-level highlight backgrounds
+    /// 4. Syntax-highlighted glyphs
+    private static func renderDiffToImage(
+        hunks: [WorkspaceReviewDiffHunk],
+        filePath: String
+    ) -> UIImage {
+        let attrString = DiffAttributedStringBuilder.build(
+            hunks: hunks, filePath: filePath, includeStats: true
+        )
+
+        let textStorage = NSTextStorage(attributedString: attrString)
+        let layoutManager = NSLayoutManager()
+        let textContainer = NSTextContainer(size: CGSize(
+            width: CGFloat.greatestFiniteMagnitude,
+            height: .greatestFiniteMagnitude
+        ))
+        textContainer.lineFragmentPadding = 0
+        textContainer.lineBreakMode = .byClipping
+        layoutManager.addTextContainer(textContainer)
+        textStorage.addLayoutManager(layoutManager)
+        layoutManager.ensureLayout(for: textContainer)
+
+        let usedRect = layoutManager.usedRect(for: textContainer)
+        let padding = codePDFPadding
+        let contentWidth = max(ceil(usedRect.width) + padding * 2, textLayoutWidth)
+        let contentHeight = min(ceil(usedRect.height) + padding * 2, maxImageHeight)
+        let imageSize = CGSize(width: contentWidth, height: contentHeight)
+
+        let bgColor = currentBackgroundColor
+        let renderer = UIGraphicsImageRenderer(size: imageSize, format: exportImageFormat)
+        return renderer.image { ctx in
+            bgColor.setFill()
+            ctx.fill(CGRect(origin: .zero, size: imageSize))
+
+            let origin = CGPoint(x: padding, y: padding)
+            drawDiffLineBackgrounds(
+                textStorage: textStorage,
+                layoutManager: layoutManager,
+                origin: origin,
+                fullWidth: contentWidth
+            )
+
+            let glyphRange = layoutManager.glyphRange(for: textContainer)
+            layoutManager.drawBackground(forGlyphRange: glyphRange, at: origin)
+            layoutManager.drawGlyphs(forGlyphRange: glyphRange, at: origin)
+        }
+    }
+
+    /// Render diff to PDF with full-width line backgrounds.
+    private static func renderDiffToPDF(
+        hunks: [WorkspaceReviewDiffHunk],
+        filePath: String
+    ) -> Data {
+        let attrString = DiffAttributedStringBuilder.build(
+            hunks: hunks, filePath: filePath, includeStats: true
+        )
+
+        let textStorage = NSTextStorage(attributedString: attrString)
+        let layoutManager = NSLayoutManager()
+        let textContainer = NSTextContainer(size: CGSize(
+            width: CGFloat.greatestFiniteMagnitude,
+            height: .greatestFiniteMagnitude
+        ))
+        textContainer.lineFragmentPadding = 0
+        textContainer.lineBreakMode = .byClipping
+        layoutManager.addTextContainer(textContainer)
+        textStorage.addLayoutManager(layoutManager)
+        layoutManager.ensureLayout(for: textContainer)
+
+        let usedRect = layoutManager.usedRect(for: textContainer)
+        let padding = codePDFPadding
+        let pageWidth = max(ceil(usedRect.width) + padding * 2, textLayoutWidth)
+        let pageHeight = ceil(usedRect.height) + padding * 2
+        let pageSize = CGSize(width: pageWidth, height: pageHeight)
+
+        let bgColor = currentBackgroundColor
+        let pdfRenderer = UIGraphicsPDFRenderer(
+            bounds: CGRect(origin: .zero, size: pageSize)
+        )
+        return pdfRenderer.pdfData { ctx in
+            ctx.beginPage()
+            bgColor.setFill()
+            UIRectFill(CGRect(origin: .zero, size: pageSize))
+
+            let origin = CGPoint(x: padding, y: padding)
+            drawDiffLineBackgrounds(
+                textStorage: textStorage,
+                layoutManager: layoutManager,
+                origin: origin,
+                fullWidth: pageWidth
+            )
+
+            let glyphRange = layoutManager.glyphRange(for: textContainer)
+            layoutManager.drawBackground(forGlyphRange: glyphRange, at: origin)
+            layoutManager.drawGlyphs(forGlyphRange: glyphRange, at: origin)
+        }
+    }
+
+    /// Draw full-width backgrounds and gutter bars for diff lines.
+    /// Shared between image and PDF diff renderers.
+    private static func drawDiffLineBackgrounds(
+        textStorage: NSTextStorage,
+        layoutManager: NSLayoutManager,
+        origin: CGPoint,
+        fullWidth: CGFloat
+    ) {
+        let addedBg = UIColor(Color.themeDiffAdded.opacity(0.10))
+        let removedBg = UIColor(Color.themeDiffRemoved.opacity(0.08))
+        let headerBg = UIColor(Color.themeBgHighlight)
+        let addedBar = UIColor(Color.themeDiffAdded)
+        let removedBar = UIColor(Color.themeDiffRemoved)
+        let barWidth: CGFloat = 2.5
+
+        textStorage.enumerateAttribute(
+            diffLineKindAttributeKey,
+            in: NSRange(location: 0, length: textStorage.length),
+            options: []
+        ) { value, attrRange, _ in
+            guard let kind = value as? String else { return }
+            let bg: UIColor
+            let bar: UIColor?
+            switch kind {
+            case "added": bg = addedBg; bar = addedBar
+            case "removed": bg = removedBg; bar = removedBar
+            case "header": bg = headerBg; bar = nil
+            default: return
+            }
+
+            let glyphRange = layoutManager.glyphRange(
+                forCharacterRange: attrRange, actualCharacterRange: nil
+            )
+            layoutManager.enumerateLineFragments(forGlyphRange: glyphRange) { rect, _, _, _, _ in
+                var fillRect = rect
+                fillRect.origin.x = 0
+                fillRect.size.width = fullWidth
+                fillRect.origin.y += origin.y
+                bg.setFill()
+                UIRectFillUsingBlendMode(fillRect, .normal)
+
+                if let bar {
+                    var barRect = fillRect
+                    barRect.size.width = barWidth
+                    bar.setFill()
+                    UIRectFillUsingBlendMode(barRect, .normal)
+                }
+            }
+        }
+    }
+
+    /// Build unified diff text from structured hunks for source file export.
+    private static func buildUnifiedDiffText(_ hunks: [WorkspaceReviewDiffHunk]) -> String {
+        hunks.map { hunk in
+            var lines = [hunk.headerText]
+            lines += hunk.lines.map { line in
+                let prefix: String
+                switch line.kind {
+                case .context: prefix = " "
+                case .added: prefix = "+"
+                case .removed: prefix = "-"
+                }
+                return prefix + line.text
+            }
+            return lines.joined(separator: "\n")
+        }.joined(separator: "\n")
+    }
+
     // MARK: - PDF Rendering
 
     private static func renderPDF(_ content: ShareableContent) async -> ShareItem {
@@ -683,6 +869,8 @@ enum FileShareService {
             pdfData = renderCodeToPDF(source, language: "json")
         case .plainText(let source):
             pdfData = renderCodeToPDF(source, language: nil)
+        case .diff(let hunks, let filePath):
+            pdfData = renderDiffToPDF(hunks: hunks, filePath: filePath)
         case .imageData(let data, _):
             if let image = UIImage(data: data) {
                 pdfData = embedImageInPDF(image)
@@ -941,6 +1129,8 @@ enum FileShareService {
             return .file(writeTempFile(content: text, filename: filename))
         case .plainText(let text):
             return .file(writeTempFile(content: text, filename: filename))
+        case .diff(let hunks, _):
+            return .file(writeTempFile(content: buildUnifiedDiffText(hunks), filename: filename))
         case .imageData(let data, let name):
             return .file(writeTempData(data: data, filename: name))
         case .pdfData(let data, let name):
@@ -1035,6 +1225,7 @@ enum FileShareService {
         case .html: return "html"
         case .json: return "json"
         case .plainText: return "text"
+        case .diff: return "diff"
         case .imageData: return "image"
         case .pdfData: return "pdf"
         }
