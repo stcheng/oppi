@@ -89,11 +89,11 @@ final class BiometricService {
                 localizedReason: reason
             )
             if success {
-                logger.info("Biometric auth succeeded")
+                logger.warning("Biometric auth succeeded")
             }
             return success
         } catch {
-            logger.info("Biometric auth failed/cancelled: \(error.localizedDescription)")
+            logger.warning("Biometric auth failed/cancelled: \(error.localizedDescription)")
             return false
         }
     }

@@ -15,6 +15,7 @@
  */
 
 import * as c from "./ansi.js";
+import { safeErrorMessage } from "./log-utils.js";
 import { renderTerminal as renderQR } from "./qr.js";
 import { readFileSync, existsSync, statSync } from "node:fs";
 import { execSync } from "node:child_process";
@@ -194,7 +195,7 @@ async function cmdServe(storage: Storage, pairHost?: string): Promise<void> {
     }
 
     await server.stop().catch((err: unknown) => {
-      console.error(c.red("Shutdown error:"), err);
+      console.error(c.red("Shutdown error:"), safeErrorMessage(err));
     });
 
     process.exit(code);
@@ -209,12 +210,12 @@ async function cmdServe(storage: Storage, pairHost?: string): Promise<void> {
   });
 
   process.on("uncaughtException", (err) => {
-    console.error(c.red("Uncaught exception:"), err);
+    console.error(c.red("Uncaught exception:"), safeErrorMessage(err));
     void shutdown(1);
   });
 
   process.on("unhandledRejection", (reason) => {
-    console.error(c.red("Unhandled rejection:"), reason);
+    console.error(c.red("Unhandled rejection:"), safeErrorMessage(reason));
     void shutdown(1);
   });
 
@@ -1312,6 +1313,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((err) => {
-  console.error(c.red("Fatal error:"), err);
+  console.error(c.red("Fatal error:"), safeErrorMessage(err));
   process.exit(1);
 });

@@ -81,7 +81,7 @@ struct AskOppiIntent: AppIntent {
             let prompted = response.prompted ?? false
             let sessionName = response.session.name ?? response.session.id
             if prompted {
-                logger.info("Quick dispatch succeeded: session=\(response.session.id)")
+                logger.error("Quick dispatch succeeded: session=\(response.session.id)")
                 return .result(dialog: "Session started: \(sessionName)")
             } else {
                 logger.warning("Session created but prompt delivery failed: \(response.session.id)")

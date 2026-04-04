@@ -62,7 +62,7 @@ actor TimelineCache {
         encoder = JSONEncoder()
         decoder = JSONDecoder()
 
-        logger.notice("Cache root initialized at \(self.root.path, privacy: .public)")
+        logger.notice("Cache root initialized at \(self.root.lastPathComponent, privacy: .public)")
     }
 
     // MARK: - Trace (per session)

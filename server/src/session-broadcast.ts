@@ -1,3 +1,4 @@
+import { safeErrorMessage } from "./log-utils.js";
 import type { EventRing } from "./event-ring.js";
 import type { ServerMetricCollector } from "./server-metric-collector.js";
 import type { Session, ServerMessage } from "./types.js";
@@ -165,7 +166,7 @@ export class SessionBroadcaster {
       try {
         cb(sequenced);
       } catch (err) {
-        console.error("Subscriber error:", err);
+        console.error("Subscriber error:", safeErrorMessage(err));
       }
     }
   }
@@ -191,7 +192,7 @@ export class SessionBroadcaster {
       try {
         cb(message);
       } catch (err) {
-        console.error("Subscriber error:", err);
+        console.error("Subscriber error:", safeErrorMessage(err));
       }
     }
   }

@@ -121,7 +121,13 @@ final class ServerProcessManager {
     /// 2. Homebrew / common install locations
     /// 3. Fallback to Node.js
     static func resolveRuntimePath() -> String? {
-        // App bundle — release builds embed the Bun binary in Resources/
+        // Node.js first — required for Gondolin sandbox TLS (Bun's
+        // tls.TLSSocket + custom Duplex is broken, causing HTTPS to hang).
+        if let node = resolveNodePath() {
+            return node
+        }
+
+        // App bundle — release builds may embed Bun in Resources/
         if let resourcePath = Bundle.main.resourcePath {
             let bundledBun = (resourcePath as NSString).appendingPathComponent("bun")
             if FileManager.default.isExecutableFile(atPath: bundledBun) {
@@ -129,18 +135,13 @@ final class ServerProcessManager {
             }
         }
 
-        // System-installed Bun
+        // System-installed Bun as last resort
         let bunCandidates = [
             "/opt/homebrew/bin/bun",
             "/usr/local/bin/bun",
             NSString("~/.bun/bin/bun").expandingTildeInPath,
         ]
-        if let bun = bunCandidates.first(where: { FileManager.default.fileExists(atPath: $0) }) {
-            return bun
-        }
-
-        // Fallback to Node.js for backwards compat (dev builds)
-        return resolveNodePath()
+        return bunCandidates.first(where: { FileManager.default.fileExists(atPath: $0) })
     }
 
     /// Resolves the Node.js binary path (fallback only).
@@ -199,7 +200,7 @@ final class ServerProcessManager {
             return
         }
 
-        logger.info("Seeding server runtime: \(currentVersion ?? "none") -> \(seedVersion)")
+        logger.warning("Seeding server runtime: \(currentVersion ?? "none") -> \(seedVersion)")
 
         let fm = FileManager.default
         do {
@@ -226,13 +227,13 @@ final class ServerProcessManager {
             let runtimeNM = (runtimeDir as NSString).appendingPathComponent("node_modules")
             let seedNM = (seedDir as NSString).appendingPathComponent("node_modules")
             if !fm.fileExists(atPath: runtimeNM), fm.fileExists(atPath: seedNM) {
-                logger.info("Copying seed node_modules (first launch)")
+                logger.warning("Copying seed node_modules (first launch)")
                 try fm.copyItem(atPath: seedNM, toPath: runtimeNM)
             }
 
             // Write version marker
             try seedVersion.write(toFile: runtimeVersionFile, atomically: true, encoding: .utf8)
-            logger.info("Server runtime seeded (v\(seedVersion))")
+            logger.warning("Server runtime seeded (v\(seedVersion))")
         } catch {
             logger.error("Failed to seed server runtime: \(error.localizedDescription)")
         }
@@ -249,14 +250,14 @@ final class ServerProcessManager {
         // Find server processes matching our CLI pattern (Bun or Node.js).
         let serverPids = pidsMatching(pattern: "(bun|node).*cli\\.js.*serve")
         for pid in serverPids {
-            logger.info("Killing existing server process (pid \(pid))")
+            logger.warning("Killing existing server process (pid \(pid))")
             kill(pid, SIGTERM)
         }
 
         // Find stale dns-sd Bonjour advertisements for oppi.
         let dnsPids = pidsMatching(pattern: "dns-sd.*_oppi._tcp")
         for pid in dnsPids {
-            logger.info("Killing stale dns-sd process (pid \(pid))")
+            logger.warning("Killing stale dns-sd process (pid \(pid))")
             kill(pid, SIGTERM)
         }
 
@@ -336,7 +337,7 @@ final class ServerProcessManager {
 
         state = .starting
         isIntentionalStop = false
-        logger.info("Starting server: node=\(nodePath) cli=\(cliPath) data=\(dataDir) extra=\(extraArgs)")
+        logger.warning("Starting server: node=\(nodePath) cli=\(cliPath) data=\(dataDir) extra=\(extraArgs)")
 
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: nodePath)
@@ -372,7 +373,7 @@ final class ServerProcessManager {
         do {
             try proc.run()
             self.process = proc
-            logger.info("Server process launched (pid \(proc.processIdentifier))")
+            logger.warning("Server process launched (pid \(proc.processIdentifier))")
         } catch {
             state = .failed(error.localizedDescription)
             logger.error("Failed to launch server process: \(error.localizedDescription)")
@@ -388,7 +389,7 @@ final class ServerProcessManager {
 
         state = .stopping
         isIntentionalStop = true
-        logger.info("Stopping server (pid \(proc.processIdentifier))")
+        logger.warning("Stopping server (pid \(proc.processIdentifier))")
 
         proc.terminate() // SIGTERM
 
@@ -406,7 +407,7 @@ final class ServerProcessManager {
 
         cleanup()
         state = .stopped
-        logger.info("Server stopped")
+        logger.warning("Server stopped")
     }
 
     /// Stop, then start the server.
@@ -431,7 +432,7 @@ final class ServerProcessManager {
             let previous = state
             state = .running
             restartAttempts = 0
-            logger.info("Server marked as running (was \(String(describing: previous)))")
+            logger.warning("Server marked as running (was \(String(describing: previous)))")
         }
     }
 
@@ -472,7 +473,7 @@ final class ServerProcessManager {
             let rotated = Self.rotatedLogFilePath
             try? fm.removeItem(atPath: rotated)
             try? fm.moveItem(atPath: path, toPath: rotated)
-            logger.info("Rotated server log (\(size) bytes)")
+            logger.warning("Rotated server log (\(size) bytes)")
         }
 
         // Create if needed

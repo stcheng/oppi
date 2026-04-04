@@ -49,7 +49,7 @@ final class LANDiscovery: NSObject {
     private func publish(_ next: [LANDiscoveredEndpoint]) {
         guard next != endpoints else { return }
         endpoints = next
-        logger.info("LAN endpoints changed: count=\(next.count)")
+        logger.debug("LAN endpoints changed: count=\(next.count)")
         onUpdate?(next)
     }
 
@@ -77,7 +77,7 @@ final class LANDiscovery: NSObject {
     // MARK: - NetService Delegate Trampolines
 
     fileprivate func handleServiceFound(_ service: NetService) {
-        logger.info("Service found: \(service.name, privacy: .public)")
+        logger.debug("Service found: \(service.name, privacy: .public)")
 
         service.delegate = self
         discoveredServices.append(service)
@@ -86,7 +86,7 @@ final class LANDiscovery: NSObject {
     }
 
     fileprivate func handleServiceRemoved(_ service: NetService) {
-        logger.info("Service removed: \(service.name, privacy: .public)")
+        logger.debug("Service removed: \(service.name, privacy: .public)")
         service.stop()
         discoveredServices.removeAll { $0 == service }
         rebuildEndpoints()
@@ -94,15 +94,15 @@ final class LANDiscovery: NSObject {
 
     fileprivate func handleServiceResolved(_ service: NetService) {
         guard service.txtRecordData() != nil else {
-            logger.info("Resolved but no TXT data: \(service.name, privacy: .public)")
+            logger.warning("Resolved but no TXT data: \(service.name, privacy: .public)")
             return
         }
-        logger.info("Service resolved: \(service.name, privacy: .public) host=\(service.hostName ?? "nil", privacy: .public)")
+        logger.debug("Service resolved: \(service.name, privacy: .public) host=\(service.hostName ?? "nil", privacy: .public)")
         rebuildEndpoints()
     }
 
     fileprivate func handleTXTRecordUpdate(_: Data, name: String) {
-        logger.info("TXT record updated: \(name, privacy: .public)")
+        logger.debug("TXT record updated: \(name, privacy: .public)")
         rebuildEndpoints()
     }
 

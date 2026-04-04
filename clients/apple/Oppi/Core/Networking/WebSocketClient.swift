@@ -534,12 +534,12 @@ final class WebSocketClient {
                     do {
                         streamMessage = try StreamMessage.decode(from: text)
                     } catch {
-                        logger.error("PIPE: DECODE FAILED: \(error.localizedDescription, privacy: .public) — raw: \(text.prefix(300), privacy: .public)")
+                        logger.error("PIPE: DECODE FAILED: \(error.localizedDescription, privacy: .public) — rawLen=\(text.count)")
                         self?.wsLogError(
                             "PIPE decode failed",
                             metadata: [
                                 "error": error.localizedDescription,
-                                "rawPrefix": String(text.prefix(120)),
+                                "rawLen": String(text.count),
                             ]
                         )
                         continue

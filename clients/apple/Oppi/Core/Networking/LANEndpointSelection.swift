@@ -50,7 +50,7 @@ enum LANEndpointSelection {
         }
 
         guard (1...65_535).contains(discoveredEndpoint.port) else {
-            logger.info("LAN rejected: invalid port \(discoveredEndpoint.port)")
+            logger.warning("LAN rejected: invalid port \(discoveredEndpoint.port)")
             return paired
         }
 
@@ -58,18 +58,18 @@ enum LANEndpointSelection {
             discoveredPrefix: discoveredEndpoint.serverFingerprintPrefix,
             pairedFingerprint: credentials.normalizedServerFingerprint
         ) else {
-            logger.info("LAN rejected: server fingerprint mismatch")
+            logger.warning("LAN rejected: server fingerprint mismatch")
             return paired
         }
 
         guard let pinnedTLSFingerprint = normalizeFingerprint(credentials.normalizedTLSCertFingerprint) else {
-            logger.info("LAN rejected: no TLS cert fingerprint in paired credentials")
+            logger.warning("LAN rejected: no TLS cert fingerprint in paired credentials")
             return paired
         }
 
         if let discoveredTLSPrefix = normalizeFingerprint(discoveredEndpoint.tlsCertFingerprintPrefix),
            !pinnedTLSFingerprint.hasPrefix(discoveredTLSPrefix) {
-            logger.info("LAN rejected: TLS fingerprint prefix mismatch")
+            logger.warning("LAN rejected: TLS fingerprint prefix mismatch")
             return paired
         }
 
@@ -95,7 +95,7 @@ enum LANEndpointSelection {
             return paired
         }
 
-        logger.info("LAN selected: \(lanHost, privacy: .public):\(discoveredEndpoint.port) (discovered: \(discoveredEndpoint.host, privacy: .public))")
+        logger.warning("LAN selected: \(lanHost, privacy: .public):\(discoveredEndpoint.port) (discovered: \(discoveredEndpoint.host, privacy: .public))")
 
         return EndpointSelection(
             baseURL: lanBaseURL,

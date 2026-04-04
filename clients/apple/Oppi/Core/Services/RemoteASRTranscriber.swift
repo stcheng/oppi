@@ -260,7 +260,7 @@ final class RemoteASRTranscriber: @unchecked Sendable {
 
         guard chunkSamples.count >= minSamples else {
             if isFinal {
-                logger.info("Final chunk too short (\(chunkSamples.count) samples), skipping")
+                logger.debug("Final chunk too short (\(chunkSamples.count) samples), skipping")
             }
             onChunkTelemetry?(
                 ChunkTelemetry(
@@ -277,7 +277,7 @@ final class RemoteASRTranscriber: @unchecked Sendable {
             return
         }
 
-        logger.info("Sending chunk: \(chunkSamples.count) samples (\(chunkDurationMs)ms), final=\(isFinal)")
+        logger.debug("Sending chunk: \(chunkSamples.count) samples (\(chunkDurationMs)ms), final=\(isFinal)")
 
         // Encode to WAV
         let wavData = WAVEncoder.encode(samples: chunkSamples, sampleRate: config.sampleRate)
@@ -294,7 +294,7 @@ final class RemoteASRTranscriber: @unchecked Sendable {
 
             let trimmed = response.text.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !trimmed.isEmpty else {
-                logger.info("Chunk returned empty text (\(ms)ms)")
+                logger.debug("Chunk returned empty text (\(ms)ms)")
                 onChunkTelemetry?(
                     ChunkTelemetry(
                         status: .empty,
@@ -312,7 +312,7 @@ final class RemoteASRTranscriber: @unchecked Sendable {
 
             updateOverlapTextContext(with: trimmed)
 
-            logger.info("Chunk transcribed in \(ms)ms: \(trimmed.prefix(80))...")
+            logger.debug("Chunk transcribed in \(ms)ms (\(trimmed.count) chars)")
             onChunkTelemetry?(
                 ChunkTelemetry(
                     status: .success,
@@ -329,7 +329,7 @@ final class RemoteASRTranscriber: @unchecked Sendable {
                 TranscriptionResult(text: trimmed, isFinal: true, duration: response.duration)
             )
         } catch is CancellationError {
-            logger.info("Chunk upload cancelled")
+            logger.debug("Chunk upload cancelled")
             onChunkTelemetry?(
                 ChunkTelemetry(
                     status: .cancelled,

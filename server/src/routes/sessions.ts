@@ -26,7 +26,7 @@ import {
   validateCwdAlignment,
 } from "../local-sessions.js";
 import { type Session } from "../types.js";
-import { ts } from "../log-utils.js";
+import { ts, safeErrorMessage } from "../log-utils.js";
 import { resolveSdkSessionCwd } from "../sdk-backend.js";
 import type { RouteContext, RouteDispatcher, RouteHelpers } from "./types.js";
 import {
@@ -330,7 +330,10 @@ export function createSessionRoutes(ctx: RouteContext, helpers: RouteHelpers): R
       helpers.json(res, { session: hydrated });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Resume failed";
-      console.error(`${ts()} [resume] Failed to resume session ${sessionId}:`, err);
+      console.error(
+        `${ts()} [resume] Failed to resume session ${sessionId}:`,
+        safeErrorMessage(err),
+      );
       helpers.error(res, 500, message);
     }
   }
@@ -408,7 +411,10 @@ export function createSessionRoutes(ctx: RouteContext, helpers: RouteHelpers): R
       await ctx.sessions.stopSession(forkSession.id).catch(() => {});
       ctx.storage.deleteSession(forkSession.id);
       const message = err instanceof Error ? err.message : "Fork failed";
-      console.error(`${ts()} [fork] Failed to fork session ${sourceSessionId}:`, err);
+      console.error(
+        `${ts()} [fork] Failed to fork session ${sourceSessionId}:`,
+        safeErrorMessage(err),
+      );
       helpers.error(res, 500, message);
       return;
     }

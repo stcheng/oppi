@@ -159,7 +159,7 @@ struct ServerInitView: View {
             throw InitError.initFailed(errText)
         }
 
-        logger.info("Server init completed successfully")
+        logger.warning("Server init completed successfully")
     }
 
     /// Wait for the health monitor to report healthy. The monitor polls every 2s

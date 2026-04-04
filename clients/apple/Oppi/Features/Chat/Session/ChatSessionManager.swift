@@ -258,7 +258,7 @@ final class ChatSessionManager {
         let sessionStatus = sessionStore.sessions.first(where: { $0.id == sessionId })?.status
         if sessionStatus == .stopped {
             transitionTo(.stopped(historyLoaded: false))
-            log.info("Session \(self.sessionId) is stopped — loading history only (no WS)")
+            log.warning("Session \(self.sessionId) is stopped — loading history only (no WS)")
             scheduleHistoryReload(
                 generation: generation,
                 connection: connection,
@@ -485,7 +485,7 @@ final class ChatSessionManager {
                         value: currentSeq
                     )
                     persistLastSeenSeq(currentSeq)
-                    log.info("First connect: seeded seq=\(currentSeq) for \(self.sessionId)")
+                    log.warning("First connect: seeded seq=\(currentSeq) for \(self.sessionId)")
                 }
 
                 // Request freshest server session state only once the stream is connected.
@@ -520,11 +520,11 @@ final class ChatSessionManager {
                     )
                     switch outcome {
                     case .noGap:
-                        log.info("WS reconnected — no gap for \(self.sessionId)")
+                        log.warning("WS reconnected — no gap for \(self.sessionId)")
                     case .applied:
-                        log.info("WS reconnected — catch-up applied for \(self.sessionId)")
+                        log.warning("WS reconnected — catch-up applied for \(self.sessionId)")
                     case .fullReloadScheduled:
-                        log.info("WS reconnected — full history reload scheduled for \(self.sessionId)")
+                        log.error("WS reconnected — full history reload scheduled for \(self.sessionId)")
                     }
                     telemetry.recordFreshContentLagIfNeeded(reason: "reconnect_\(outcome)", sessionId: sessionId)
                 } else {
@@ -1102,7 +1102,7 @@ final class ChatSessionManager {
                         workspaceId: workspaceId
                     )
                     let footprint = SentryService.currentFootprintMB()
-                    log.info("Loaded \(trace.count) fresh trace events for \(self.sessionId) [footprint=\(footprint ?? -1)MB, items=\(self.reducer.items.count), replay=\(usedReplay)]")
+                    log.warning("Loaded \(trace.count) fresh trace events for \(self.sessionId) [footprint=\(footprint ?? -1)MB, items=\(self.reducer.items.count), replay=\(usedReplay)]")
                     ClientLog.info("Memory", "Session loaded", metadata: [
                         "footprintMB": footprint.map(String.init) ?? "n/a",
                         "traceEvents": String(trace.count),

@@ -559,7 +559,7 @@ struct OppiApp: App {
                         hits=\(metrics.hits, privacy: .public) \
                         misses=\(metrics.misses, privacy: .public) \
                         decodeFailures=\(metrics.decodeFailures, privacy: .public) \
-                        root=\(metrics.rootPath, privacy: .public)
+                        root=\(URL(filePath: metrics.rootPath).lastPathComponent, privacy: .public)
                         """
                     )
                 } else {

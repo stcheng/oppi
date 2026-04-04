@@ -95,7 +95,7 @@ final class ServerHealthMonitor {
 
             let healthy = await checkHealth(client: client)
             if healthy {
-                logger.info("Server healthy after \(attempt) startup poll(s)")
+                logger.warning("Server healthy after \(attempt) startup poll(s)")
                 processManager?.markRunning()
                 await runningPoll(client: client)
                 return

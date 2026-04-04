@@ -158,7 +158,7 @@ struct PairingView: View {
         }
 
         let info = try JSONDecoder().decode(PairingInfo.self, from: data)
-        logger.info("Pairing info generated: host=\(info.host ?? "unknown")")
+        logger.warning("Pairing info generated: host=\(info.host ?? "unknown")")
         return info
     }
 

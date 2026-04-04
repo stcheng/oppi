@@ -241,7 +241,7 @@ final class VoiceInputManager {
         if let probe = decision.probe {
             recordRemoteProbeMetric(probe, annotation: annotation)
             if !probe.reachable {
-                logger.info("Remote ASR unreachable; using on-device engine")
+                logger.warning("Remote ASR unreachable; using on-device engine")
             }
         }
 
@@ -517,7 +517,7 @@ final class VoiceInputManager {
         deactivateAudioSession()
         teardownSession()
         state = .idle
-        logger.info("Stopped. Transcript: \(self.currentTranscript.prefix(80))...")
+        logger.info("Stopped. Transcript length: \(self.currentTranscript.count) chars")
     }
 
     /// Cancel recording without finalizing. Discards all text.
@@ -669,15 +669,15 @@ final class VoiceInputManager {
         switch event {
         case .partialTranscript(let text):
             volatileTranscript = text
-            logger.debug("Volatile: \(text)")
+            logger.debug("Volatile: \(text.count) chars")
         case .appendFinalTranscript(let text):
             finalizedTranscript += text
             volatileTranscript = ""
-            logger.debug("Finalized append: \(text)")
+            logger.debug("Finalized append: \(text.count) chars")
         case .replaceFinalTranscript(let text):
             finalizedTranscript = text
             volatileTranscript = ""
-            logger.debug("Finalized replace: \(text)")
+            logger.debug("Finalized replace: \(text.count) chars")
         case .remoteChunkTelemetry(let chunk):
             recordRemoteChunkTelemetry(chunk, annotation: annotation)
         }

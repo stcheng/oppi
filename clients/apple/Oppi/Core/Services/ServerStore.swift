@@ -26,13 +26,13 @@ final class ServerStore {
             existing.updateCredentials(from: server.credentials)
             servers[idx] = existing
             save(existing)
-            logger.info("Updated server \(server.name, privacy: .public) (re-pair)")
+            logger.warning("Updated server \(server.name, privacy: .public) (re-pair)")
         } else {
             var newServer = server
             newServer.sortOrder = servers.count
             servers.append(newServer)
             save(newServer)
-            logger.info("Added server \(server.name, privacy: .public)")
+            logger.warning("Added server \(server.name, privacy: .public)")
         }
         saveIndex()
     }
@@ -55,7 +55,7 @@ final class ServerStore {
         servers.removeAll { $0.id == id }
         KeychainService.deleteServer(id: id)
         saveIndex()
-        logger.info("Removed server \(id, privacy: .public)")
+        logger.warning("Removed server \(id.prefix(16), privacy: .public)")
     }
 
     /// Rename a server.

@@ -47,7 +47,7 @@ import { SkillRegistry, UserSkillStore } from "./skills.js";
 import { createPushClient, type PushClient, type APNsConfig } from "./push.js";
 
 import type { Session, Workspace, ServerMessage, ApiError, ServerConfig } from "./types.js";
-import { ts } from "./log-utils.js";
+import { ts, safeErrorMessage } from "./log-utils.js";
 import { ensureIdentityMaterial, identityConfigForDataDir } from "./security.js";
 import {
   BonjourAdvertiser,
@@ -1089,7 +1089,7 @@ export class Server {
         await this.routes.dispatch(method, path, url, req, res);
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : "Internal error";
-        console.error("HTTP error:", err);
+        console.error("HTTP error:", safeErrorMessage(err));
         this.error(res, 500, message);
       }
       return;
@@ -1115,7 +1115,7 @@ export class Server {
       await this.routes.dispatch(method, path, url, req, res);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Internal error";
-      console.error("HTTP error:", err);
+      console.error("HTTP error:", safeErrorMessage(err));
       this.error(res, 500, message);
     }
   }

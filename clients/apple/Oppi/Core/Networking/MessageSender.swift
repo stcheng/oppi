@@ -67,7 +67,7 @@ final class MessageSender {
         // and the user waits for the full ack timeout with no feedback.
         // Fail fast so the error handler can restore the text immediately.
         if activeSessionId == nil, !Self.isSessionLevelCommand(message) {
-            logger.error("SEND blocked: activeSessionId is nil for session-scoped \(String(describing: message).prefix(40), privacy: .public)")
+            logger.error("SEND blocked: activeSessionId is nil for session-scoped \(message.typeLabel, privacy: .public)")
             throw WebSocketError.notConnected
         }
 

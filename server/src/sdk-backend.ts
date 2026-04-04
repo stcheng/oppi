@@ -6,6 +6,7 @@
  */
 
 import { randomUUID } from "node:crypto";
+import { safeErrorMessage } from "./log-utils.js";
 import { existsSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, extname, join, resolve } from "node:path";
@@ -247,6 +248,23 @@ export class SdkBackend {
           });
         }
 
+        // Debug: log extension filtering
+        const extNames = base.extensions.map(
+          (ext) => `${getExtensionName(ext)}(tools:${[...ext.tools.keys()].join(",") || "none"})`,
+        );
+        const filteredNames = filtered.map(
+          (ext) => `${getExtensionName(ext)}(tools:${[...ext.tools.keys()].join(",") || "none"})`,
+        );
+        if (process.env.DEBUG) {
+          console.log("[sdk] Extensions override", {
+            workspace: workspace?.name,
+            input: extNames,
+            errors: base.errors.map((e) => `${e.path}: ${e.error}`),
+            allowlist: allowedNames,
+            output: filteredNames,
+          });
+        }
+
         return { ...base, extensions: filtered };
       },
     });
@@ -310,7 +328,8 @@ export class SdkBackend {
         readonlyMounts.push(extensionsDir);
       }
 
-      const vm = await manager.ensureWorkspaceVm(workspace, cwd, secrets, readonlyMounts);
+      const extraEnv = workspace.sandboxConfig?.env;
+      const vm = await manager.ensureWorkspaceVm(workspace, cwd, secrets, readonlyMounts, extraEnv);
 
       sandboxTools = [
         createReadToolDefinition(cwd, { operations: createGondolinReadOps(vm, cwd) }),
@@ -626,7 +645,7 @@ export class SdkBackend {
       })
       .catch((err) => {
         const errorMessage = err instanceof Error ? err.message : String(err);
-        console.error("[sdk] prompt error", { error: err });
+        console.error("[sdk] prompt error", { error: safeErrorMessage(err) });
         this.emitEvent({ type: "prompt_error", error: errorMessage });
       });
   }

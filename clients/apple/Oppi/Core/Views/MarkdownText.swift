@@ -312,7 +312,7 @@ enum FlatSegment: Sendable {
            !source.hasPrefix("data:"),
            !source.hasPrefix("http://"),
            !source.hasPrefix("https://") {
-            print("[FlatSegment] WARNING: relative image '\(source)' but workspaceID is nil — workspace context not threaded to this rendering path")
+            print("[FlatSegment] WARNING: relative image but workspaceID is nil — workspace context not threaded to this rendering path")
         }
         #endif
         guard inlines.count == 1,

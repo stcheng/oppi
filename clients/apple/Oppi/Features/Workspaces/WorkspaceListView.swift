@@ -1,4 +1,7 @@
+import OSLog
 import SwiftUI
+
+private let logger = Logger(subsystem: AppIdentifiers.subsystem, category: "WorkspaceList")
 
 /// Workspace management list for a single server.
 ///
@@ -79,7 +82,7 @@ struct WorkspaceListView: View {
                 try await api.deleteWorkspace(id: workspace.id)
             } catch {
                 // Re-add on failure — next refresh reconciles
-                print("[workspace] delete failed for \(workspace.id): \(error)")
+                logger.error("Delete failed for \(workspace.id.prefix(16), privacy: .public): \(error.localizedDescription, privacy: .public)")
             }
         }
     }

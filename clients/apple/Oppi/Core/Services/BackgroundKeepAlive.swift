@@ -24,7 +24,7 @@ struct BackgroundKeepAlive {
         guard taskID == .invalid else { return }
 
         taskID = UIApplication.shared.beginBackgroundTask(withName: "agent-keep-alive") { [self] in
-            Self.log.info("Background task expired by OS")
+            Self.log.error("Background task expired by OS")
             // Can't mutate self in the expiration handler directly,
             // but the task will be invalidated. Next foreground `end()` cleans up.
         }
@@ -36,7 +36,7 @@ struct BackgroundKeepAlive {
 
         let remaining = UIApplication.shared.backgroundTimeRemaining
         let remainingDesc = remaining > 99_999 ? "unlimited" : String(format: "%.0fs", remaining)
-        Self.log.info("Background keep-alive started (remaining: \(remainingDesc))")
+        Self.log.warning("Background keep-alive started (remaining: \(remainingDesc))")
 
         // Poll session status — end when no agents are busy.
         let capturedTaskID = taskID

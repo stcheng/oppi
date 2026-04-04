@@ -90,7 +90,7 @@ final class ConnectionCoordinator {
         conn.setDiscoveredLANEndpoint(bestLANEndpoint(forServerId: serverId))
 
         connections[serverId] = conn
-        logger.info("Created connection for \(server.name, privacy: .public) (\(serverId.prefix(16), privacy: .public))")
+        logger.warning("Created connection for \(server.name, privacy: .public) (\(serverId.prefix(16), privacy: .public))")
         return conn
     }
 
@@ -157,7 +157,7 @@ final class ConnectionCoordinator {
 
         // Can't reconnect without a network
         guard path.status == .satisfied else {
-            logger.info("Network path unsatisfied (\(previous, privacy: .public) -> \(signature, privacy: .public))")
+            logger.warning("Network path unsatisfied (\(previous, privacy: .public) -> \(signature, privacy: .public))")
             ClientLog.info("Network", "Path unsatisfied", metadata: [
                 "from": previous,
                 "to": signature,
@@ -165,7 +165,7 @@ final class ConnectionCoordinator {
             return
         }
 
-        logger.info("Network path changed: \(previous, privacy: .public) -> \(signature, privacy: .public)")
+        logger.warning("Network path changed: \(previous, privacy: .public) -> \(signature, privacy: .public)")
         ClientLog.info("Network", "Path changed", metadata: [
             "from": previous,
             "to": signature,
@@ -348,7 +348,7 @@ final class ConnectionCoordinator {
         guard serverId != activeServerId else { return true }
 
         guard let server = serverStore.server(for: serverId) else {
-            logger.error("Cannot switch to unknown server \(serverId, privacy: .public)")
+            logger.error("Cannot switch to unknown server \(serverId.prefix(16), privacy: .public)")
             return false
         }
 
@@ -367,7 +367,7 @@ final class ConnectionCoordinator {
         activeServerId = serverId
         MetricKitService.shared.setUploadClient(conn.apiClient)
 
-        logger.info("Switched to server \(server.name, privacy: .public) (\(serverId.prefix(16), privacy: .public))")
+        logger.warning("Switched to server \(server.name, privacy: .public) (\(serverId.prefix(16), privacy: .public))")
         return true
     }
 
@@ -403,7 +403,7 @@ final class ConnectionCoordinator {
 
         serverStore.remove(id: id)
 
-        logger.info("Removed server \(id.prefix(16), privacy: .public)")
+        logger.warning("Removed server \(id.prefix(16), privacy: .public)")
 
         // If we removed the active server, switch to the first remaining
         if id == activeServerId {
@@ -510,6 +510,19 @@ final class ConnectionCoordinator {
         connections.values
             .flatMap { $0.sessionStore.sessions }
             .sorted { $0.lastActivity > $1.lastActivity }
+    }
+
+    /// Whether any non-stopped sessions exist across all servers.
+    /// Used by QuickSessionSheet presentation (detent sizing, drag indicator).
+    var hasActiveSessions: Bool {
+        connections.values.contains { conn in
+            conn.sessionStore.sessions.contains { session in
+                switch session.status {
+                case .busy, .starting, .stopping, .ready, .error: return true
+                case .stopped: return false
+                }
+            }
+        }
     }
 
     /// All pending permissions across all servers.

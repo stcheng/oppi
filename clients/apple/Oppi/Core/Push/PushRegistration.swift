@@ -42,9 +42,9 @@ final class PushRegistration {
                     .alert, .sound, .badge, .providesAppNotificationSettings
                 ])
                 if granted {
-                    logger.info("Notification permission granted")
+                    logger.warning("Notification permission granted")
                 } else {
-                    logger.info("Notification permission denied")
+                    logger.error("Notification permission denied")
                     return
                 }
             } catch {
@@ -52,7 +52,7 @@ final class PushRegistration {
                 return
             }
         } else if settings.authorizationStatus == .denied {
-            logger.info("Notifications denied — user must enable in Settings")
+            logger.warning("Notifications denied — user must enable in Settings")
             return
         }
 
@@ -64,7 +64,7 @@ final class PushRegistration {
     func didRegisterForRemoteNotifications(deviceToken data: Data) {
         let token = data.map { String(format: "%02x", $0) }.joined()
         self.deviceToken = token
-        logger.info("Device token received (chars: \(token.count))")
+        logger.warning("Device token received (chars: \(token.count))")
 
         // Forward to server
         Task {
@@ -87,7 +87,7 @@ final class PushRegistration {
         do {
             try await api.registerDeviceToken(token, tokenType: tokenType)
             isRegistered = true
-            logger.info("Device token registered with server (type: \(tokenType))")
+            logger.warning("Device token registered with server (type: \(tokenType))")
         } catch {
             logger.error("Failed to register device token: \(error)")
         }
@@ -99,7 +99,7 @@ final class PushRegistration {
     /// and don't block others.
     func registerWithAllServers(_ servers: [PairedServer]) async {
         guard let token = deviceToken else {
-            logger.info("No device token yet — skipping multi-server registration")
+            logger.warning("No device token yet — skipping multi-server registration")
             return
         }
 
@@ -117,7 +117,7 @@ final class PushRegistration {
                     )
                     do {
                         try await api.registerDeviceToken(token, tokenType: "apns")
-                        logger.info("Push token registered with server \(serverId.prefix(16), privacy: .public)")
+                        logger.warning("Push token registered with server \(serverId.prefix(16), privacy: .public)")
                     } catch {
                         logger.error("Push token registration failed for server \(serverId.prefix(16), privacy: .public): \(error.localizedDescription, privacy: .public)")
                     }

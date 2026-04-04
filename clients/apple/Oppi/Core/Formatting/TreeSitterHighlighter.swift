@@ -1,6 +1,9 @@
 import Foundation
+import OSLog
 import SwiftTreeSitter
 import TreeSitterBash
+
+private let logger = Logger(subsystem: AppIdentifiers.subsystem, category: "TreeSitter")
 
 // MARK: - TreeSitterHighlighter
 
@@ -230,13 +233,10 @@ enum TreeSitterHighlighter {
                 // Log query compilation errors to help debug grammar issues.
                 // Common cause: highlights.scm uses syntax not supported by
                 // the installed tree-sitter version.
-                // Print detailed error info for debugging grammar issues.
                 if case QueryError.nodeType(let offset) = error {
-                    let data = (try? Data(contentsOf: highlightsURL)) ?? Data()
-                    let context = String(data: data.prefix(Int(offset) + 50), encoding: .utf8)?.suffix(80) ?? ""
-                    print("[TreeSitter] Query nodeType error at offset \(offset) in \(bundleName): ...\(context)")
+                    logger.warning("Query nodeType error at offset \(offset, privacy: .public) in \(bundleName, privacy: .public)")
                 } else {
-                    print("[TreeSitter] Query compilation failed for \(bundleName): \(error)")
+                    logger.warning("Query compilation failed for \(bundleName, privacy: .public): \(error.localizedDescription, privacy: .public)")
                 }
                 return nil
             }
