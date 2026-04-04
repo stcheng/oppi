@@ -21,9 +21,6 @@ final class AssistantMarkdownSegmentApplier {
     private var latexViews: [Int: NativeLatexBlockView] = [:]
     private var highlightTasks: [Int: Task<Void, Never>] = [:]
 
-    /// Smooth character reveal for the actively streaming text segment.
-    private let textRevealer = StreamingTextRevealer()
-
     /// Cached NSAttributedString for the streaming tail segment. Maintained
     /// incrementally (append-only) to avoid O(total) NSAttributedString conversion
     /// on every streaming tick.
@@ -40,7 +37,6 @@ final class AssistantMarkdownSegmentApplier {
     }
 
     func clear() {
-        textRevealer.reset()
         cachedStreamingTailNS = nil
 
         for task in highlightTasks.values {
@@ -66,9 +62,7 @@ final class AssistantMarkdownSegmentApplier {
         segments: [FlatSegment],
         config: AssistantMarkdownContentView.Configuration
     ) {
-        // When streaming stops, finish any in-progress reveal instantly.
         if !config.isStreaming {
-            textRevealer.finishImmediately()
             cachedStreamingTailNS = nil
         }
 
@@ -88,7 +82,6 @@ final class AssistantMarkdownSegmentApplier {
             )
         } else {
             // Non-streaming structural change: full rebuild.
-            textRevealer.reset()
             rebuild(segments: segments, signatures: signatures, config: config)
         }
     }
@@ -183,13 +176,12 @@ final class AssistantMarkdownSegmentApplier {
 
         renderedSegmentSignatures = signatures
 
-        // Initial / rebuilt streaming content is fully visible already.
+        // Seed the incremental cache for the streaming tail.
         if config.isStreaming, let lastIdx = segments.lastIndex(where: {
             if case .text = $0 { return true } else { return false }
         }), let tv = textViews[lastIdx] {
             let fullText = tv.attributedText ?? NSAttributedString()
             cachedStreamingTailNS = NSMutableAttributedString(attributedString: fullText)
-            textRevealer.setFullyVisibleCount(fullText.length)
         }
     }
 
@@ -214,7 +206,6 @@ final class AssistantMarkdownSegmentApplier {
 
         // If no common prefix, fall back to full rebuild.
         guard commonPrefix > 0 else {
-            textRevealer.reset()
             rebuild(segments: segments, signatures: signatures, config: config)
             return
         }
@@ -331,16 +322,14 @@ final class AssistantMarkdownSegmentApplier {
 
         renderedSegmentSignatures = signatures
 
-        // Reset reveal state on structural change — new segments start fresh.
-        textRevealer.reset()
+        // Reset incremental cache on structural change.
         cachedStreamingTailNS = nil
 
-        // The rebuilt tail starts fully visible.
+        // Seed the incremental cache for the rebuilt tail.
         let lastTextIndex = segments.lastIndex(where: { if case .text = $0 { return true } else { return false } })
         if let lastIdx = lastTextIndex, let tv = textViews[lastIdx] {
             let fullText = tv.attributedText ?? NSAttributedString()
             cachedStreamingTailNS = NSMutableAttributedString(attributedString: fullText)
-            textRevealer.setFullyVisibleCount(fullText.length)
         }
     }
 
@@ -407,32 +396,16 @@ final class AssistantMarkdownSegmentApplier {
                                         textView.textStorage.endEditing()
                                         cached.append(delta)
                                         refreshTextViewLayoutAfterContentChange(textView)
-
-                                        let previousVisibleCount = min(
-                                            textRevealer.currentVisibleCount,
-                                            oldLength
-                                        )
-                                        if cached.length > previousVisibleCount {
-                                            textRevealer.reveal(
-                                                in: textView,
-                                                normalizedText: cached,
-                                                previousVisibleCount: previousVisibleCount
-                                            )
-                                        }
                                     } else {
                                         // Markdown structure changed — full replacement.
                                         textView.attributedText = fullNS
                                         refreshTextViewLayoutAfterContentChange(textView)
                                         cachedStreamingTailNS = NSMutableAttributedString(attributedString: fullNS)
-                                        textRevealer.reset()
-                                        textRevealer.setFullyVisibleCount(fullNS.length)
                                     }
                                 } else if newLength != oldLength {
                                     textView.attributedText = fullNS
                                     refreshTextViewLayoutAfterContentChange(textView)
                                     cachedStreamingTailNS = NSMutableAttributedString(attributedString: fullNS)
-                                    textRevealer.reset()
-                                    textRevealer.setFullyVisibleCount(fullNS.length)
                                 } else if !fullNS.isEqual(cached) {
                                     // Same rendered length but different content/attributes —
                                     // markdown structure changed without changing character count
@@ -441,8 +414,6 @@ final class AssistantMarkdownSegmentApplier {
                                     textView.attributedText = fullNS
                                     refreshTextViewLayoutAfterContentChange(textView)
                                     cachedStreamingTailNS = NSMutableAttributedString(attributedString: fullNS)
-                                    textRevealer.reset()
-                                    textRevealer.setFullyVisibleCount(fullNS.length)
                                 }
                                 // else: same length and same attributed content — truly no change, skip
                             } else {
@@ -451,7 +422,6 @@ final class AssistantMarkdownSegmentApplier {
                                 textView.attributedText = fullNS
                                 refreshTextViewLayoutAfterContentChange(textView)
                                 cachedStreamingTailNS = NSMutableAttributedString(attributedString: fullNS)
-                                textRevealer.setFullyVisibleCount(fullNS.length)
                             }
                         } else {
                             // Non-streaming: re-enable data detectors if they were disabled

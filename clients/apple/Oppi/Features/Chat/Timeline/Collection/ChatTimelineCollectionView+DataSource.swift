@@ -28,17 +28,19 @@ private final class SafeSizingCell: UICollectionViewCell {
 
     /// When true, `preferredLayoutAttributesFitting` uses a cached height on
     /// alternate calls to avoid the O(total) `systemLayoutSizeFitting` text
-    /// layout cost on every 33ms streaming tick. The `StreamingTextRevealer`
-    /// hides unrevealed characters, so the visible content is always within
-    /// the previous height — clipping of hidden text is invisible.
+    /// layout cost on every 33ms streaming tick. Between recomputations,
+    /// the cached height accommodates the full text layout — UITextView
+    /// lays out all characters regardless of visibility.
     var isStreamingAssistant = false
     var cachedStreamingHeight: CGFloat?
     /// Last time preferredLayoutAttributesFitting did a full computation.
     /// Used to throttle self-sizing during streaming — recompute every ~100ms
-    /// instead of every 33ms tick. The StreamingTextRevealer hides unrevealed
-    /// characters, so the visible content fits within the cached height.
+    /// instead of every 33ms tick. Between recomputations, text appends add
+    /// at most ~2 lines, well within the cached height.
     var lastFullSizeComputeNs: UInt64 = 0
     /// Minimum interval between full self-sizing computations during streaming.
+    /// Between recomputations, text appends don't change height significantly
+    /// (≤2 lines per 100ms at typical token rates).
     private static let streamingSizeThrottleNs: UInt64 = 100_000_000 // 100ms
 
     override init(frame: CGRect) {
@@ -73,9 +75,8 @@ private final class SafeSizingCell: UICollectionViewCell {
         }
 
         // Streaming throttle: recompute self-sizing at most once per 100ms
-        // instead of every 33ms tick. The StreamingTextRevealer hides
-        // unrevealed text with .foregroundColor = .clear, so visible content
-        // fits within the cached height between recomputations. This reduces
+        // instead of every 33ms tick. Between recomputations, text appends
+        // add at most ~2 lines, well within the cached height. This reduces
         // text layout cost from ~10ms/tick to ~10ms/100ms (3.3ms/tick average).
         if isStreamingAssistant, let cached = cachedStreamingHeight {
             let now = DispatchTime.now().uptimeNanoseconds

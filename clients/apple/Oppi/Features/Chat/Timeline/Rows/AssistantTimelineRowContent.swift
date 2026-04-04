@@ -5,8 +5,8 @@ import UIKit
 /// Uses `AssistantMarkdownContentView` for both streaming and done states.
 /// During streaming, the incremental markdown pipeline (tail-only CommonMark
 /// parse + structural segment diffing) renders formatted content at 30fps.
-/// The `StreamingTextRevealer` inside the segment applier handles smooth
-/// character reveal for the growing tail segment.
+/// Text appears immediately on each coalescer flush — no per-character
+/// animation — keeping CPU cost minimal.
 struct AssistantTimelineRowConfiguration: UIContentConfiguration {
     let text: String
     let isStreaming: Bool
@@ -197,7 +197,7 @@ final class AssistantTimelineRowContentView: UIView, UIContentView, TimelineRowI
         // During streaming, the incremental parser (tail-only CommonMark parse
         // with FNV-1a prefix caching) keeps main-thread cost low. The segment
         // applier does structural diffing and only updates the growing tail.
-        // StreamingTextRevealer inside the applier handles smooth character fade.
+        // Text appears immediately on each coalescer flush (no reveal animation).
         markdownView.fetchWorkspaceFile = configuration.fetchWorkspaceFile
         markdownView.apply(configuration: .make(
             content: trimmedText,

@@ -53,28 +53,6 @@ struct StreamingInlineReparseTests {
         stackView.arrangedSubviews.first { $0 is UITextView } as? UITextView
     }
 
-    private func countHiddenCharacters(in textView: UITextView) -> Int {
-        let storage = textView.textStorage
-        var hidden = 0
-        storage.enumerateAttribute(
-            .foregroundColor,
-            in: NSRange(location: 0, length: storage.length)
-        ) { value, range, _ in
-            if let color = value as? UIColor, color == .clear {
-                hidden += range.length
-            }
-        }
-        return hidden
-    }
-
-    private func extractRevealer(from applier: AssistantMarkdownSegmentApplier) throws -> StreamingTextRevealer {
-        let mirror = Mirror(reflecting: applier)
-        guard let revealer = mirror.children.first(where: { $0.label == "textRevealer" })?.value as? StreamingTextRevealer else {
-            throw NSError(domain: "StreamingInlineReparseTests", code: 1)
-        }
-        return revealer
-    }
-
     // MARK: - Bold closure
 
     @Test func boldClosureFallsBackToFullReplacement() {
@@ -175,26 +153,22 @@ struct StreamingInlineReparseTests {
         #expect(text2 == "Hello world and more")
     }
 
-    @Test func overlappingRevealContinuesFromCurrentVisibleBoundary() throws {
+    @Test func overlappingAppendsProduceCorrectText() throws {
         let (stackView, applier) = makeApplier()
 
-        // Initial content is fully visible.
+        // Initial content.
         streamTick(applier: applier, content: "Hello")
 
-        // Tick 2 starts revealing the appended tail. No display-link frame has
-        // fired yet in this test, so only the original 5 chars are visible.
+        // Tick 2 appends.
         streamTick(applier: applier, content: "Hello world")
 
-        // Tick 3 arrives before tick 2 finished revealing.
+        // Tick 3 appends again.
         streamTick(applier: applier, content: "Hello world again")
 
         let textView = try #require(firstTextView(in: stackView))
-        #expect(countHiddenCharacters(in: textView) > 0, "Tail should still be mid-reveal")
-
-        let revealer = try extractRevealer(from: applier)
         #expect(
-            revealer.currentVisibleCount == 5,
-            "Overlapping reveals must continue from the true visible boundary, not the previous full text length"
+            textView.textStorage.string == "Hello world again",
+            "Overlapping appends must produce the full text"
         )
     }
 
