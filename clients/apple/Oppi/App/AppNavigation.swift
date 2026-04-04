@@ -29,34 +29,38 @@ final class AppNavigation {
     /// When set, the Quick Session sheet is presented over the current view.
     var showQuickSession: Bool = false
 
-    /// Set by QuickSessionSheet after session creation. ContentView observes
-    /// this and presents a full-screen ChatView for the new session.
-    var pendingChatSessionId: String?
-
     /// Programmatic navigation path for the workspace tab.
     /// Set externally (e.g. by QuickSessionSheet) to deep-link to a session.
     var workspacePath = NavigationPath()
-
-    /// Message to auto-send when a quick session's ChatView opens.
-    /// Consumed once by ChatView, then cleared.
-    var pendingQuickSessionMessage: String?
-
-    /// Images to attach when auto-sending the quick session message.
-    var pendingQuickSessionImages: [PendingImage]?
 
     /// Draft text pre-filled by π actions from outside a chat session (e.g. file browser).
     /// Consumed once by QuickSessionSheet, then cleared.
     var pendingQuickSessionDraft: String?
 
-    /// Pending navigation from QuickSessionSheet.
-    /// Set before sheet dismiss; consumed in onDismiss to push the workspace target.
+    // MARK: - Quick Session Handoff
+    //
+    // These properties form a produce-once / consume-once handoff between
+    // QuickSessionSheet (producer) and ContentView + ChatView (consumers).
+    //
+    // Flow:
+    // 1. QuickSessionSheet sets `pendingQuickSessionNav` (atomic intent)
+    // 2. QuickSessionSheet calls dismiss()
+    // 3. ContentView.onDismiss reads nav, extracts message/images, builds path
+    // 4. ChatView.task(id: sessionId) reads message/images, auto-sends
+
+    /// Atomic navigation intent from QuickSessionSheet.
+    /// Bundles target workspace, session ID, and optional auto-send data.
+    /// Set before dismiss; consumed in ContentView.onDismiss.
     var pendingQuickSessionNav: QuickSessionNav?
 
-    /// Session ID to navigate to after a quick session workspace push.
-    /// Set in onDismiss alongside the workspace path push. Consumed by
-    /// WorkspaceDetailView once it appears, avoiding the fragile two-step
-    /// path push that races with navigationDestination registration.
-    var quickSessionPendingSessionId: String?
+    /// Message to auto-send when the quick session's ChatView opens.
+    /// Extracted from `pendingQuickSessionNav` by ContentView.onDismiss.
+    /// Consumed once by ChatView, then cleared.
+    var pendingQuickSessionMessage: String?
+
+    /// Images to attach when auto-sending the quick session message.
+    /// Extracted from `pendingQuickSessionNav` by ContentView.onDismiss.
+    var pendingQuickSessionImages: [PendingImage]?
 
     // MARK: - Pi Quick Actions
 
@@ -79,10 +83,23 @@ final class AppNavigation {
     }
 }
 
-/// Navigation payload for quick session deep-link.
+/// Atomic navigation intent for quick session deep-link.
+///
+/// Bundles everything needed to navigate to a session and optionally
+/// auto-send a message. Set as a single write by QuickSessionSheet,
+/// consumed as a single read by ContentView.onDismiss.
 struct QuickSessionNav {
     let target: WorkspaceNavTarget
     let sessionId: String
+    let autoSendMessage: String?
+    let autoSendImages: [PendingImage]?
+
+    init(target: WorkspaceNavTarget, sessionId: String, autoSendMessage: String? = nil, autoSendImages: [PendingImage]? = nil) {
+        self.target = target
+        self.sessionId = sessionId
+        self.autoSendMessage = autoSendMessage
+        self.autoSendImages = autoSendImages
+    }
 }
 
 enum AppTab: Hashable {

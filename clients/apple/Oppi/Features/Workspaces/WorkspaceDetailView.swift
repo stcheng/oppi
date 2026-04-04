@@ -514,16 +514,6 @@ struct WorkspaceDetailView: View {
                 )
             }
         }
-        .onAppear {
-            // Consume pending quick session navigation — pushed by ContentView
-            // onDismiss after the workspace target is in the path. We navigate
-            // from here instead of a second path push to avoid racing with
-            // navigationDestination registration.
-            if let pendingId = navigation.quickSessionPendingSessionId {
-                navigation.quickSessionPendingSessionId = nil
-                navigateToSessionId = pendingId
-            }
-        }
         .overlay {
             if isCreating || isImportingLocal {
                 ProgressView(isImportingLocal ? "Resuming session..." : "Creating session...")

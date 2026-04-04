@@ -62,6 +62,19 @@ struct ChatView: View {
         let id: String
     }
 
+    /// Composite key for the session connection `.task(id:)`.
+    ///
+    /// Includes both `sessionId` and `connectionGeneration` so the task
+    /// re-fires when either changes:
+    /// - sessionId changes → view reused for a different session
+    /// - generation changes → reconnect after network drop
+    ///
+    /// Without sessionId, two consecutive managers both start at
+    /// generation 0 and the task silently skips the new session.
+    private var connectionTaskKey: ConnectionTaskKey {
+        ConnectionTaskKey(sessionId: sessionId, generation: sessionManager.connectionGeneration)
+    }
+
     /// Per-session reducer, owned by sessionManager.
     private var reducer: TimelineReducer { sessionManager.reducer }
 
@@ -224,7 +237,7 @@ struct ChatView: View {
             } message: {
                 Text("This will summarize the conversation to free up context window space. The summary replaces earlier messages.")
             }
-            .task(id: sessionManager.connectionGeneration) {
+            .task(id: connectionTaskKey) {
                 voiceInputManager.activeSessionId = sessionId
                 await sessionManager.connect(
                     connection: connection,
@@ -237,9 +250,10 @@ struct ChatView: View {
                     await voiceInputManager.prewarm(source: "chat_view_task")
                 }
             }
-            .task {
+            .task(id: sessionId) {
                 // Auto-send pending message from QuickSessionSheet.
-                // Pre-fill immediately, wait for connection, then dispatch.
+                // Keyed on sessionId so it re-fires if the view is reused
+                // for a different session (onChange self-healing path).
                 guard let message = appNavigation.pendingQuickSessionMessage else { return }
                 let images = appNavigation.pendingQuickSessionImages ?? []
 
@@ -328,6 +342,33 @@ struct ChatView: View {
                 default:
                     break
                 }
+            }
+            .onChange(of: sessionId) { oldId, newId in
+                // Self-healing: when SwiftUI reuses this view at the same
+                // structural position with a different session ID (e.g.
+                // deep-link navigation, quick session switch), @State is
+                // preserved. Detect the mismatch and reset all session-
+                // specific state so the timeline and connection match.
+                guard sessionManager.sessionId != newId else { return }
+
+                // Tear down old session
+                actionHandler.cleanup()
+                sessionManager.cleanup()
+                scrollController.cancel()
+                audioPlayer.stop()
+                if connection.activeSessionId == oldId {
+                    connection.disconnectSession()
+                }
+
+                // Stand up new session
+                sessionManager = ChatSessionManager(sessionId: newId)
+                scrollController = ChatScrollController()
+                inputText = ""
+                pendingImages = []
+                pendingFiles = []
+                contextBarExpanded = false
+                showOutline = false
+                showContextInspector = false
             }
             .onDisappear {
                 actionHandler.cleanup()

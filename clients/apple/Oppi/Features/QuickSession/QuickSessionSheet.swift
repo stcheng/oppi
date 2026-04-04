@@ -10,6 +10,9 @@ private let logger = Logger(subsystem: AppIdentifiers.subsystem, category: "Quic
 /// model and thinking pills to compose and send the initial prompt.
 /// Supports expanding to `ExpandedComposerView` for long-form input.
 ///
+/// When active sessions exist across any workspace/server, they are shown
+/// above the composer grouped by workspace — tap to navigate.
+///
 /// **Flow**: Pick workspace → compose message → send → session created →
 /// navigate to ChatView.
 struct QuickSessionSheet: View {
@@ -47,8 +50,88 @@ struct QuickSessionSheet: View {
             ?? QuickSessionDefaults.lastModelId
     }
 
+    /// Whether multiple servers are connected (affects section headers).
+    private var hasMultipleServers: Bool {
+        coordinator.connections.count > 1
+    }
+
+    /// Active sessions across all servers, grouped by workspace.
+    ///
+    /// "Active" = busy, starting, stopping, ready, or error.
+    /// Stopped sessions are excluded.
+    private var activeSessionsByWorkspace: [(workspace: Workspace, serverId: String, sessions: [Session])] {
+        var groups: [(workspace: Workspace, serverId: String, sessions: [Session])] = []
+        var seen: Set<String> = []
+
+        for (serverId, conn) in coordinator.connections {
+            let sessions = conn.sessionStore.sessions.filter { session in
+                switch session.status {
+                case .busy, .starting, .stopping, .ready, .error: return true
+                case .stopped: return false
+                }
+            }
+
+            let byWorkspace = Dictionary(grouping: sessions) { $0.workspaceId ?? "" }
+            for (wsId, wsSessions) in byWorkspace {
+                guard !seen.contains(wsId) else { continue }
+                seen.insert(wsId)
+
+                guard let ws = conn.workspaceStore.workspaces.first(where: { $0.id == wsId }) else {
+                    continue
+                }
+
+                let sorted = wsSessions.sorted { lhs, rhs in
+                    let lhsScore = sessionUrgencyScore(lhs, connection: conn)
+                    let rhsScore = sessionUrgencyScore(rhs, connection: conn)
+                    if lhsScore != rhsScore { return lhsScore > rhsScore }
+                    return lhs.lastActivity > rhs.lastActivity
+                }
+
+                groups.append((workspace: ws, serverId: serverId, sessions: sorted))
+            }
+        }
+
+        return groups.sorted { lhs, rhs in
+            let lhsMax = lhs.sessions.map { session in
+                coordinator.connections[lhs.serverId].map { sessionUrgencyScore(session, connection: $0) } ?? 0
+            }.max() ?? 0
+            let rhsMax = rhs.sessions.map { session in
+                coordinator.connections[rhs.serverId].map { sessionUrgencyScore(session, connection: $0) } ?? 0
+            }.max() ?? 0
+            if lhsMax != rhsMax { return lhsMax > rhsMax }
+            return lhs.workspace.name < rhs.workspace.name
+        }
+    }
+
+    /// Urgency score for sorting — higher = more urgent.
+    private func sessionUrgencyScore(_ session: Session, connection conn: ServerConnection) -> Int {
+        let hasPerm = !conn.permissionStore.pending(for: session.id).isEmpty
+        let hasAsk = conn.askRequestStore.hasPending(for: session.id)
+        if hasPerm { return 30 }
+        if hasAsk { return 20 }
+        switch session.status {
+        case .error: return 15
+        case .busy, .starting, .stopping: return 10
+        case .ready: return 5
+        case .stopped: return 0
+        }
+    }
+
+    /// Whether there are active sessions to display.
+    var hasActiveSessions: Bool {
+        !activeSessionsByWorkspace.isEmpty
+    }
+
     var body: some View {
-        ChatInputBar(
+        VStack(spacing: 0) {
+            if !activeSessionsByWorkspace.isEmpty {
+                activeSessionsList
+                Divider()
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 4)
+            }
+
+            ChatInputBar(
             text: $text,
             pendingImages: $pendingImages,
             pendingFiles: $pendingFiles,
@@ -87,6 +170,7 @@ struct QuickSessionSheet: View {
         .padding(.horizontal, 12)
         .padding(.top, 4)
         .padding(.bottom, 4)
+        }
         .background(.clear)
         .presentationBackground(.clear)
         .sheet(isPresented: $showModelPicker) {
@@ -122,6 +206,108 @@ struct QuickSessionSheet: View {
         .task {
             await setupInitialState()
         }
+    }
+
+    // MARK: - Active Sessions List
+
+    /// Scrollable list of active sessions grouped by workspace.
+    private var activeSessionsList: some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 8) {
+                ForEach(activeSessionsByWorkspace, id: \.workspace.id) { group in
+                    workspaceSessionSection(
+                        workspace: group.workspace,
+                        serverId: group.serverId,
+                        sessions: group.sessions
+                    )
+                }
+            }
+            .padding(.horizontal, 16)
+        }
+        .frame(maxHeight: 400)
+    }
+
+    /// Section header + session rows for one workspace.
+    @ViewBuilder
+    private func workspaceSessionSection(
+        workspace: Workspace,
+        serverId: String,
+        sessions: [Session]
+    ) -> some View {
+        HStack(spacing: 6) {
+            if let icon = workspace.icon {
+                Text(icon)
+                    .font(.caption)
+            }
+            Text(workspace.name.uppercased())
+                .font(.caption2.monospaced().weight(.semibold))
+                .foregroundStyle(.themeComment)
+                .tracking(0.8)
+
+            if hasMultipleServers {
+                let serverName = coordinator.serverStore.server(for: serverId)?.name
+                    ?? String(serverId.prefix(8))
+                Text(serverName)
+                    .font(.caption2.monospaced())
+                    .foregroundStyle(.themeComment)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 1)
+                    .background(.themeComment.opacity(0.1), in: Capsule())
+            }
+
+            Spacer()
+        }
+        .padding(.top, 16)
+        .padding(.bottom, 6)
+
+        let conn = coordinator.connections[serverId]
+        ForEach(sessions) { session in
+            Button {
+                navigateToSession(session, serverId: serverId, workspace: workspace)
+            } label: {
+                activeSessionRow(for: session, connection: conn)
+            }
+            .buttonStyle(.plain)
+            .padding(.vertical, 4)
+        }
+    }
+
+    /// Build a SessionRow with activity data from the owning connection.
+    private func activeSessionRow(for session: Session, connection conn: ServerConnection?) -> some View {
+        let permissions = conn?.permissionStore.pending(for: session.id) ?? []
+        let pendingCount = permissions.count
+        let askPending = conn?.askRequestStore.hasPending(for: session.id) == true ? 1 : 0
+        let activity = conn?.activityStore.lastActivity(for: session.id)
+        let ask = conn?.askRequestStore.pending(for: session.id)
+
+        let summary = SessionActivitySummary.text(
+            session: session,
+            pendingCount: pendingCount,
+            pendingPermissions: permissions,
+            pendingAsk: ask,
+            activity: activity
+        )
+
+        return SessionRow(
+            session: session,
+            pendingCount: pendingCount,
+            pendingAskCount: askPending,
+            activitySummary: summary
+        )
+    }
+
+    /// Dismiss sheet and navigate to a specific session.
+    private func navigateToSession(
+        _ session: Session,
+        serverId: String,
+        workspace: Workspace
+    ) {
+        let nav = navigation
+        nav.pendingQuickSessionNav = QuickSessionNav(
+            target: WorkspaceNavTarget(serverId: serverId, workspace: workspace),
+            sessionId: session.id
+        )
+        dismiss()
     }
 
     // MARK: - Workspace Picker
@@ -266,17 +452,14 @@ struct QuickSessionSheet: View {
                 }
                 QuickSessionDefaults.saveThinkingLevel(thinking)
 
-                // Store pending message + images for auto-send in ChatView
-                nav.pendingQuickSessionMessage = trimmed
-                nav.pendingQuickSessionImages = images.isEmpty ? nil : images
-
                 logger.notice("Quick session created: \(session.id, privacy: .public) in workspace \(workspace.name, privacy: .public)")
 
-                // Stage navigation — ContentView's onDismiss pushes the workspace,
-                // WorkspaceDetailView consumes the session ID on appear.
+                // Single atomic write — ContentView.onDismiss unpacks.
                 nav.pendingQuickSessionNav = QuickSessionNav(
                     target: WorkspaceNavTarget(serverId: serverId, workspace: workspace),
-                    sessionId: session.id
+                    sessionId: session.id,
+                    autoSendMessage: trimmed,
+                    autoSendImages: images.isEmpty ? nil : images
                 )
 
                 dismiss()

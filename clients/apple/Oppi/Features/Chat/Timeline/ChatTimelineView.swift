@@ -117,6 +117,8 @@ struct ChatTimelineView: View {
         .overlay {
             if reducer.items.isEmpty && !isBusy {
                 ChatEmptyState(sessionId: sessionId)
+                    .padding(.top, topOverlap)
+                    .padding(.bottom, bottomOverlap)
             }
         }
         .onAppear {

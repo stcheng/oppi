@@ -31,6 +31,13 @@ struct ContentView: View {
         crossSessionPending.first
     }
 
+    /// Sheet detents: taller when active sessions are shown.
+    private var quickSessionDetents: Set<PresentationDetent> {
+        coordinator.hasActiveSessions
+            ? [.medium, .large]
+            : [.height(130), .medium]
+    }
+
     var body: some View {
         @Bindable var nav = navigation
         @Bindable var liveConnection = connection
@@ -129,19 +136,37 @@ struct ContentView: View {
             // Navigate to the pending session after the sheet animation completes
             if let pending = navigation.pendingQuickSessionNav {
                 navigation.pendingQuickSessionNav = nil
-                // Push to workspace — WorkspaceDetailView picks up the session ID
-                // from quickSessionPendingSessionId once it renders, avoiding the
-                // fragile two-step path push that races with navigationDestination.
+
+                // Switch server FIRST so coordinator.activeConnection (and all
+                // environment-injected stores) reflect the target server by the
+                // time views render. Without this, cross-server quick sessions
+                // capture the OLD connection in ChatView's .task.
+                guard coordinator.switchToServer(pending.target.serverId) else {
+                    return
+                }
+
+                // Unpack auto-send data for ChatView consumption.
+                navigation.pendingQuickSessionMessage = pending.autoSendMessage
+                navigation.pendingQuickSessionImages = pending.autoSendImages
+
+                // Deep-link: push workspace + session in one path update.
+                // NavigationPath resolves step-by-step — WorkspaceDetailView
+                // renders first (registering its navigationDestination for
+                // String), then the session ID resolves to ChatView.
                 navigation.selectedTab = .workspaces
                 navigation.workspacePath = NavigationPath()
                 navigation.workspacePath.append(pending.target)
-                navigation.quickSessionPendingSessionId = pending.sessionId
+                navigation.workspacePath.append(pending.sessionId)
             }
         }, content: {
             QuickSessionSheet()
-                .presentationDetents([.height(130), .medium])
-                .presentationDragIndicator(.hidden)
-                .presentationBackgroundInteraction(.enabled(upThrough: .height(130)))
+                .presentationDetents(quickSessionDetents)
+                .presentationDragIndicator(coordinator.hasActiveSessions ? .visible : .hidden)
+                .presentationBackgroundInteraction(
+                    coordinator.hasActiveSessions
+                        ? .enabled(upThrough: .medium)
+                        : .enabled(upThrough: .height(130))
+                )
                 .presentationCornerRadius(24)
         })
         .onChange(of: quickSessionTrigger.presentationRequestID) { _, newValue in
