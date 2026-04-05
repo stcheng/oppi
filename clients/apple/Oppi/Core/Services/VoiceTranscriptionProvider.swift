@@ -5,24 +5,21 @@ import Foundation
 enum VoiceProviderID: String, Sendable {
     case appleModernSpeech
     case appleClassicDictation
-    case remoteASR
+    case oppiServer
 }
 
 struct VoiceProviderContext: Sendable {
     let locale: Locale
     let source: String
-    let remoteEndpoint: URL?
     let serverCredentials: ServerCredentials?
 
     init(
         locale: Locale,
         source: String,
-        remoteEndpoint: URL?,
         serverCredentials: ServerCredentials? = nil
     ) {
         self.locale = locale
         self.source = source
-        self.remoteEndpoint = remoteEndpoint
         self.serverCredentials = serverCredentials
     }
 }

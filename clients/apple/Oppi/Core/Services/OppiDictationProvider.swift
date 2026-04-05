@@ -4,19 +4,19 @@ import OSLog
 
 private let logger = Logger(subsystem: AppIdentifiers.subsystem, category: "DictationProvider")
 
-/// Voice transcription provider that streams audio to the Oppi server's `/dictation` endpoint.
+/// Voice transcription provider that streams audio to the Oppi server's `/dictation` WebSocket.
 ///
-/// Replaces `RemoteASRVoiceProvider` — instead of chunked HTTP requests to a separate STT server,
-/// this opens a dedicated WebSocket to the already-connected Oppi server. The server accumulates
+/// Opens a dedicated WebSocket to the connected Oppi server. The server accumulates
 /// audio and retranscribes at intervals, returning full transcript replacements.
+/// STT backend selection (Whisper, Qwen-ASR, etc.) is handled server-side via `SttProvider`.
 ///
 /// Availability depends on having active `ServerCredentials` in the `VoiceProviderContext`.
 /// No separate endpoint configuration needed — the server address is derived from the
 /// same credentials used for the main `/stream` connection.
 @MainActor
 final class OppiDictationProvider: VoiceTranscriptionProvider {
-    nonisolated let id: VoiceProviderID = .remoteASR
-    nonisolated let engine: VoiceInputManager.TranscriptionEngine = .remoteASR
+    nonisolated let id: VoiceProviderID = .oppiServer
+    nonisolated let engine: VoiceInputManager.TranscriptionEngine = .serverDictation
 
     /// Active WebSocket prepared during `prepareSession`.
     private var activeWS: DictationWebSocket?
@@ -40,7 +40,7 @@ final class OppiDictationProvider: VoiceTranscriptionProvider {
 
     func prepareSession(context: VoiceProviderContext) async throws -> VoiceProviderPreparation {
         guard let credentials = context.serverCredentials else {
-            throw VoiceInputError.remoteEndpointNotConfigured
+            throw VoiceInputError.serverNotConnected
         }
 
         // Open WebSocket and wait for dictation_ready
@@ -49,23 +49,46 @@ final class OppiDictationProvider: VoiceTranscriptionProvider {
 
         try ws.connect(credentials: credentials)
 
-        // Send dictation_start
-        let languageHint = context.locale.language.languageCode?.identifier
-        try await ws.send(.start(language: languageHint))
+        // Send dictation_start — no language hint for remote ASR.
+        // Qwen3-ASR handles multilingual natively; forcing a locale biases
+        // against code-switching. The mic-button label stays cosmetic-only.
+        try await ws.send(.start(language: nil))
 
         // Wait for dictation_ready (timeout handled inside)
         try await ws.waitForReady(timeout: .seconds(10))
 
-        logger.info("Dictation session prepared (server ready)")
+        let serverInfo = ws.lastProviderInfo
+        logger.info(
+            "Dictation session prepared (stt=\(serverInfo?.sttProvider ?? "unknown", privacy: .public), model=\(serverInfo?.sttModel ?? "unknown", privacy: .public))"
+        )
 
         return VoiceProviderPreparation(
             audioFormat: nil,
             pathTag: "dictation_ws",
-            setupMetricTags: [
-                "dictation_mode": "server",
-                "host": credentials.host,
-            ]
+            setupMetricTags: Self.metricTags(
+                host: credentials.host,
+                serverInfo: serverInfo
+            )
         )
+    }
+
+    // MARK: - Metric Tags
+
+    private static func metricTags(
+        host: String,
+        serverInfo: DictationProviderInfo?
+    ) -> [String: String] {
+        [
+            "dictation_mode": "server",
+            "host": host,
+            "provider_id": "oppi_server_dictation",
+            "provider_kind": "local_server",
+            "stt_backend": serverInfo?.sttProvider ?? "unknown",
+            "model": serverInfo?.sttModel ?? "unknown",
+            "transport": "ws",
+            "live_preview": "1",
+            "llm_correction": serverInfo?.llmCorrectionEnabled == true ? "1" : "0",
+        ]
     }
 
     func makeSession(

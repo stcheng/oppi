@@ -354,6 +354,5 @@ struct VoiceLocaleStabilityTests {
 
     private func resetVoicePreferences() {
         VoiceInputPreferences.setEngineMode(.auto)
-        VoiceInputPreferences.setRemoteEndpoint(nil)
     }
 }

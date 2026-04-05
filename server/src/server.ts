@@ -62,6 +62,7 @@ import { RuntimeUpdateManager } from "./runtime-update.js";
 import { SessionTitleGenerator } from "./session-title-generator.js";
 import { DictationManager } from "./dictation-manager.js";
 import { DEFAULT_DICTATION_CONFIG, type DictationConfig } from "./dictation-types.js";
+import { createSttProvider } from "./stt-provider.js";
 
 function hasAuthHeader(header: string | string[] | undefined): boolean {
   if (typeof header === "string") {
@@ -434,7 +435,14 @@ export class Server {
       const asrConfig = { ...DEFAULT_DICTATION_CONFIG, ...config.asr } as DictationConfig;
       // API keys: env vars take priority over config file
       if (process.env.OPPI_STT_API_KEY) asrConfig.sttApiKey = process.env.OPPI_STT_API_KEY;
-      this.dictationManager = new DictationManager(asrConfig, dataDir);
+      const sttProvider = createSttProvider(asrConfig, globalThis.fetch);
+      this.dictationManager = new DictationManager(
+        asrConfig,
+        dataDir,
+        sttProvider,
+        globalThis.fetch,
+        this.opsMetrics,
+      );
     }
 
     // Server resource utilization sampler

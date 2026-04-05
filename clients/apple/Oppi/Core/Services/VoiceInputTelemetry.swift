@@ -23,6 +23,7 @@ struct VoiceMetricAnnotation: Sendable {
         var tags: [String: String] = [
             "engine": engine,
             "locale": locale,
+            "ui_locale": locale,
             "source": source,
         ]
 
@@ -201,6 +202,32 @@ enum VoiceInputTelemetry {
                 metric: metric,
                 value: Double(clampedValue),
                 unit: .count,
+                sessionId: sessionId,
+                tags: tags
+            )
+        }
+    }
+
+    static func recordRatioMetric(
+        _ metric: ChatMetricName,
+        value: Double,
+        annotation: VoiceMetricAnnotation,
+        sessionId: String? = nil,
+        status: String? = nil,
+        extraTags: [String: String] = [:]
+    ) {
+        let tags = annotation.tags(status: status, extra: extraTags)
+        let clampedValue = max(0, value)
+
+#if DEBUG
+        _recordMetricForTesting?(metric, clampedValue, .ratio, tags)
+#endif
+
+        Task.detached(priority: .utility) {
+            await ChatMetricsService.shared.record(
+                metric: metric,
+                value: clampedValue,
+                unit: .ratio,
                 sessionId: sessionId,
                 tags: tags
             )

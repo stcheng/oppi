@@ -699,10 +699,12 @@ function normalizeConfig(
   if ("asr" in obj && isRecord(obj.asr)) {
     const asr = obj.asr;
     const allowedAsrKeys = new Set([
+      "sttProvider",
       "sttEndpoint",
       "sttModel",
       "sttApiKey",
       "sttAuthStyle",
+      "sttLanguage",
       "retranscribeIntervalMs",
       "preserveAudio",
       "maxDurationSec",
@@ -721,6 +723,14 @@ function normalizeConfig(
 
     const asrConfig: NonNullable<ServerConfig["asr"]> = {};
 
+    const validProviders = ["mlx-server", "openai", "deepgram", "elevenlabs"];
+    if (typeof asr.sttProvider === "string" && validProviders.includes(asr.sttProvider)) {
+      asrConfig.sttProvider = asr.sttProvider as
+        | "mlx-server"
+        | "openai"
+        | "deepgram"
+        | "elevenlabs";
+    }
     if (typeof asr.sttEndpoint === "string" && asr.sttEndpoint.trim().length > 0) {
       asrConfig.sttEndpoint = asr.sttEndpoint.trim();
     }
@@ -732,6 +742,9 @@ function normalizeConfig(
     }
     if (asr.sttAuthStyle === "bearer" || asr.sttAuthStyle === "x-api-key") {
       asrConfig.sttAuthStyle = asr.sttAuthStyle;
+    }
+    if (typeof asr.sttLanguage === "string") {
+      asrConfig.sttLanguage = asr.sttLanguage.trim() || undefined;
     }
     if (
       typeof asr.retranscribeIntervalMs === "number" &&

@@ -181,6 +181,53 @@ export const SERVER_METRIC_REGISTRY = {
     description:
       "Ask extension round-trip: server interception to iOS answer resolution. Tagged by cancelled, questionCount.",
   },
+
+  // ── Dictation Pipeline ──
+  "server.dictation_session_ms": {
+    unit: "ms",
+    description:
+      "Full dictation session duration (dictation_start to dictation_final sent). Tagged by language.",
+  },
+  "server.dictation_audio_duration_ms": {
+    unit: "ms",
+    description: "Audio duration of the dictation session in ms. Tagged by language.",
+  },
+  "server.dictation_stt_ms": {
+    unit: "ms",
+    description:
+      "STT HTTP call latency per callStt invocation. Tagged by phase (retranscribe, finalize), audio_seconds.",
+  },
+  "server.dictation_stt_audio_ratio": {
+    unit: "ratio",
+    description:
+      "Real-time factor: STT latency / audio duration. <1.0 means faster than real-time. Tagged by phase.",
+  },
+  "server.dictation_llm_correction_ms": {
+    unit: "ms",
+    description: "LLM correction call latency. Tagged by changed (true/false), model.",
+  },
+  "server.dictation_finalize_ms": {
+    unit: "ms",
+    description:
+      "Total finalize duration (final STT + LLM correction + audio save). Tagged by language.",
+  },
+  "server.dictation_audio_save_ms": {
+    unit: "ms",
+    description: "Audio preservation (FLAC encode + write) latency.",
+  },
+  "server.dictation_retranscribe_count": {
+    unit: "count",
+    description: "Number of retranscribe ticks fired during a session. Tagged by language.",
+  },
+  "server.dictation_retranscribe_skip": {
+    unit: "count",
+    description:
+      "Retranscribe ticks skipped (inflight or no audio). Tagged by reason (inflight, empty).",
+  },
+  "server.dictation_error": {
+    unit: "count",
+    description: "Dictation errors. Tagged by phase (stt, llm, save), fatal (true/false).",
+  },
 } as const satisfies Readonly<Record<string, ServerMetricDefinition>>;
 
 export type ServerMetricName = keyof typeof SERVER_METRIC_REGISTRY;

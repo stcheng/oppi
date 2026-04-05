@@ -29,8 +29,16 @@ enum DictationClientMessage: Encodable, Sendable {
     }
 }
 
+/// Server-provided STT backend metadata, sent with `dictation_ready`.
+/// Used to tag client metrics with the actual provider/model the server is using.
+struct DictationProviderInfo: Sendable, Equatable {
+    let sttProvider: String
+    let sttModel: String
+    let llmCorrectionEnabled: Bool
+}
+
 enum DictationServerMessage: Decodable, Sendable, Equatable {
-    case ready
+    case ready(provider: DictationProviderInfo?)
     case result(text: String, version: Int)
     case final_(text: String, uncorrected: String?, audioId: String?)
     case error(error: String, fatal: Bool)
@@ -43,6 +51,9 @@ enum DictationServerMessage: Decodable, Sendable, Equatable {
         case audioId
         case error
         case fatal
+        case sttProvider
+        case sttModel
+        case llmCorrectionEnabled
     }
 
     init(from decoder: Decoder) throws {
@@ -51,7 +62,20 @@ enum DictationServerMessage: Decodable, Sendable, Equatable {
 
         switch type {
         case "dictation_ready":
-            self = .ready
+            let providerName = try container.decodeIfPresent(String.self, forKey: .sttProvider)
+            let model = try container.decodeIfPresent(String.self, forKey: .sttModel)
+            let llmEnabled = try container.decodeIfPresent(Bool.self, forKey: .llmCorrectionEnabled)
+            let info: DictationProviderInfo?
+            if let providerName, let model {
+                info = DictationProviderInfo(
+                    sttProvider: providerName,
+                    sttModel: model,
+                    llmCorrectionEnabled: llmEnabled ?? false
+                )
+            } else {
+                info = nil
+            }
+            self = .ready(provider: info)
         case "dictation_result":
             let text = try container.decode(String.self, forKey: .text)
             let version = try container.decode(Int.self, forKey: .version)
@@ -93,6 +117,10 @@ final class DictationWebSocket {
     }
 
     private(set) var state: ConnectionState = .disconnected
+
+    /// Provider metadata received from the server's `dictation_ready` message.
+    /// Available after `waitForReady()` resolves.
+    private(set) var lastProviderInfo: DictationProviderInfo?
 
     private var task: URLSessionWebSocketTask?
     private var receiveTask: Task<Void, Never>?
@@ -267,8 +295,9 @@ final class DictationWebSocket {
                         let serverMessage = try JSONDecoder().decode(DictationServerMessage.self, from: data)
 
                         // Transition to connected on dictation_ready
-                        if case .ready = serverMessage, self.state == .connecting {
+                        if case .ready(let provider) = serverMessage, self.state == .connecting {
                             self.state = .connected
+                            self.lastProviderInfo = provider
                             self.readyTimeoutTask?.cancel()
                             self.readyTimeoutTask = nil
                             if let cont = self.readyContinuation {

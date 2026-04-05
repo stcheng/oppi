@@ -26,8 +26,8 @@ final class AppleOnDeviceVoiceProvider: VoiceTranscriptionProvider {
             id = .appleModernSpeech
         case .classicDictation:
             id = .appleClassicDictation
-        case .remoteASR:
-            preconditionFailure("AppleOnDeviceVoiceProvider cannot wrap remote ASR")
+        case .serverDictation:
+            preconditionFailure("AppleOnDeviceVoiceProvider cannot wrap server dictation")
         }
     }
 
@@ -104,7 +104,7 @@ final class AppleOnDeviceVoiceProvider: VoiceTranscriptionProvider {
                 return VoiceProviderPreparation(
                     audioFormat: format,
                     pathTag: "join_prewarm",
-                    setupMetricTags: [:]
+                    setupMetricTags: Self.metricTags(for: engine)
                 )
             }
 
@@ -117,7 +117,7 @@ final class AppleOnDeviceVoiceProvider: VoiceTranscriptionProvider {
             return VoiceProviderPreparation(
                 audioFormat: cachedFormat,
                 pathTag: "warm_cache",
-                setupMetricTags: [:]
+                setupMetricTags: Self.metricTags(for: engine)
             )
         }
 
@@ -140,7 +140,7 @@ final class AppleOnDeviceVoiceProvider: VoiceTranscriptionProvider {
             return VoiceProviderPreparation(
                 audioFormat: format,
                 pathTag: "cold",
-                setupMetricTags: [:]
+                setupMetricTags: Self.metricTags(for: engine)
             )
         } catch {
             if prewarmModelKey == key {
@@ -173,7 +173,7 @@ final class AppleOnDeviceVoiceProvider: VoiceTranscriptionProvider {
         case .classicDictation:
             let supported = await DictationTranscriber.supportedLocales
             return supported.contains { $0.identifier(.bcp47) == localeID }
-        case .remoteASR:
+        case .serverDictation:
             return true
         }
     }
@@ -190,7 +190,7 @@ final class AppleOnDeviceVoiceProvider: VoiceTranscriptionProvider {
         case .classicDictation:
             let installed = await DictationTranscriber.installedLocales
             return installed.contains { $0.identifier(.bcp47) == localeID }
-        case .remoteASR:
+        case .serverDictation:
             return true
         }
     }
@@ -202,11 +202,38 @@ final class AppleOnDeviceVoiceProvider: VoiceTranscriptionProvider {
         "\(engine.rawValue)::\(localeID)"
     }
 
+    private static func metricTags(
+        for engine: VoiceInputManager.TranscriptionEngine
+    ) -> [String: String] {
+        switch engine {
+        case .modernSpeech:
+            return [
+                "provider_id": "apple_modern_speech",
+                "provider_kind": "on_device",
+                "stt_backend": "apple_speech",
+                "model": "SpeechTranscriber",
+                "transport": "local",
+                "live_preview": "1",
+            ]
+        case .classicDictation:
+            return [
+                "provider_id": "apple_classic_dictation",
+                "provider_kind": "on_device",
+                "stt_backend": "apple_dictation",
+                "model": "DictationTranscriber",
+                "transport": "local",
+                "live_preview": "1",
+            ]
+        case .serverDictation:
+            return [:]
+        }
+    }
+
     nonisolated private static func warmModel(
         engine: VoiceInputManager.TranscriptionEngine,
         locale: Locale
     ) async throws -> AVAudioFormat? {
-        if engine == .remoteASR {
+        if engine == .serverDictation {
             return nil
         }
 
@@ -221,7 +248,7 @@ final class AppleOnDeviceVoiceProvider: VoiceTranscriptionProvider {
         case .classicDictation:
             let installed = await DictationTranscriber.installedLocales
             isInstalled = installed.contains(where: { $0.identifier(.bcp47) == localeID })
-        case .remoteASR:
+        case .serverDictation:
             return nil
         }
 
@@ -266,8 +293,8 @@ final class AppleOnDeviceVoiceProvider: VoiceTranscriptionProvider {
                     attributeOptions: []
                 )
             )
-        case .remoteASR:
-            fatalError("makeTranscriber called for .remoteASR")
+        case .serverDictation:
+            fatalError("makeTranscriber called for .serverDictation")
         }
     }
 }

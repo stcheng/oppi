@@ -154,11 +154,33 @@ Pi provides the core runtime and extension model. Oppi builds on top of that wit
 
 ## Configuration
 
-- Config: `~/.config/oppi/config.json`
-- Data: `~/.config/oppi/`
-- Override with `OPPI_DATA_DIR` or `--data-dir`
+- **Config file**: `~/.config/oppi/config.json`
+- **Data directory**: `~/.config/oppi/`
+- Override both with `OPPI_DATA_DIR` or `--data-dir`
 
-See [config-schema.md](docs/config-schema.md).
+Key config sections:
+
+| Section | What it controls |
+|---------|------------------|
+| `tls` | HTTPS mode: `self-signed`, `tailscale`, or `none` |
+| `asr` | Dictation pipeline: STT endpoint/model, LLM correction toggle, audio preservation |
+| `policy` | Permission gate rules (allow/deny/ask per tool, guardrails, heuristics) |
+
+Model routing and API keys are managed by pi (`pi auth`), not the oppi config.
+
+Quick inspection:
+
+```bash
+cat ~/.config/oppi/config.json | jq .          # raw config
+cat ~/.config/oppi/config.json | jq '.asr'     # single section
+node dist/src/cli.js config show                # formatted overview
+node dist/src/cli.js config get asr             # top-level key
+node dist/src/cli.js config set tls '{"mode":"self-signed"}'  # set via CLI (SETTABLE_KEYS only)
+```
+
+For sections not in `SETTABLE_KEYS` (like `asr`, `policy`), edit `config.json` directly and restart the server.
+
+See [config-schema.md](docs/config-schema.md) for full reference.
 
 ## Development
 

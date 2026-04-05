@@ -121,7 +121,6 @@ enum AppPreferences {
         }
 
         private static let engineModeKey = "\(AppIdentifiers.subsystem).voice.engineMode"
-        private static let remoteEndpointKey = "\(AppIdentifiers.subsystem).voice.remoteEndpoint"
 
         static var engineMode: EngineMode {
             guard let raw = UserDefaults.standard.string(forKey: engineModeKey),
@@ -132,55 +131,8 @@ enum AppPreferences {
             return mode
         }
 
-        static var remoteEndpoint: URL? {
-            guard let raw = UserDefaults.standard.string(forKey: remoteEndpointKey) else {
-                return nil
-            }
-            return normalizedEndpointURL(from: raw)
-        }
-
-        // periphery:ignore - used by RemoteASRTranscriberTests via @testable import
-        @discardableResult
-        static func setRemoteEndpoint(from raw: String) -> Bool {
-            let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !trimmed.isEmpty else {
-                setRemoteEndpoint(nil)
-                return true
-            }
-
-            guard let url = normalizedEndpointURL(from: trimmed) else {
-                return false
-            }
-
-            setRemoteEndpoint(url)
-            return true
-        }
-
         static func setEngineMode(_ mode: EngineMode) {
             UserDefaults.standard.set(mode.rawValue, forKey: engineModeKey)
-        }
-
-        static func setRemoteEndpoint(_ url: URL?) {
-            guard let url else {
-                UserDefaults.standard.removeObject(forKey: remoteEndpointKey)
-                return
-            }
-            UserDefaults.standard.set(url.absoluteString, forKey: remoteEndpointKey)
-        }
-
-        static func normalizedEndpointURL(from raw: String) -> URL? {
-            let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !trimmed.isEmpty,
-                  let components = URLComponents(string: trimmed),
-                  let scheme = components.scheme?.lowercased(),
-                  ["http", "https"].contains(scheme),
-                  let host = components.host,
-                  !host.isEmpty
-            else {
-                return nil
-            }
-
-            return components.url
         }
     }
 

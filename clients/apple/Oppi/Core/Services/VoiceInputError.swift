@@ -2,8 +2,7 @@ import Foundation
 
 enum VoiceInputError: LocalizedError {
     case localeNotSupported(String)
-    case remoteEndpointNotConfigured
-    case remoteEndpointUnreachable(String)
+    case serverNotConnected
     case remoteRequestTimedOut
     case remoteNetwork(String?)
     case remoteBadResponseStatus(Int)
@@ -15,13 +14,13 @@ enum VoiceInputError: LocalizedError {
         switch self {
         case .remoteRequestTimedOut:
             "timeout"
-        case .remoteEndpointUnreachable, .remoteNetwork:
+        case .remoteNetwork:
             "network"
         case .remoteBadResponseStatus:
             "http_status"
         case .remoteInvalidResponse, .remoteDecodeFailed:
             "decode"
-        case .remoteEndpointNotConfigured:
+        case .serverNotConnected:
             "misconfigured"
         case .localeNotSupported, .internalError:
             "other"
@@ -32,10 +31,8 @@ enum VoiceInputError: LocalizedError {
         switch self {
         case .localeNotSupported(let locale):
             "Speech recognition not supported for \(locale)"
-        case .remoteEndpointNotConfigured:
-            "Remote ASR endpoint is not configured. Open Settings → Voice Input."
-        case .remoteEndpointUnreachable(let host):
-            "Can’t reach remote ASR endpoint (\(host)). Check your server and network."
+        case .serverNotConnected:
+            "Server is not connected. Connect to an Oppi server first."
         case .remoteRequestTimedOut:
             "Remote ASR request timed out. Check server load or network latency."
         case .remoteNetwork:

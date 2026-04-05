@@ -193,11 +193,7 @@ struct VoiceInputManagerTests {
 
     @Test func prewarmRemoteModeDoesNotCrash() async {
         let manager = VoiceInputManager()
-        let endpoint = URL(string: "http://127.0.0.1:1")
-        #expect(endpoint != nil)
-
         manager.setEngineMode(.remote)
-        manager.setRemoteASREndpoint(endpoint)
 
         await manager.prewarm(source: "test")
         #expect(manager.state == .idle)
@@ -645,13 +641,13 @@ struct VoiceInputManagerTests {
         }())
     }
 
-    @Test func remoteModeWithoutEndpointSurfacesConfigurationError() async {
+    @Test func remoteModeWithoutCredentialsSurfacesConfigurationError() async {
         resetVoicePreferences()
         defer { resetVoicePreferences() }
 
         let systemAccess = MockVoiceInputSystemAccess()
         let manager = VoiceInputManager(
-            providerRegistry: VoiceProviderRegistry(providers: [RemoteASRVoiceProvider()]),
+            providerRegistry: VoiceProviderRegistry(providers: [OppiDictationProvider()]),
             systemAccess: systemAccess
         )
         manager.setEngineMode(.remote)
@@ -662,7 +658,7 @@ struct VoiceInputManagerTests {
 
         #expect({
             if case .error(let message) = manager.state {
-                return message.contains("not configured")
+                return message.contains("not connected")
             }
             return false
         }())
@@ -670,6 +666,5 @@ struct VoiceInputManagerTests {
 
     private func resetVoicePreferences() {
         VoiceInputPreferences.setEngineMode(.auto)
-        VoiceInputPreferences.setRemoteEndpoint(nil)
     }
 }

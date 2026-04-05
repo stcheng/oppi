@@ -718,7 +718,7 @@ export class SdkBackend {
     return this.piSession.sessionId;
   }
 
-  dispose(): void {
+  async dispose(): Promise<void> {
     if (this.disposed) return;
     this.disposed = true;
 
@@ -728,8 +728,12 @@ export class SdkBackend {
     this.pendingExtensionResponses.clear();
 
     // Emit session_shutdown so extensions can run cleanup (e.g. knowledge indexing).
-    // This mirrors what AgentSessionRuntimeHost.dispose() does in the TUI.
-    this.piSession.extensionRunner?.emit({ type: "session_shutdown" }).catch(() => {});
+    // Must await — the knowledge extension makes an async oMLX call during shutdown.
+    try {
+      await this.piSession.extensionRunner?.emit({ type: "session_shutdown" });
+    } catch {
+      // Don't block teardown if an extension handler fails
+    }
 
     this.unsub();
     this.piSession.dispose();

@@ -8,9 +8,8 @@ private let logger = Logger(subsystem: AppIdentifiers.subsystem, category: "Dict
 /// Voice transcription session that streams raw PCM audio over a `/dictation` WebSocket
 /// and receives full transcript replacements from the server.
 ///
-/// Key simplification vs the old RemoteASRTranscriber:
-/// - No chunk timing on the client — streams PCM continuously
-/// - No transcript merging/dedup — server returns full text each time
+/// Streams raw PCM continuously — no client-side chunk timing.
+/// The server returns full text each time:
 /// - `dictation_result` maps to `.replaceFinalTranscript`
 /// - `dictation_final` maps to `.replaceFinalTranscript` + stream completion
 @MainActor
@@ -157,7 +156,7 @@ final class OppiDictationSession: VoiceTranscriptionSession {
 
                     switch message {
                     case .ready:
-                        logger.debug("Server ready for dictation")
+                        logger.debug("Server ready for dictation (duplicate ready ignored)")
 
                     case .result(let text, let version):
                         logger.debug("Dictation result v\(version): \(text.count) chars")

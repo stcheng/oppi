@@ -42,13 +42,13 @@ final class VoiceInputManager {
     enum TranscriptionEngine: String, Equatable, Sendable {
         case modernSpeech
         case classicDictation
-        case remoteASR
+        case serverDictation
 
         var logName: String {
             switch self {
             case .modernSpeech: return "speech"
             case .classicDictation: return "dictation"
-            case .remoteASR: return "remote"
+            case .serverDictation: return "server"
             }
         }
     }
@@ -111,7 +111,7 @@ final class VoiceInputManager {
     var routeIndicator: RouteIndicator {
         if let activeEngine {
             switch activeEngine {
-            case .remoteASR:
+            case .serverDictation:
                 return .remote
             case .modernSpeech, .classicDictation:
                 return .onDevice
@@ -148,11 +148,15 @@ final class VoiceInputManager {
     /// Active session ID for metric attribution. Set by ChatView on session connect.
     var activeSessionId: String?
 
-    // MARK: - Remote ASR Configuration
+    // MARK: - Dictation Telemetry State
 
-    /// Base URL for the remote ASR server (e.g. `http://mac-studio.local:8321`).
-    /// When nil, remote mode is unavailable.
-    private(set) var remoteASREndpoint: URL?
+    private var activeMetricAnnotation: VoiceMetricAnnotation?
+    private var activeDictationMetricTags: [String: String] = [:]
+    private var dictationSessionStart: ContinuousClock.Instant?
+    private var recordingStart: ContinuousClock.Instant?
+    private var resultUpdateCount = 0
+
+    // MARK: - Server Configuration
 
     /// Server credentials for the Oppi dictation endpoint.
     /// Set by ChatView when server connection is active.
@@ -162,7 +166,7 @@ final class VoiceInputManager {
     private(set) var engineMode: EngineMode = .auto
 
     /// Backward-compatible engine preference surface used by tests.
-    /// `nil` = auto, `.remoteASR` = remote mode, on-device values = on-device mode.
+    /// `nil` = auto, `.serverDictation` = remote mode, on-device values = on-device mode.
     private(set) var enginePreference: TranscriptionEngine?
 
     // MARK: - Init
@@ -183,12 +187,6 @@ final class VoiceInputManager {
     /// Reload persisted voice settings.
     func loadPreferences() {
         applyEngineMode(from: VoiceInputPreferences.engineMode)
-        applyRemoteEndpoint(VoiceInputPreferences.remoteEndpoint)
-    }
-
-    /// Configure the remote ASR endpoint. Pass nil to disable.
-    func setRemoteASREndpoint(_ url: URL?) {
-        applyRemoteEndpoint(url)
     }
 
     /// Update server credentials for the dictation WebSocket endpoint.
@@ -214,7 +212,7 @@ final class VoiceInputManager {
             // to locale-based on-device engine selection.
             enginePreference = .modernSpeech
         case .remote:
-            enginePreference = .remoteASR
+            enginePreference = .serverDictation
         }
 
         activeEngine = nil
@@ -222,13 +220,13 @@ final class VoiceInputManager {
         logger.info("Engine mode: \(mode.logName)")
     }
 
-    // periphery:ignore - used by RemoteASRTranscriberTests via @testable import
+    // periphery:ignore - used by tests via @testable import
     /// Backward-compatible preference API. Prefer `setEngineMode(_:)`.
     func setEnginePreference(_ engine: TranscriptionEngine?) {
         switch engine {
         case nil:
             setEngineMode(.auto)
-        case .remoteASR?:
+        case .serverDictation?:
             setEngineMode(.remote)
         case .modernSpeech?, .classicDictation?:
             setEngineMode(.onDevice)
@@ -237,31 +235,14 @@ final class VoiceInputManager {
     }
 
     // MARK: - Locale Resolution
-    /// Resolve the effective engine, considering mode + remote reachability.
+    /// Resolve the effective engine, considering mode + server availability.
     private func effectiveEngine(for locale: Locale, source: String) async -> TranscriptionEngine {
         let fallback = Self.preferredEngine(for: locale)
-        let localeID = locale.identifier(.bcp47)
-        let annotation = VoiceMetricAnnotation(
-            engine: TranscriptionEngine.remoteASR.logName,
-            locale: localeID,
-            source: source
-        )
-
-        let decision = await routeResolver.resolveEngine(
+        return await routeResolver.resolveEngine(
             mode: engineMode,
-            remoteEndpoint: remoteASREndpoint,
             fallback: fallback,
             serverCredentials: serverCredentials
         )
-
-        if let probe = decision.probe {
-            recordRemoteProbeMetric(probe, annotation: annotation)
-            if !probe.reachable {
-                logger.warning("Remote ASR unreachable; using on-device engine")
-            }
-        }
-
-        return decision.engine
     }
 
     private func provider(
@@ -284,17 +265,10 @@ final class VoiceInputManager {
         }
     }
 
-    private func applyRemoteEndpoint(_ url: URL?) {
-        remoteASREndpoint = url
-        routeResolver.updateRemoteEndpoint(url)
-        invalidateModelCache()
-        logger.info("Remote ASR endpoint: \(url?.absoluteString ?? "disabled")")
-    }
-
     private func invalidateModelCache() {
         providerRegistry.provider(for: .modernSpeech)?.invalidateCache()
         providerRegistry.provider(for: .classicDictation)?.invalidateCache()
-        providerRegistry.provider(for: .remoteASR)?.invalidateCache()
+        providerRegistry.provider(for: .serverDictation)?.invalidateCache()
     }
 
     // MARK: - Pre-warm
@@ -315,23 +289,10 @@ final class VoiceInputManager {
         guard state == .idle else { return }
 
         do {
-            if engine == .remoteASR,
-               let endpoint = remoteASREndpoint {
-                let probe = await routeResolver.probeRemoteReachability(
-                    endpoint: endpoint,
-                    forceRefresh: true
-                )
-                recordRemoteProbeMetric(probe, annotation: metricAnnotation)
-                logger.info(
-                    "Remote ASR probe: \(endpoint.absoluteString) => \(probe.reachable ? "reachable" : "unreachable")"
-                )
-            }
-
             try await provider(for: engine).prewarm(
                 context: VoiceProviderContext(
                     locale: locale,
                     source: source,
-                    remoteEndpoint: remoteASREndpoint,
                     serverCredentials: serverCredentials
                 )
             )
@@ -413,6 +374,11 @@ final class VoiceInputManager {
 
         finalizedTranscript = ""
         volatileTranscript = ""
+        activeMetricAnnotation = nil
+        activeDictationMetricTags = [:]
+        dictationSessionStart = nil
+        recordingStart = nil
+        resultUpdateCount = 0
 
         if !systemAccess.hasPermissions {
             guard await requestPermissions() else {
@@ -433,10 +399,11 @@ final class VoiceInputManager {
             locale: localeID,
             source: source
         )
+        activeMetricAnnotation = metricAnnotation
+        dictationSessionStart = startTime
         let context = VoiceProviderContext(
             locale: locale,
             source: source,
-            remoteEndpoint: remoteASREndpoint,
             serverCredentials: serverCredentials
         )
         let provider = try provider(for: engine)
@@ -444,21 +411,6 @@ final class VoiceInputManager {
 
         do {
             try ensureStartRequestActive(requestID)
-
-            if engine == .remoteASR,
-               engineMode == .remote,
-               let endpoint = remoteASREndpoint {
-                let probe = await routeResolver.probeRemoteReachability(
-                    endpoint: endpoint,
-                    forceRefresh: true
-                )
-                recordRemoteProbeMetric(probe, annotation: metricAnnotation)
-                guard probe.reachable else {
-                    throw VoiceInputError.remoteEndpointUnreachable(
-                        endpoint.host ?? endpoint.absoluteString
-                    )
-                }
-            }
 
             let timings = try await startProviderRecording(
                 requestID: requestID,
@@ -494,6 +446,7 @@ final class VoiceInputManager {
         } catch {
             let totalMs = startTime.elapsedMs()
             let userFacingMessage = userFacingErrorMessage(for: error)
+            let errorKind = Self.metricErrorKind(for: error)
             recordVoiceMetric(
                 .voiceSetupMs,
                 valueMs: totalMs,
@@ -503,7 +456,17 @@ final class VoiceInputManager {
                 extraTags: [
                     "path": modelPathTag,
                     "error": String(describing: type(of: error)),
-                    "error_kind": Self.metricErrorKind(for: error),
+                    "error_kind": errorKind,
+                ]
+            )
+            recordDictationCountMetric(
+                .dictationError,
+                value: 1,
+                annotation: metricAnnotation,
+                status: "error",
+                extraTags: [
+                    "phase": "setup",
+                    "error_kind": errorKind,
                 ]
             )
             logger.error("Voice setup failed: \(userFacingMessage, privacy: .public)")
@@ -530,7 +493,21 @@ final class VoiceInputManager {
         state = .processing
         logger.info("Stopping recording")
 
+        let finalizeStart = ContinuousClock.now
+        let previewTranscript = currentTranscript
+        let audioDurationMs = recordingStart?.elapsedMs() ?? 0
+
         await sessionMonitor.stop()
+
+        let finalizeMs = finalizeStart.elapsedMs()
+        let sessionMs = dictationSessionStart?.elapsedMs() ?? finalizeMs
+        emitDictationStopTelemetry(
+            finalizeMs: finalizeMs,
+            sessionMs: sessionMs,
+            audioDurationMs: audioDurationMs,
+            previewTranscript: previewTranscript,
+            finalTranscript: currentTranscript
+        )
 
         deactivateAudioSession()
         teardownSession()
@@ -560,6 +537,8 @@ final class VoiceInputManager {
         deactivateAudioSession()
         teardownSession()
 
+        emitDictationCancelTelemetry()
+
         finalizedTranscript = ""
         volatileTranscript = ""
         operationInFlight = false
@@ -586,6 +565,7 @@ final class VoiceInputManager {
         // Build merged tags once for all 5 emissions (deferred — not on hot path)
         var tags = ["path": timings.pathTag]
         for (k, v) in timings.providerTags { tags[k] = v }
+        activeDictationMetricTags = tags
 
         recordVoiceMetric(.voiceSetupMs, valueMs: timings.modelReadyMs,
                           annotation: annotation, phase: .modelReady, status: "ok", extraTags: tags)
@@ -597,6 +577,13 @@ final class VoiceInputManager {
                           annotation: annotation, phase: .audioStart, status: "ok", extraTags: tags)
         recordVoiceMetric(.voiceSetupMs, valueMs: timings.totalMs,
                           annotation: annotation, phase: .total, status: "ok", extraTags: tags)
+        recordDictationMetric(
+            .dictationSetupMs,
+            valueMs: timings.totalMs,
+            annotation: annotation,
+            status: "ok",
+            extraTags: tags
+        )
     }
 
     // MARK: - Provider Recording
@@ -649,11 +636,28 @@ final class VoiceInputManager {
                     status: "ok",
                     extraTags: ["result_type": resultType]
                 )
+                self.recordDictationMetric(
+                    .dictationFirstResultMs,
+                    valueMs: latencyMs,
+                    annotation: metricAnnotation,
+                    status: "ok",
+                    extraTags: ["result_type": resultType]
+                )
                 logger.error("Voice latency: first result in \(latencyMs)ms (type: \(resultType))")
             },
             onError: { [weak self] error in
                 guard let self else { return }
                 logger.error("Results stream error: \(error.localizedDescription)")
+                self.recordDictationCountMetric(
+                    .dictationError,
+                    value: 1,
+                    annotation: metricAnnotation,
+                    status: "error",
+                    extraTags: [
+                        "phase": "stream",
+                        "error_kind": Self.metricErrorKind(for: error),
+                    ]
+                )
                 self.state = .error("Transcription failed")
                 self.scheduleErrorReset()
             }
@@ -666,6 +670,7 @@ final class VoiceInputManager {
         timings.analyzerStartMs = sessionTimings.analyzerStartMs
         timings.audioStartMs = sessionTimings.audioStartMs
         timings.totalMs = startTime.elapsedMs()
+        recordingStart = ContinuousClock.now
 
         return timings
     }
@@ -687,14 +692,17 @@ final class VoiceInputManager {
         switch event {
         case .partialTranscript(let text):
             volatileTranscript = text
+            resultUpdateCount += 1
             logger.debug("Volatile: \(text.count) chars")
         case .appendFinalTranscript(let text):
             finalizedTranscript += text
             volatileTranscript = ""
+            resultUpdateCount += 1
             logger.debug("Finalized append: \(text.count) chars")
         case .replaceFinalTranscript(let text):
             finalizedTranscript = text
             volatileTranscript = ""
+            resultUpdateCount += 1
             logger.debug("Finalized replace: \(text.count) chars")
         case .remoteChunkTelemetry(let chunk):
             recordRemoteChunkTelemetry(chunk, annotation: annotation)
@@ -708,6 +716,11 @@ final class VoiceInputManager {
         audioLevel = 0
         activeLanguageLabel = nil
         activeEngine = nil
+        activeMetricAnnotation = nil
+        activeDictationMetricTags = [:]
+        dictationSessionStart = nil
+        recordingStart = nil
+        resultUpdateCount = 0
     }
 
     private func cleanupFailedStart() async {
@@ -733,23 +746,6 @@ final class VoiceInputManager {
 
     private static func metricErrorKind(for error: Error) -> String {
         VoiceInputTelemetry.metricErrorKind(for: error)
-    }
-
-    private func recordRemoteProbeMetric(
-        _ probe: VoiceInputRouteResolver.RemoteProbeResult,
-        annotation: VoiceMetricAnnotation
-    ) {
-        recordVoiceMetric(
-            .voiceRemoteProbeMs,
-            valueMs: probe.durationMs,
-            annotation: annotation,
-            status: probe.reachable ? "ok" : "error",
-            extraTags: [
-                "cached": probe.cached ? "1" : "0",
-                "reachable": probe.reachable ? "1" : "0",
-                "host": probe.host,
-            ]
-        )
     }
 
     private func recordRemoteChunkTelemetry(
@@ -780,6 +776,148 @@ final class VoiceInputManager {
             status: status,
             extraTags: extraTags
         )
+    }
+
+    private func recordDictationMetric(
+        _ metric: ChatMetricName,
+        valueMs: Int,
+        annotation: VoiceMetricAnnotation,
+        status: String? = nil,
+        extraTags: [String: String] = [:]
+    ) {
+        VoiceInputTelemetry.recordMetric(
+            metric,
+            valueMs: valueMs,
+            annotation: annotation,
+            sessionId: activeSessionId,
+            status: status,
+            extraTags: mergedDictationMetricTags(extraTags)
+        )
+    }
+
+    private func recordDictationCountMetric(
+        _ metric: ChatMetricName,
+        value: Int,
+        annotation: VoiceMetricAnnotation,
+        status: String? = nil,
+        extraTags: [String: String] = [:]
+    ) {
+        VoiceInputTelemetry.recordCountMetric(
+            metric,
+            value: value,
+            annotation: annotation,
+            sessionId: activeSessionId,
+            status: status,
+            extraTags: mergedDictationMetricTags(extraTags)
+        )
+    }
+
+    private func recordDictationRatioMetric(
+        _ metric: ChatMetricName,
+        value: Double,
+        annotation: VoiceMetricAnnotation,
+        status: String? = nil,
+        extraTags: [String: String] = [:]
+    ) {
+        VoiceInputTelemetry.recordRatioMetric(
+            metric,
+            value: value,
+            annotation: annotation,
+            sessionId: activeSessionId,
+            status: status,
+            extraTags: mergedDictationMetricTags(extraTags)
+        )
+    }
+
+    private func mergedDictationMetricTags(_ extraTags: [String: String]) -> [String: String] {
+        var tags = activeDictationMetricTags
+        for (key, value) in extraTags {
+            tags[key] = value
+        }
+        return tags
+    }
+
+    private func emitDictationStopTelemetry(
+        finalizeMs: Int,
+        sessionMs: Int,
+        audioDurationMs: Int,
+        previewTranscript: String,
+        finalTranscript: String
+    ) {
+        guard let annotation = activeMetricAnnotation else { return }
+
+        recordDictationMetric(
+            .dictationFinalizeMs,
+            valueMs: finalizeMs,
+            annotation: annotation,
+            status: "ok"
+        )
+        recordDictationMetric(
+            .dictationSessionMs,
+            valueMs: sessionMs,
+            annotation: annotation,
+            status: "ok"
+        )
+        recordDictationMetric(
+            .dictationAudioDurationMs,
+            valueMs: audioDurationMs,
+            annotation: annotation,
+            status: "ok"
+        )
+        recordDictationCountMetric(
+            .dictationResultUpdates,
+            value: resultUpdateCount,
+            annotation: annotation,
+            status: "ok"
+        )
+        recordDictationRatioMetric(
+            .dictationPreviewFinalDelta,
+            value: Self.previewFinalDelta(preview: previewTranscript, final: finalTranscript),
+            annotation: annotation,
+            status: "ok"
+        )
+    }
+
+    private func emitDictationCancelTelemetry() {
+        guard let annotation = activeMetricAnnotation else { return }
+        recordDictationCountMetric(
+            .dictationCancel,
+            value: 1,
+            annotation: annotation,
+            status: "cancelled"
+        )
+    }
+
+    private static func previewFinalDelta(preview: String, final: String) -> Double {
+        let lhs = preview.trimmingCharacters(in: .whitespacesAndNewlines)
+        let rhs = final.trimmingCharacters(in: .whitespacesAndNewlines)
+        let maxLength = max(lhs.count, rhs.count)
+        guard maxLength > 0 else { return 0 }
+        let distance = levenshteinDistance(Array(lhs), Array(rhs))
+        return min(1, Double(distance) / Double(maxLength))
+    }
+
+    private static func levenshteinDistance(_ lhs: [Character], _ rhs: [Character]) -> Int {
+        if lhs.isEmpty { return rhs.count }
+        if rhs.isEmpty { return lhs.count }
+
+        var previous = Array(0...rhs.count)
+        var current = Array(repeating: 0, count: rhs.count + 1)
+
+        for (i, left) in lhs.enumerated() {
+            current[0] = i + 1
+            for (j, right) in rhs.enumerated() {
+                let substitutionCost = left == right ? 0 : 1
+                current[j + 1] = min(
+                    previous[j + 1] + 1,
+                    current[j] + 1,
+                    previous[j] + substitutionCost
+                )
+            }
+            swap(&previous, &current)
+        }
+
+        return previous[rhs.count]
     }
 
     private func ensureStartRequestActive(_ requestID: Int) throws {

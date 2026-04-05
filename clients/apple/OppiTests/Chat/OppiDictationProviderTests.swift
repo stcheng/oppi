@@ -8,10 +8,28 @@ import Testing
 @Suite("DictationServerMessage decoding")
 struct DictationServerMessageDecodingTests {
 
-    @Test func decodesReady() throws {
+    @Test func decodesReadyMinimal() throws {
         let json = #"{"type":"dictation_ready"}"#
         let message = try decode(json)
-        #expect(message == .ready)
+        #expect(message == .ready(provider: nil))
+    }
+
+    @Test func decodesReadyWithProviderInfo() throws {
+        let json = #"{"type":"dictation_ready","sttProvider":"mlx-server","sttModel":"Qwen3-ASR-1.7B","llmCorrectionEnabled":true}"#
+        let message = try decode(json)
+        let expected = DictationProviderInfo(
+            sttProvider: "mlx-server",
+            sttModel: "Qwen3-ASR-1.7B",
+            llmCorrectionEnabled: true
+        )
+        #expect(message == .ready(provider: expected))
+    }
+
+    @Test func decodesReadyWithPartialProviderInfo() throws {
+        // If only sttProvider is present but not sttModel, provider should be nil
+        let json = #"{"type":"dictation_ready","sttProvider":"openai"}"#
+        let message = try decode(json)
+        #expect(message == .ready(provider: nil))
     }
 
     @Test func decodesResult() throws {
@@ -188,7 +206,7 @@ struct DictationEventMappingTests {
     }
 
     @Test func readyMapsToNil() {
-        let event = mapServerMessage(.ready)
+        let event = mapServerMessage(.ready(provider: nil))
         #expect(event == nil)
     }
 
@@ -202,7 +220,7 @@ struct DictationEventMappingTests {
     private func mapServerMessage(_ message: DictationServerMessage) -> VoiceSessionEvent? {
         switch message {
         case .ready:
-            return nil
+            return nil  // ready is handled at connection level, not as a session event
         case .result(let text, _):
             return .replaceFinalTranscript(text)
         case .final_(let text, _, _):
@@ -221,8 +239,8 @@ struct OppiDictationProviderTests {
 
     @Test func providerIdAndEngine() {
         let provider = OppiDictationProvider()
-        #expect(provider.id == .remoteASR)
-        #expect(provider.engine == .remoteASR)
+        #expect(provider.id == .oppiServer)
+        #expect(provider.engine == .serverDictation)
     }
 
     @Test func prepareSessionThrowsWithoutCredentials() async {
@@ -230,7 +248,6 @@ struct OppiDictationProviderTests {
         let context = VoiceProviderContext(
             locale: Locale(identifier: "en-US"),
             source: "test",
-            remoteEndpoint: nil,
             serverCredentials: nil
         )
 
@@ -243,8 +260,7 @@ struct OppiDictationProviderTests {
         let provider = OppiDictationProvider()
         let context = VoiceProviderContext(
             locale: Locale(identifier: "en-US"),
-            source: "test",
-            remoteEndpoint: nil
+            source: "test"
         )
         let preparation = VoiceProviderPreparation(
             audioFormat: nil,
@@ -259,7 +275,7 @@ struct OppiDictationProviderTests {
 
     @Test func registryIncludesOppiDictationProvider() {
         let registry = VoiceProviderRegistry.makeDefault()
-        let provider = registry.provider(for: .remoteASR)
+        let provider = registry.provider(for: .serverDictation)
         #expect(provider is OppiDictationProvider)
     }
 }
@@ -276,7 +292,7 @@ struct DictationCrashRegressionTests {
     @Test func providerLookupDoesNotCrashOnMissingEngine() {
         // Registry with NO providers at all
         let registry = VoiceProviderRegistry(providers: [])
-        let provider = registry.provider(for: .remoteASR)
+        let provider = registry.provider(for: .serverDictation)
         #expect(provider == nil, "Missing provider should return nil, not crash")
     }
 

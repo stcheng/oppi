@@ -24,7 +24,7 @@ export interface SessionStopCoordinatorDeps {
   getActiveSession: (key: string) => StopSessionState | undefined;
   persistSessionNow: (key: string, session: Session) => void;
   broadcast: (key: string, message: ServerMessage) => void;
-  handleSessionEnd: (key: string, reason: string) => void;
+  handleSessionEnd: (key: string, reason: string) => void | Promise<void>;
 }
 
 export class SessionStopCoordinator {
@@ -206,14 +206,14 @@ export class SessionStopCoordinator {
     return completion;
   }
 
-  forceTerminateSessionProcess(
+  async forceTerminateSessionProcess(
     key: string,
     active: StopSessionState,
     source: StopRequestSource,
     reason?: string,
-  ): void {
+  ): Promise<void> {
     try {
-      active.sdkBackend.dispose();
+      await active.sdkBackend.dispose();
 
       const pending = this.clearPendingStop(active);
       this.deps.broadcast(key, {
@@ -221,7 +221,7 @@ export class SessionStopCoordinator {
         source: pending?.source ?? source,
         reason,
       });
-      this.deps.handleSessionEnd(key, "stopped");
+      await this.deps.handleSessionEnd(key, "stopped");
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       this.finishPendingStopWithFailure(key, active, "server", `Force stop failed: ${message}`);

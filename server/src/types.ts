@@ -261,9 +261,12 @@ export interface ServerConfig {
    * STT backend, LLM correction, and audio preservation.
    */
   asr?: {
+    sttProvider?: "mlx-server" | "openai" | "deepgram" | "elevenlabs";
     sttEndpoint?: string;
     sttModel?: string;
     sttApiKey?: string;
+    sttAuthStyle?: "bearer" | "x-api-key";
+    sttLanguage?: string;
     retranscribeIntervalMs?: number;
     preserveAudio?: boolean;
     maxDurationSec?: number;
@@ -785,10 +788,6 @@ export const CHAT_METRIC_REGISTRY = {
     unit: "ms",
     description: "Voice first-result latency.",
   },
-  "chat.voice_remote_probe_ms": {
-    unit: "ms",
-    description: "Remote ASR endpoint reachability probe latency.",
-  },
   "chat.voice_remote_chunk_upload_ms": {
     unit: "ms",
     description: "Remote ASR chunk upload/request latency.",
@@ -809,6 +808,44 @@ export const CHAT_METRIC_REGISTRY = {
     unit: "count",
     description: "Count of remote ASR chunk upload/transcription errors.",
   },
+  // ── Dictation session metrics ──
+  "chat.dictation_setup_ms": {
+    unit: "ms",
+    description: "Server dictation session setup latency (WS connect + ready).",
+  },
+  "chat.dictation_first_result_ms": {
+    unit: "ms",
+    description: "Time from recording start to first transcription result.",
+  },
+  "chat.dictation_finalize_ms": {
+    unit: "ms",
+    description: "Server-side finalization latency (stop to final text).",
+  },
+  "chat.dictation_session_ms": {
+    unit: "ms",
+    description: "Total dictation session duration from start to stop.",
+  },
+  "chat.dictation_audio_duration_ms": {
+    unit: "ms",
+    description: "Audio recording duration within a dictation session.",
+  },
+  "chat.dictation_result_updates": {
+    unit: "count",
+    description: "Number of transcript update events during a dictation session.",
+  },
+  "chat.dictation_preview_final_delta": {
+    unit: "count",
+    description: "Edit distance ratio between preview and final transcript (0=identical, 1=completely different).",
+  },
+  "chat.dictation_error": {
+    unit: "count",
+    description: "Dictation error count. Tags: phase, error_kind.",
+  },
+  "chat.dictation_cancel": {
+    unit: "count",
+    description: "Dictation session cancellation count.",
+  },
+
   "chat.cell_configure_ms": {
     unit: "ms",
     description:

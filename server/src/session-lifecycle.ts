@@ -40,7 +40,7 @@ export class SessionLifecycleCoordinator {
 
   constructor(private readonly deps: SessionLifecycleCoordinatorDeps) {}
 
-  handleSessionEnd(key: string, reason: string): void {
+  async handleSessionEnd(key: string, reason: string): Promise<void> {
     const active = this.deps.getActiveSession(key);
     if (!active) {
       return;
@@ -72,7 +72,7 @@ export class SessionLifecycleCoordinator {
     active.pendingUIRequests.clear();
 
     if (!active.sdkBackend.isDisposed) {
-      active.sdkBackend.dispose();
+      await active.sdkBackend.dispose();
     }
 
     this.deps.broadcast(key, { type: "session_ended", reason });

@@ -31,7 +31,7 @@ extension VoiceInputManager {
     static func isAvailable(for locale: Locale = .current) async -> Bool {
         let engine = preferredEngine(for: locale)
         switch engine {
-        case .remoteASR:
+        case .serverDictation:
             return true
         case .modernSpeech, .classicDictation:
             return await AppleOnDeviceVoiceProvider.isAvailable(for: engine, locale: locale)
@@ -43,7 +43,7 @@ extension VoiceInputManager {
     static func isModelInstalled(for locale: Locale) async -> Bool {
         let engine = preferredEngine(for: locale)
         switch engine {
-        case .remoteASR:
+        case .serverDictation:
             return true
         case .modernSpeech, .classicDictation:
             return await AppleOnDeviceVoiceProvider.isModelInstalled(for: engine, locale: locale)

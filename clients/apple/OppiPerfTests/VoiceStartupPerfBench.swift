@@ -205,7 +205,6 @@ struct VoiceStartupPerfBench {
         let us = await Self.measureMedianUsAsync {
             _ = await resolver.resolveEngine(
                 mode: .onDevice,
-                remoteEndpoint: nil,
                 fallback: .classicDictation
             )
         }

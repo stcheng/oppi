@@ -6,9 +6,9 @@ import Testing
 struct VoiceInputTelemetryTests {
     @Test func userFacingMessagePrefersVoiceInputErrorDescription() {
         let message = VoiceInputTelemetry.userFacingMessage(
-            for: VoiceInputError.remoteEndpointNotConfigured
+            for: VoiceInputError.serverNotConnected
         )
-        #expect(message.contains("not configured"))
+        #expect(message.contains("not connected"))
     }
 
     @Test func userFacingMessageFallsBackToLocalizedError() {
@@ -48,6 +48,7 @@ struct VoiceInputTelemetryTests {
         #expect(samples[0].tags == [
             "engine": "dictation",
             "locale": "en-US",
+            "ui_locale": "en-US",
             "source": "composer",
             "phase": "audio_start",
             "status": "ok",
@@ -75,6 +76,7 @@ struct VoiceInputTelemetryTests {
         #expect(samples[0].tags == [
             "engine": "remote",
             "locale": "ja-JP",
+            "ui_locale": "ja-JP",
             "source": "mic",
             "status": "error",
             "host": "mac-studio",
@@ -142,6 +144,27 @@ struct VoiceInputTelemetryTests {
         ])
         #expect(recorder.samples.last?.tags["error_category"] == "timeout")
         #expect(recorder.samples.last?.value == 1)
+    }
+
+    @Test func recordRatioMetricClampsNegativeValuesAndUsesRatioUnit() {
+        let recorder = TestMetricRecorder.install()
+        defer { recorder.uninstall() }
+
+        VoiceInputTelemetry.recordRatioMetric(
+            .dictationPreviewFinalDelta,
+            value: -0.2,
+            annotation: VoiceMetricAnnotation(engine: "remote", locale: "en-US", source: "composer"),
+            status: "ok",
+            extraTags: ["provider_id": "oppi_server_dictation"]
+        )
+
+        let samples = recorder.samples
+        #expect(samples.count == 1)
+        #expect(samples[0].metric == .dictationPreviewFinalDelta)
+        #expect(samples[0].value == 0)
+        #expect(samples[0].unit == .ratio)
+        #expect(samples[0].tags["ui_locale"] == "en-US")
+        #expect(samples[0].tags["provider_id"] == "oppi_server_dictation")
     }
 }
 

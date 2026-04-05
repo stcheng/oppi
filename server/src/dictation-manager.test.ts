@@ -1,7 +1,7 @@
 /**
  * Tests for DictationManager — audio accumulation, WAV encoding,
- * retranscribe timer, STT proxy, LLM correction, dictionary merge,
- * and error handling.
+ * retranscribe timer, STT provider integration, LLM correction,
+ * dictionary merge, and error handling.
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
@@ -14,6 +14,7 @@ import {
   extractJsonFromResponse,
 } from "./dictation-manager.js";
 import type { DictationConfig, DictationServerMessage } from "./dictation-types.js";
+import type { SttProvider } from "./stt-provider.js";
 
 // ─── Test helpers ───
 
@@ -70,38 +71,34 @@ function messagesOfType<T extends DictationServerMessage["type"]>(
   return ws.sent.filter((m) => m.type === type) as Extract<DictationServerMessage, { type: T }>[];
 }
 
-/** Create a mock fetch that returns STT text. */
-function mockSttFetch(text: string): typeof globalThis.fetch {
-  return vi.fn().mockResolvedValue({
-    ok: true,
-    json: async () => ({ text }),
-    text: async () => JSON.stringify({ text }),
-  }) as unknown as typeof globalThis.fetch;
+/** Create a mock STT provider that returns fixed text. */
+function mockSttProvider(text: string): SttProvider & { transcribe: ReturnType<typeof vi.fn> } {
+  return {
+    name: "mock",
+    model: "mock-model",
+    endpoint: "http://mock:9847",
+    transcribe: vi.fn().mockResolvedValue(text),
+  };
 }
 
-/** Create a mock fetch that routes STT and LLM requests. */
-function mockSttAndLlmFetch(
-  sttText: string,
-  llmResponse: Record<string, unknown>,
-): typeof globalThis.fetch {
-  return vi.fn().mockImplementation(async (url: string) => {
-    if (typeof url === "string" && url.includes("/v1/audio/transcriptions")) {
-      return {
-        ok: true,
-        json: async () => ({ text: sttText }),
-        text: async () => JSON.stringify({ text: sttText }),
-      };
-    }
-    if (typeof url === "string" && url.includes("/v1/chat/completions")) {
-      return {
-        ok: true,
-        json: async () => ({
-          choices: [{ message: { content: JSON.stringify(llmResponse) } }],
-        }),
-        text: async () => "",
-      };
-    }
-    return { ok: false, status: 404, text: async () => "not found" };
+/** Create a mock STT provider that always fails. */
+function failingSttProvider(error: string): SttProvider & { transcribe: ReturnType<typeof vi.fn> } {
+  return {
+    name: "mock",
+    model: "mock-model",
+    endpoint: "http://mock:9847",
+    transcribe: vi.fn().mockRejectedValue(new Error(error)),
+  };
+}
+
+/** Create a mock fetch that handles LLM correction calls only. */
+function mockLlmFetch(llmResponse: Record<string, unknown>): typeof globalThis.fetch {
+  return vi.fn().mockResolvedValue({
+    ok: true,
+    json: async () => ({
+      choices: [{ message: { content: JSON.stringify(llmResponse) } }],
+    }),
+    text: async () => "",
   }) as unknown as typeof globalThis.fetch;
 }
 
@@ -208,12 +205,12 @@ describe("extractJsonFromResponse", () => {
 describe("DictationManager", () => {
   let manager: DictationManager;
   let ws: FakeWebSocket;
-  let fetchFn: typeof globalThis.fetch;
+  let provider: ReturnType<typeof mockSttProvider>;
 
   beforeEach(() => {
     vi.useFakeTimers();
-    fetchFn = mockSttFetch("hello world");
-    manager = new DictationManager(testConfig(), "/tmp/test-dictation", fetchFn);
+    provider = mockSttProvider("hello world");
+    manager = new DictationManager(testConfig(), "/tmp/test-dictation", provider);
     ws = new FakeWebSocket();
     manager.handleConnection(ws as unknown as WebSocket);
   });
@@ -226,6 +223,16 @@ describe("DictationManager", () => {
     it("sends dictation_ready on dictation_start", () => {
       sendControl(ws, { type: "dictation_start" });
       expect(messagesOfType(ws, "dictation_ready")).toHaveLength(1);
+    });
+
+    it("dictation_ready includes provider metadata", () => {
+      sendControl(ws, { type: "dictation_start" });
+      const readyMsgs = messagesOfType(ws, "dictation_ready");
+      expect(readyMsgs).toHaveLength(1);
+      const ready = readyMsgs[0];
+      expect(ready.sttProvider).toBe("mock");
+      expect(ready.sttModel).toBe("mock-model");
+      expect(ready.llmCorrectionEnabled).toBe(false);
     });
 
     it("rejects duplicate dictation_start", () => {
@@ -293,8 +300,7 @@ describe("DictationManager", () => {
       sendAudio(ws, chunk2);
       // Audio is accumulated internally — verify via STT call on stop
       sendControl(ws, { type: "dictation_stop" });
-      // fetchFn will be called with the accumulated WAV
-      // We verify indirectly by checking fetchFn was called
+      // Provider will be called with the accumulated WAV
     });
 
     it("ignores binary frames before dictation_start", () => {
@@ -302,17 +308,33 @@ describe("DictationManager", () => {
       // No crash, no error
       expect(messagesOfType(ws, "dictation_error")).toHaveLength(0);
     });
+
+    it("produces WAV equivalent to encodeWav from accumulated chunks", async () => {
+      sendControl(ws, { type: "dictation_start" });
+      const chunk1 = silencePcm(500);
+      const chunk2 = Buffer.alloc(1000, 0x7f);
+      sendAudio(ws, chunk1);
+      sendAudio(ws, chunk2);
+      sendControl(ws, { type: "dictation_stop" });
+
+      await vi.advanceTimersByTimeAsync(10);
+
+      expect(provider.transcribe).toHaveBeenCalledTimes(1);
+      const wav = provider.transcribe.mock.calls[0][0] as Buffer;
+      const expected = encodeWav([chunk1, chunk2]);
+      expect(Buffer.compare(wav, expected)).toBe(0);
+    });
   });
 
   describe("retranscribe timer", () => {
-    it("calls STT after interval elapses", async () => {
+    it("calls provider after interval elapses", async () => {
       sendControl(ws, { type: "dictation_start" });
       sendAudio(ws, silencePcm(500));
 
       // Advance past the 2s retranscribe interval
       await vi.advanceTimersByTimeAsync(2100);
 
-      expect(fetchFn).toHaveBeenCalled();
+      expect(provider.transcribe).toHaveBeenCalled();
       const results = messagesOfType(ws, "dictation_result");
       expect(results.length).toBeGreaterThanOrEqual(1);
       expect(results[0].text).toBe("hello world");
@@ -334,35 +356,29 @@ describe("DictationManager", () => {
     it("does not retranscribe with zero audio", async () => {
       sendControl(ws, { type: "dictation_start" });
       await vi.advanceTimersByTimeAsync(2100);
-      // No STT call since there's no audio
-      expect(fetchFn).not.toHaveBeenCalled();
+      // No provider call since there's no audio
+      expect(provider.transcribe).not.toHaveBeenCalled();
     });
   });
 
-  describe("STT proxy", () => {
-    it("sends multipart form-data with WAV to STT endpoint", async () => {
+  describe("STT provider", () => {
+    it("calls provider with valid WAV on finalize", async () => {
       sendControl(ws, { type: "dictation_start" });
       sendAudio(ws, silencePcm(1000));
       sendControl(ws, { type: "dictation_stop" });
 
       await vi.advanceTimersByTimeAsync(10);
 
-      const fn = fetchFn as ReturnType<typeof vi.fn>;
-      expect(fn).toHaveBeenCalled();
-      const [url, opts] = fn.mock.calls[0] as [string, RequestInit];
-      expect(url).toBe("http://localhost:9847/v1/audio/transcriptions");
-      expect(opts.method).toBe("POST");
-      // Body is FormData
-      expect(opts.body).toBeInstanceOf(FormData);
+      expect(provider.transcribe).toHaveBeenCalledTimes(1);
+      const wav = provider.transcribe.mock.calls[0][0] as Buffer;
+      // Verify it's a valid WAV
+      expect(wav.toString("ascii", 0, 4)).toBe("RIFF");
+      expect(wav.toString("ascii", 8, 12)).toBe("WAVE");
     });
 
-    it("handles STT failure on retranscribe with non-fatal error", async () => {
-      const failFetch = vi.fn().mockRejectedValue(new Error("connection refused"));
-      const mgr = new DictationManager(
-        testConfig(),
-        "/tmp/test",
-        failFetch as unknown as typeof globalThis.fetch,
-      );
+    it("handles provider failure on retranscribe with non-fatal error", async () => {
+      const failProvider = failingSttProvider("connection refused");
+      const mgr = new DictationManager(testConfig(), "/tmp/test", failProvider);
       const fakeWs = new FakeWebSocket();
       mgr.handleConnection(fakeWs as unknown as WebSocket);
 
@@ -377,13 +393,9 @@ describe("DictationManager", () => {
       expect(errors[0].fatal).toBe(false);
     });
 
-    it("handles STT failure on finalize with fatal error", async () => {
-      const failFetch = vi.fn().mockRejectedValue(new Error("connection refused"));
-      const mgr = new DictationManager(
-        testConfig(),
-        "/tmp/test",
-        failFetch as unknown as typeof globalThis.fetch,
-      );
+    it("handles provider failure on finalize with fatal error", async () => {
+      const failProvider = failingSttProvider("connection refused");
+      const mgr = new DictationManager(testConfig(), "/tmp/test", failProvider);
       const fakeWs = new FakeWebSocket();
       mgr.handleConnection(fakeWs as unknown as WebSocket);
 
@@ -399,17 +411,9 @@ describe("DictationManager", () => {
       expect(errors[0].fatal).toBe(true);
     });
 
-    it("handles non-OK HTTP response from STT", async () => {
-      const badFetch = vi.fn().mockResolvedValue({
-        ok: false,
-        status: 500,
-        text: async () => "Internal Server Error",
-      });
-      const mgr = new DictationManager(
-        testConfig(),
-        "/tmp/test",
-        badFetch as unknown as typeof globalThis.fetch,
-      );
+    it("handles provider HTTP error on finalize", async () => {
+      const failProvider = failingSttProvider("STT HTTP 500: Internal Server Error");
+      const mgr = new DictationManager(testConfig(), "/tmp/test", failProvider);
       const fakeWs = new FakeWebSocket();
       mgr.handleConnection(fakeWs as unknown as WebSocket);
 
@@ -432,11 +436,13 @@ describe("DictationManager", () => {
         new_corrections: [{ original: "hello world", corrected: "Hello World" }],
         new_terms: [],
       };
-      const dualFetch = mockSttAndLlmFetch("hello world", llmResponse);
+      const sttProvider = mockSttProvider("hello world");
+      const llmFetch = mockLlmFetch(llmResponse);
       const mgr = new DictationManager(
         testConfig({ llmCorrectionEnabled: true }),
         "/tmp/test",
-        dualFetch,
+        sttProvider,
+        llmFetch,
       );
       const fakeWs = new FakeWebSocket();
       mgr.handleConnection(fakeWs as unknown as WebSocket);
@@ -454,29 +460,21 @@ describe("DictationManager", () => {
     });
 
     it("sends correct LLM request format with thinking disabled", async () => {
-      const dualFetch = vi.fn().mockImplementation(async (url: string) => {
-        if (typeof url === "string" && url.includes("/v1/audio/transcriptions")) {
-          return {
-            ok: true,
-            json: async () => ({ text: "test" }),
-            text: async () => '{"text":"test"}',
-          };
-        }
-        return {
-          ok: true,
-          json: async () => ({
-            choices: [
-              { message: { content: '{"corrected":"test","new_corrections":[],"new_terms":[]}' } },
-            ],
-          }),
-          text: async () => "",
-        };
+      const llmFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          choices: [
+            { message: { content: '{"corrected":"test","new_corrections":[],"new_terms":[]}' } },
+          ],
+        }),
+        text: async () => "",
       }) as unknown as typeof globalThis.fetch;
 
       const mgr = new DictationManager(
         testConfig({ llmCorrectionEnabled: true }),
         "/tmp/test",
-        dualFetch,
+        mockSttProvider("test"),
+        llmFetch,
       );
       const fakeWs = new FakeWebSocket();
       mgr.handleConnection(fakeWs as unknown as WebSocket);
@@ -487,33 +485,26 @@ describe("DictationManager", () => {
 
       await vi.advanceTimersByTimeAsync(10);
 
-      // Find the LLM call
-      const calls = (dualFetch as ReturnType<typeof vi.fn>).mock.calls;
-      const llmCall = calls.find(
-        (c: unknown[]) => typeof c[0] === "string" && (c[0] as string).includes("chat/completions"),
-      );
-      expect(llmCall).toBeDefined();
-      const body = JSON.parse((llmCall![1] as RequestInit).body as string);
+      // Inspect the LLM fetch call
+      const fn = llmFetch as ReturnType<typeof vi.fn>;
+      expect(fn).toHaveBeenCalledTimes(1);
+      const [url, opts] = fn.mock.calls[0] as [string, RequestInit];
+      expect(url).toContain("chat/completions");
+      const body = JSON.parse(opts.body as string);
       expect(body.chat_template_kwargs).toEqual({ enable_thinking: false });
       expect(body.model).toBe("test-llm");
       expect(body.temperature).toBe(0);
     });
 
     it("falls back to raw ASR text when LLM fails", async () => {
-      const failLlmFetch = vi.fn().mockImplementation(async (url: string) => {
-        if (typeof url === "string" && url.includes("/v1/audio/transcriptions")) {
-          return {
-            ok: true,
-            json: async () => ({ text: "raw asr text" }),
-            text: async () => '{"text":"raw asr text"}',
-          };
-        }
-        throw new Error("LLM timeout");
-      }) as unknown as typeof globalThis.fetch;
+      const failLlmFetch = vi
+        .fn()
+        .mockRejectedValue(new Error("LLM timeout")) as unknown as typeof globalThis.fetch;
 
       const mgr = new DictationManager(
         testConfig({ llmCorrectionEnabled: true }),
         "/tmp/test",
+        mockSttProvider("raw asr text"),
         failLlmFetch,
       );
       const fakeWs = new FakeWebSocket();
@@ -542,31 +533,23 @@ describe("DictationManager", () => {
       expect(finals).toHaveLength(1);
       expect(finals[0].text).toBe("hello world");
       expect(finals[0].uncorrected).toBeUndefined();
-      // Only STT call, no LLM call
-      expect(fetchFn as ReturnType<typeof vi.fn>).toHaveBeenCalledTimes(1);
+      // Only provider was called, no LLM
+      expect(provider.transcribe).toHaveBeenCalledTimes(1);
     });
 
     it("handles LLM returning non-JSON gracefully", async () => {
-      const badLlmFetch = vi.fn().mockImplementation(async (url: string) => {
-        if (typeof url === "string" && url.includes("/v1/audio/transcriptions")) {
-          return {
-            ok: true,
-            json: async () => ({ text: "raw text" }),
-            text: async () => '{"text":"raw text"}',
-          };
-        }
-        return {
-          ok: true,
-          json: async () => ({
-            choices: [{ message: { content: "I cannot help with that" } }],
-          }),
-          text: async () => "",
-        };
+      const badLlmFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          choices: [{ message: { content: "I cannot help with that" } }],
+        }),
+        text: async () => "",
       }) as unknown as typeof globalThis.fetch;
 
       const mgr = new DictationManager(
         testConfig({ llmCorrectionEnabled: true }),
         "/tmp/test",
+        mockSttProvider("raw text"),
         badLlmFetch,
       );
       const fakeWs = new FakeWebSocket();
@@ -595,11 +578,12 @@ describe("DictationManager", () => {
         ],
         new_terms: ["DictationManager", "SwiftUI"],
       };
-      const dualFetch = mockSttAndLlmFetch("opie server on the max studio", llmResponse);
+      const llmFetch = mockLlmFetch(llmResponse);
       const mgr = new DictationManager(
         testConfig({ llmCorrectionEnabled: true }),
         "/tmp/test",
-        dualFetch,
+        mockSttProvider("opie server on the max studio"),
+        llmFetch,
       );
       const fakeWs = new FakeWebSocket();
       mgr.handleConnection(fakeWs as unknown as WebSocket);
@@ -622,7 +606,7 @@ describe("DictationManager", () => {
         new_corrections: [],
         new_terms: ["Oppi", "Oppi", "SwiftUI"],
       };
-      const dualFetch = vi.fn().mockResolvedValue({
+      const llmFetch = vi.fn().mockResolvedValue({
         ok: true,
         json: async () => ({
           choices: [{ message: { content: JSON.stringify(llmResponse) } }],
@@ -633,7 +617,8 @@ describe("DictationManager", () => {
       const mgr = new DictationManager(
         testConfig({ llmCorrectionEnabled: true }),
         "/tmp/test",
-        dualFetch,
+        mockSttProvider(""),
+        llmFetch,
       );
 
       // Call twice — second call should not duplicate terms
@@ -642,13 +627,13 @@ describe("DictationManager", () => {
 
       // Verify fetch was called (we can't directly inspect the dictionary,
       // but the second call would include "Oppi" in the prompt if it exists)
-      expect(dualFetch).toHaveBeenCalledTimes(2);
+      expect(llmFetch).toHaveBeenCalledTimes(2);
     });
   });
 
   describe("max duration", () => {
     it("sends fatal error and finalizes when max duration exceeded", async () => {
-      const mgr = new DictationManager(testConfig({ maxDurationSec: 1 }), "/tmp/test", fetchFn);
+      const mgr = new DictationManager(testConfig({ maxDurationSec: 1 }), "/tmp/test", provider);
       const fakeWs = new FakeWebSocket();
       mgr.handleConnection(fakeWs as unknown as WebSocket);
 

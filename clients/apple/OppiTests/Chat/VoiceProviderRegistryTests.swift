@@ -9,6 +9,6 @@ struct VoiceProviderRegistryTests {
 
         #expect(registry.provider(for: .classicDictation)?.id == .appleClassicDictation)
         #expect(registry.provider(for: .modernSpeech)?.id == .appleModernSpeech)
-        #expect(registry.provider(for: .remoteASR)?.id == .remoteASR)
+        #expect(registry.provider(for: .serverDictation)?.id == .oppiServer)
     }
 }

@@ -7,15 +7,26 @@
 
 // ─── Config ───
 
+export type SttProviderType = "mlx-server" | "openai" | "deepgram" | "elevenlabs";
+
 export interface DictationConfig {
-  /** STT backend endpoint (OpenAI-compatible /v1/audio/transcriptions). */
+  /** STT provider type. Default: "mlx-server". */
+  sttProvider?: SttProviderType;
+
+  /** STT backend endpoint. */
   sttEndpoint: string;
 
   /** Model to request from the STT backend. */
   sttModel: string;
 
-  /** API key for the STT backend (sent as Bearer token). Omit or empty = no auth. */
+  /** API key for the STT backend. Omit or empty = no auth. */
   sttApiKey?: string;
+
+  /** Auth header style: "bearer" (default, OpenAI-style) or "x-api-key" (NanoGPT-style). */
+  sttAuthStyle?: "bearer" | "x-api-key";
+
+  /** Language hint for providers that support it (ISO-639-1). */
+  sttLanguage?: string;
 
   /** Base retranscribe interval in ms (adaptive — widens as audio grows). */
   retranscribeIntervalMs: number;
@@ -34,6 +45,18 @@ export interface DictationConfig {
 
   /** Whether to run LLM correction on finalize. */
   llmCorrectionEnabled: boolean;
+
+  // ─── STT decode knobs (mlx-server specific, ignored by other providers) ───
+  /** Sampling temperature sent to the STT model (0 = greedy). */
+  sttTemperature?: number;
+  /** Top-k sampling for STT model. */
+  sttTopK?: number;
+  /** Top-p (nucleus) sampling for STT model. */
+  sttTopP?: number;
+  /** Repetition penalty for STT model. */
+  sttRepetitionPenalty?: number;
+  /** Context size used for repetition penalty calculation. */
+  sttRepetitionContextSize?: number;
 }
 
 export const DEFAULT_DICTATION_CONFIG: DictationConfig = {
@@ -42,10 +65,16 @@ export const DEFAULT_DICTATION_CONFIG: DictationConfig = {
   sttApiKey: "",
   retranscribeIntervalMs: 2000,
   preserveAudio: true,
-  maxDurationSec: 300,
+  maxDurationSec: 0,
   llmEndpoint: "http://localhost:8400",
   llmModel: "Qwen3.5-122B-A10B-4bit",
-  llmCorrectionEnabled: true,
+  llmCorrectionEnabled: false,
+  // STT decode knobs — tuned for live dictation with Qwen3-ASR
+  sttTemperature: 0.01,
+  sttTopK: 1,
+  sttTopP: 0.9,
+  sttRepetitionPenalty: 1.28,
+  sttRepetitionContextSize: 64,
 };
 
 // ─── Client -> Server messages ───
@@ -72,6 +101,12 @@ export type DictationClientMessage =
 
 export interface DictationReadyMessage {
   type: "dictation_ready";
+  /** STT provider identifier (e.g. "mlx-server", "openai", "deepgram"). */
+  sttProvider?: string;
+  /** STT model identifier. */
+  sttModel?: string;
+  /** Whether LLM correction is enabled for finalization. */
+  llmCorrectionEnabled?: boolean;
 }
 
 export interface DictationResultMessage {
@@ -117,4 +152,21 @@ export interface DictationAudioMetadata {
   language?: string;
   model: string;
   sttEndpoint: string;
+  /** Pipeline timing breakdown (populated when metrics are available). */
+  timing?: {
+    /** Total session wall-clock time (start to final) in ms. */
+    sessionMs: number;
+    /** Final STT call latency in ms. */
+    finalSttMs: number;
+    /** Real-time factor for final STT (sttMs / audioDurationMs). <1.0 = faster than real-time. */
+    sttRealTimeFactor: number;
+    /** LLM correction call latency in ms (0 if disabled or skipped). */
+    llmCorrectionMs: number;
+    /** Audio save (FLAC encode + write) latency in ms. */
+    audioSaveMs: number;
+    /** Total finalize latency in ms (final STT + LLM + save). */
+    finalizeMs: number;
+    /** Number of retranscribe ticks during the session. */
+    retranscribeCount: number;
+  };
 }
