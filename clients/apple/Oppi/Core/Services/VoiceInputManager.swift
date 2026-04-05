@@ -154,6 +154,10 @@ final class VoiceInputManager {
     /// When nil, remote mode is unavailable.
     private(set) var remoteASREndpoint: URL?
 
+    /// Server credentials for the Oppi dictation endpoint.
+    /// Set by ChatView when server connection is active.
+    private(set) var serverCredentials: ServerCredentials?
+
     /// User-selected engine routing mode.
     private(set) var engineMode: EngineMode = .auto
 
@@ -185,6 +189,17 @@ final class VoiceInputManager {
     /// Configure the remote ASR endpoint. Pass nil to disable.
     func setRemoteASREndpoint(_ url: URL?) {
         applyRemoteEndpoint(url)
+    }
+
+    /// Update server credentials for the dictation WebSocket endpoint.
+    /// Called by ChatView when the server connection state changes.
+    func setServerCredentials(_ credentials: ServerCredentials?) {
+        serverCredentials = credentials
+        if credentials != nil {
+            invalidateModelCache()
+        }
+        let host = credentials?.host ?? "none"
+        logger.info("Server credentials: \(credentials != nil ? "set" : "cleared") host=\(host)")
     }
 
     /// Set engine mode directly.
@@ -235,7 +250,8 @@ final class VoiceInputManager {
         let decision = await routeResolver.resolveEngine(
             mode: engineMode,
             remoteEndpoint: remoteASREndpoint,
-            fallback: fallback
+            fallback: fallback,
+            serverCredentials: serverCredentials
         )
 
         if let probe = decision.probe {
@@ -315,7 +331,8 @@ final class VoiceInputManager {
                 context: VoiceProviderContext(
                     locale: locale,
                     source: source,
-                    remoteEndpoint: remoteASREndpoint
+                    remoteEndpoint: remoteASREndpoint,
+                    serverCredentials: serverCredentials
                 )
             )
 
@@ -419,7 +436,8 @@ final class VoiceInputManager {
         let context = VoiceProviderContext(
             locale: locale,
             source: source,
-            remoteEndpoint: remoteASREndpoint
+            remoteEndpoint: remoteASREndpoint,
+            serverCredentials: serverCredentials
         )
         let provider = provider(for: engine)
         var modelPathTag = "warm_cache"

@@ -349,9 +349,87 @@ enum FlatSegment: Sendable {
         return WorkspaceFileURL.make(baseURL: baseURL, workspaceID: workspaceID, filePath: resolvedPath)
     }
 
+    // MARK: - Inline Markdown Rendering
+
+    /// Render markdown source to a single `NSAttributedString` for simple
+    /// contexts where block-level subviews (code containers, tables) aren't
+    /// needed.
+    ///
+    /// Used for user message bubbles — renders all blocks inline with styled
+    /// attributed text. Code blocks become monospaced text, tables become
+    /// pipe-delimited rows, and text blocks get full inline formatting
+    /// (bold, italic, code, links, blockquotes, lists).
+    static func renderMarkdownInline(
+        _ markdown: String,
+        defaultTextColor: UIColor,
+        palette: ThemePalette
+    ) -> NSAttributedString {
+        let blocks = parseCommonMark(markdown)
+        guard !blocks.isEmpty else {
+            return NSAttributedString(string: markdown, attributes: [
+                .font: AppFont.messageBody,
+                .foregroundColor: defaultTextColor,
+            ])
+        }
+
+        let result = NSMutableAttributedString()
+        let paragraphSep = NSAttributedString(string: "\n\n")
+
+        for (i, block) in blocks.enumerated() {
+            if i > 0 {
+                result.append(paragraphSep)
+            }
+
+            switch block {
+            case .codeBlock(_, let code):
+                let trimmed = code.trimmingCharacters(in: .whitespacesAndNewlines)
+                let codeSize = UIFont.preferredFont(forTextStyle: .subheadline).pointSize
+                let codeFont = FontPreferences.codeFont.font(size: codeSize, weight: .regular)
+                result.append(NSAttributedString(string: trimmed, attributes: [
+                    .font: codeFont,
+                    .foregroundColor: UIColor(palette.mdCode),
+                    .backgroundColor: UIColor(palette.bgHighlight),
+                ]))
+
+            case .thematicBreak:
+                result.append(NSAttributedString(string: "───", attributes: [
+                    .foregroundColor: UIColor(palette.comment),
+                    .font: AppFont.messageBody,
+                ]))
+
+            case .table(let headers, let rows):
+                let codeSize = UIFont.preferredFont(forTextStyle: .subheadline).pointSize
+                let codeFont = FontPreferences.codeFont.font(size: codeSize, weight: .regular)
+                var lines: [String] = []
+                let headerTexts = headers.map { plainText(from: $0) }
+                lines.append(headerTexts.joined(separator: " | "))
+                lines.append(headerTexts.map { String(repeating: "─", count: max($0.count, 3)) }.joined(separator: " | "))
+                for row in rows {
+                    lines.append(row.map { plainText(from: $0) }.joined(separator: " | "))
+                }
+                result.append(NSAttributedString(string: lines.joined(separator: "\n"), attributes: [
+                    .font: codeFont,
+                    .foregroundColor: defaultTextColor,
+                ]))
+
+            default:
+                let attributed = attributedString(
+                    for: block, palette: palette, defaultTextColor: defaultTextColor
+                )
+                result.append(NSAttributedString(attributed))
+            }
+        }
+
+        return result
+    }
+
     // MARK: - Block → AttributedString
 
-    private static func attributedString(for block: MarkdownBlock, palette: ThemePalette) -> AttributedString {
+    private static func attributedString(
+        for block: MarkdownBlock,
+        palette: ThemePalette,
+        defaultTextColor: UIColor? = nil
+    ) -> AttributedString {
         switch block {
         case .heading(let level, let inlines):
             let font = Self.headingFont(level: level)
@@ -375,16 +453,17 @@ enum FlatSegment: Sendable {
 
         case .paragraph(let inlines):
             let bodyFont = AppFont.messageBody
+            let bodyColor = defaultTextColor ?? UIColor(palette.fg)
             // Fast path: single text inline (most common paragraph shape).
             if inlines.count == 1, case .text(let string) = inlines[0] {
                 var container = AttributeContainer()
-                container.uiKit.foregroundColor = UIColor(palette.fg)
+                container.uiKit.foregroundColor = bodyColor
                 container.uiKit.font = bodyFont
                 return AttributedString(string, attributes: container)
             }
             // Build with foreground baked into initial construction,
             // then override specific inline colors (code, links) by range.
-            var result = renderInlinesWithDefaultColor(inlines, palette: palette, defaultColor: UIColor(palette.fg))
+            var result = renderInlinesWithDefaultColor(inlines, palette: palette, defaultColor: bodyColor)
             // Set body font on runs that don't have an explicit font (plain text).
             // Inline code already has monospace font set; this preserves it.
             for run in result.runs {
@@ -399,7 +478,7 @@ enum FlatSegment: Sendable {
             result.uiKit.foregroundColor = UIColor(palette.mdQuoteBorder)
             for (i, child) in children.enumerated() {
                 if i > 0 { result.append(AttributedString("\n")) }
-                result.append(attributedString(for: child, palette: palette))
+                result.append(attributedString(for: child, palette: palette, defaultTextColor: defaultTextColor))
             }
             result.uiKit.foregroundColor = UIColor(palette.mdQuote)
             return result
@@ -413,7 +492,7 @@ enum FlatSegment: Sendable {
                 result.append(bullet)
                 for (j, block) in blocks.enumerated() {
                     if j > 0 { result.append(AttributedString("\n    ")) }
-                    result.append(attributedString(for: block, palette: palette))
+                    result.append(attributedString(for: block, palette: palette, defaultTextColor: defaultTextColor))
                 }
             }
             return result
@@ -429,7 +508,7 @@ enum FlatSegment: Sendable {
                 result.append(num)
                 for (j, block) in blocks.enumerated() {
                     if j > 0 { result.append(AttributedString("\n     ")) }
-                    var content = attributedString(for: block, palette: palette)
+                    var content = attributedString(for: block, palette: palette, defaultTextColor: defaultTextColor)
                     Self.applyListFont(to: &content, listFont: listFont)
                     result.append(content)
                 }
@@ -451,7 +530,7 @@ enum FlatSegment: Sendable {
                 }
                 for (j, block) in item.content.enumerated() {
                     if j > 0 { result.append(AttributedString("\n     ")) }
-                    var content = attributedString(for: block, palette: palette)
+                    var content = attributedString(for: block, palette: palette, defaultTextColor: defaultTextColor)
                     if item.checked {
                         content.uiKit.foregroundColor = UIColor(palette.comment)
                         content.strikethroughStyle = .single

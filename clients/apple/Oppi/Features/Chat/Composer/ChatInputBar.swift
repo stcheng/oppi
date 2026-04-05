@@ -697,12 +697,34 @@ struct PendingImage: Identifiable, Sendable {
     let thumbnail: UIImage
     let attachment: ImageAttachment
 
+    /// Anthropic API limit for base64 image content (bytes).
+    private static let maxBase64Bytes = 5_242_880
+
+    /// Max raw JPEG bytes that will stay under 5MB after base64 encoding (~33% inflation).
+    private static let maxRawBytes = maxBase64Bytes * 3 / 4  // ~3.93MB
+
     /// Create from a UIImage. Resizes large images and compresses to JPEG.
+    /// Progressively reduces quality if the result exceeds the 5MB API limit.
     static func from(_ image: UIImage) -> Self {
         let resized = downsample(image, maxDimension: 1568)
-        let jpegData = resized.jpegData(compressionQuality: 0.85) ?? Data()
-        let base64 = jpegData.base64EncodedString()
         let thumb = downsample(image, maxDimension: 112)
+
+        // Start at high quality, step down if base64 would exceed 5MB
+        var quality: CGFloat = 0.85
+        var jpegData = resized.jpegData(compressionQuality: quality) ?? Data()
+
+        while jpegData.count > maxRawBytes, quality > 0.2 {
+            quality -= 0.1
+            jpegData = resized.jpegData(compressionQuality: quality) ?? Data()
+        }
+
+        // If still too large after quality reduction, downsample further
+        if jpegData.count > maxRawBytes {
+            let smaller = downsample(image, maxDimension: 1024)
+            jpegData = smaller.jpegData(compressionQuality: 0.7) ?? Data()
+        }
+
+        let base64 = jpegData.base64EncodedString()
 
         return Self(
             id: UUID().uuidString,

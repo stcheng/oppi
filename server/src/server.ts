@@ -60,6 +60,8 @@ import { DnsSdBonjourPublisher, isDnsSdAvailable } from "./bonjour-dns-sd.js";
 import { prepareTlsForServer, readCertificateFingerprint, tlsSchemeForConfig } from "./tls.js";
 import { RuntimeUpdateManager } from "./runtime-update.js";
 import { SessionTitleGenerator } from "./session-title-generator.js";
+import { DictationManager } from "./dictation-manager.js";
+import { DEFAULT_DICTATION_CONFIG } from "./dictation-types.js";
 
 function hasAuthHeader(header: string | string[] | undefined): boolean {
   if (typeof header === "string") {
@@ -338,6 +340,8 @@ export class Server {
   private routes!: RouteHandler;
   // WebSocket message command dispatcher (/stream full-session commands)
   private wsMessageHandler!: WsMessageHandler;
+  // Dictation pipeline (/dictation WS endpoint)
+  private dictationManager: DictationManager | undefined;
 
   constructor(storage: Storage, apnsConfig?: APNsConfig) {
     this.storage = storage;
@@ -424,6 +428,14 @@ export class Server {
       trackConnection: (ws) => this.trackConnection(ws),
       untrackConnection: (ws) => this.untrackConnection(ws),
     });
+
+    // Dictation pipeline (accumulate-and-retranscribe STT proxy)
+    if (config.asr?.sttEndpoint) {
+      this.dictationManager = new DictationManager(
+        { ...DEFAULT_DICTATION_CONFIG, ...config.asr },
+        dataDir,
+      );
+    }
 
     // Server resource utilization sampler
     this.resourceSampler = new ServerResourceSampler({
@@ -1156,6 +1168,31 @@ export class Server {
         "WWW-Authenticate": 'Bearer realm="oppi"',
         Connection: "close",
         "Content-Length": "0",
+      });
+      return;
+    }
+
+    if (url.pathname === "/dictation") {
+      if (!this.dictationManager) {
+        writeUpgradeErrorResponse(socket, "HTTP/1.1 404 Not Found", {
+          Connection: "close",
+          "Content-Length": "0",
+        });
+        return;
+      }
+      if (!isAllowedWebSocketOrigin(req, this.transportScheme)) {
+        writeUpgradeErrorResponse(socket, "HTTP/1.1 403 Forbidden", {
+          Connection: "close",
+          "Content-Length": "0",
+        });
+        return;
+      }
+      this.wss.handleUpgrade(req, socket, head, (ws) => {
+        this.trackConnection(ws);
+        ws.on("close", () => this.untrackConnection(ws));
+        // Safe: guarded by `!this.dictationManager` check above
+        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+        this.dictationManager!.handleConnection(ws);
       });
       return;
     }

@@ -239,6 +239,7 @@ struct ChatView: View {
             }
             .task(id: connectionTaskKey) {
                 voiceInputManager.activeSessionId = sessionId
+                voiceInputManager.setServerCredentials(connection.credentials)
                 await sessionManager.connect(
                     connection: connection,
                     sessionStore: sessionStore

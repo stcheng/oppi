@@ -115,7 +115,7 @@ enum AppPreferences {
                 switch self {
                 case .auto: return "Automatic"
                 case .onDevice: return "On-device"
-                case .remote: return "Remote ASR"
+                case .remote: return "Server"
                 }
             }
         }

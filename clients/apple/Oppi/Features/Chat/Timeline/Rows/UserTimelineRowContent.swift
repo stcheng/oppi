@@ -199,7 +199,15 @@ final class UserTimelineRowContentView: UIView, UIContentView, TimelineRowIntera
         bubbleContainer.backgroundColor = UIColor(palette.userMessageBg)
 
         let displayText = Self.displayText(for: configuration.text)
-        messageTextView.text = displayText.text
+        if displayText.text.isEmpty {
+            messageTextView.attributedText = nil
+        } else {
+            messageTextView.attributedText = FlatSegment.renderMarkdownInline(
+                displayText.text,
+                defaultTextColor: UIColor(palette.userMessageText),
+                palette: palette
+            )
+        }
         messageTextView.isHidden = displayText.text.isEmpty
         bubbleContainer.isHidden = displayText.text.isEmpty && configuration.images.isEmpty
         iconLabel.isHidden = displayText.text.isEmpty && configuration.images.isEmpty

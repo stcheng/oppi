@@ -27,6 +27,8 @@ export interface SessionLifecycleCoordinatorDeps {
   getChildAutoStopWhenDone: () => boolean;
   /** Grace period (ms) for a child that hasn't produced output yet. */
   getChildStartupGraceMs: () => number;
+  /** Idle timeout (ms) for a child that completed work (when autoStopWhenDone is false). */
+  getChildIdleTimeoutMs: () => number;
   hasActiveChildren: (sessionId: string) => boolean;
   metrics?: ServerMetricCollector;
 }
@@ -112,10 +114,23 @@ export class SessionLifecycleCoordinator {
         return;
       }
 
-      // If auto-stop is disabled and work is done, fall through to the
-      // normal idle timeout path (same as root sessions).
+      // If auto-stop is disabled and work is done, use childIdleTimeoutMs
+      // (typically matches prompt-cache TTL) so follow-ups reuse cached context.
       if (hasCompletedWork) {
-        // fall through to normal idle timeout below
+        const childIdleMs = this.deps.getChildIdleTimeoutMs();
+        const timer = setTimeout(() => {
+          const current = this.deps.getActiveSession(key);
+          if (current?.session.parentSessionId && current.session.status === "ready") {
+            console.log("[session] child idle timeout (post-work)", {
+              sessionId: current.session.id,
+              parent: current.session.parentSessionId,
+            });
+            this.pendingIdleTimeoutKeys.add(key);
+            void this.deps.stopSession(current.session.id);
+          }
+        }, childIdleMs);
+        this.idleTimers.set(key, timer);
+        return;
       } else {
         // Child hasn't produced output yet — either still initializing,
         // waiting for the LLM, or in sandbox VM boot. Give it time.

@@ -727,6 +727,10 @@ export class SdkBackend {
     }
     this.pendingExtensionResponses.clear();
 
+    // Emit session_shutdown so extensions can run cleanup (e.g. knowledge indexing).
+    // This mirrors what AgentSessionRuntimeHost.dispose() does in the TUI.
+    this.piSession.extensionRunner?.emit({ type: "session_shutdown" }).catch(() => {});
+
     this.unsub();
     this.piSession.dispose();
   }

@@ -255,6 +255,21 @@ export interface ServerConfig {
    * behave — depth limits, auto-stop behavior, timeouts, and polling.
    */
   subagents?: SubagentConfig;
+
+  /**
+   * ASR / dictation pipeline configuration. Controls the /dictation WS endpoint,
+   * STT backend, LLM correction, and audio preservation.
+   */
+  asr?: {
+    sttEndpoint?: string;
+    sttModel?: string;
+    retranscribeIntervalMs?: number;
+    preserveAudio?: boolean;
+    maxDurationSec?: number;
+    llmEndpoint?: string;
+    llmModel?: string;
+    llmCorrectionEnabled?: boolean;
+  };
 }
 
 export interface SubagentConfig {
@@ -264,9 +279,14 @@ export interface SubagentConfig {
   maxDepth: number;
   /** Whether children automatically stop after completing their work.
    *  When true, a child that finishes and goes idle is stopped immediately.
-   *  When false, children stay alive for follow-up messages.
-   *  Default: true */
+   *  When false, children stay alive until childIdleTimeoutMs expires.
+   *  Default: false */
   autoStopWhenDone: boolean;
+  /** How long (ms) a child session stays alive after completing its work
+   *  when autoStopWhenDone is false. Matches typical prompt-cache TTL so
+   *  follow-up messages can reuse the cached context.
+   *  Default: 300000 (5 min) */
+  childIdleTimeoutMs: number;
   /** How long (ms) to wait for a child to start producing output before
    *  giving up. Covers VM boot time, model loading, and first LLM call.
    *  Default: 60000 (60s) */

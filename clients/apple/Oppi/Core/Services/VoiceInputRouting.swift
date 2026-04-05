@@ -30,7 +30,8 @@ final class VoiceInputRouteResolver {
     func resolveEngine(
         mode: VoiceInputManager.EngineMode,
         remoteEndpoint: URL?,
-        fallback: VoiceInputManager.TranscriptionEngine
+        fallback: VoiceInputManager.TranscriptionEngine,
+        serverCredentials: ServerCredentials? = nil
     ) async -> (engine: VoiceInputManager.TranscriptionEngine, probe: RemoteProbeResult?) {
         switch mode {
         case .onDevice:
@@ -38,6 +39,11 @@ final class VoiceInputRouteResolver {
         case .remote:
             return (.remoteASR, nil)
         case .auto:
+            // Prefer server dictation when credentials are available
+            if serverCredentials != nil {
+                return (.remoteASR, nil)
+            }
+
             guard let remoteEndpoint else {
                 return (fallback, nil)
             }

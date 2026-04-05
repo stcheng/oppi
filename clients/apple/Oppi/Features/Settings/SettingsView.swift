@@ -13,6 +13,7 @@ struct SettingsView: View {
     @State private var telemetryEnabled = AppPreferences.Telemetry.isEnabled
     @State private var selectedCodeFont = FontPreferences.codeFont
     @State private var useMonoMessages = FontPreferences.useMonoForMessages
+    @State private var voiceEngineMode = VoiceInputPreferences.engineMode
 
     var body: some View {
         List {
@@ -137,6 +138,24 @@ struct SettingsView: View {
                 Text("Text Selection")
             } footer: {
                 Text("Customize the π menu shown when selecting text in chat and file views.")
+            }
+
+            Section {
+                Picker("Dictation Engine", selection: $voiceEngineMode) {
+                    ForEach(AppPreferences.Voice.EngineMode.allCases) { mode in
+                        Text(mode.label).tag(mode)
+                    }
+                }
+                .onChange(of: voiceEngineMode) { _, newValue in
+                    VoiceInputPreferences.setEngineMode(newValue)
+                }
+            } header: {
+                Text("Voice Input")
+            } footer: {
+                Text(
+                    "Automatic uses server dictation when connected, falling back to on-device. "
+                        + "Server dictation uses your Mac's ASR model for higher accuracy."
+                )
             }
 
             if ReleaseFeatures.liveActivitiesEnabled {

@@ -51,6 +51,7 @@ function makeDeps(
     getSessionIdleTimeoutMs: () => 300_000,
     getChildAutoStopWhenDone: () => true,
     getChildStartupGraceMs: () => 60_000,
+    getChildIdleTimeoutMs: () => 300_000,
     hasActiveChildren: vi.fn(() => false),
     ...overrides,
   };
@@ -244,10 +245,37 @@ describe("SessionLifecycleCoordinator.resetIdleTimer", () => {
     vi.advanceTimersByTime(0);
     expect(deps.stopSession).not.toHaveBeenCalled();
 
-    // Should fall through to normal idle timeout (300s from makeDeps)
+    // Should use childIdleTimeoutMs (300s from makeDeps)
     vi.advanceTimersByTime(299_999);
     expect(deps.stopSession).not.toHaveBeenCalled();
 
+    vi.advanceTimersByTime(1);
+    expect(deps.stopSession).toHaveBeenCalledWith("child-1");
+  });
+
+  it("uses configured childIdleTimeoutMs for completed children", () => {
+    const active = makeActiveSession(
+      {
+        parentSessionId: "parent-1",
+        status: "ready",
+        messageCount: 4,
+        tokens: { input: 1000, output: 500, cacheRead: 0, cacheWrite: 0 },
+      },
+      { outputTokensAtStart: 0 },
+    );
+    const deps = makeDeps(active, {
+      getChildAutoStopWhenDone: () => false,
+      getChildIdleTimeoutMs: () => 120_000, // 2 min
+    });
+    const coordinator = new SessionLifecycleCoordinator(deps);
+
+    coordinator.resetIdleTimer("key");
+
+    // Should NOT stop at 119s
+    vi.advanceTimersByTime(119_999);
+    expect(deps.stopSession).not.toHaveBeenCalled();
+
+    // Should stop at 120s
     vi.advanceTimersByTime(1);
     expect(deps.stopSession).toHaveBeenCalledWith("child-1");
   });

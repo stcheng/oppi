@@ -36,7 +36,8 @@ function defaultRuntimePathEntries(): string[] {
 export function defaultSubagentConfig(): SubagentConfig {
   return {
     maxDepth: 1,
-    autoStopWhenDone: true,
+    autoStopWhenDone: false,
+    childIdleTimeoutMs: 5 * 60_000,
     startupGraceMs: 60_000,
     defaultWaitTimeoutMs: 30 * 60_000,
   };
@@ -702,6 +703,7 @@ function normalizeConfig(
     const allowedSubagentKeys = new Set([
       "maxDepth",
       "autoStopWhenDone",
+      "childIdleTimeoutMs",
       "startupGraceMs",
       "defaultWaitTimeoutMs",
     ]);
@@ -728,6 +730,19 @@ function normalizeConfig(
         subagents.autoStopWhenDone = sa.autoStopWhenDone;
       } else {
         errors.push("config.subagents.autoStopWhenDone: expected boolean");
+        changed = true;
+      }
+    }
+
+    if ("childIdleTimeoutMs" in sa) {
+      if (
+        typeof sa.childIdleTimeoutMs === "number" &&
+        Number.isInteger(sa.childIdleTimeoutMs) &&
+        sa.childIdleTimeoutMs >= 1
+      ) {
+        subagents.childIdleTimeoutMs = sa.childIdleTimeoutMs;
+      } else {
+        errors.push("config.subagents.childIdleTimeoutMs: expected positive integer");
         changed = true;
       }
     }
