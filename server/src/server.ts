@@ -61,7 +61,7 @@ import { prepareTlsForServer, readCertificateFingerprint, tlsSchemeForConfig } f
 import { RuntimeUpdateManager } from "./runtime-update.js";
 import { SessionTitleGenerator } from "./session-title-generator.js";
 import { DictationManager } from "./dictation-manager.js";
-import { DEFAULT_DICTATION_CONFIG } from "./dictation-types.js";
+import { DEFAULT_DICTATION_CONFIG, type DictationConfig } from "./dictation-types.js";
 
 function hasAuthHeader(header: string | string[] | undefined): boolean {
   if (typeof header === "string") {
@@ -431,10 +431,10 @@ export class Server {
 
     // Dictation pipeline (accumulate-and-retranscribe STT proxy)
     if (config.asr?.sttEndpoint) {
-      this.dictationManager = new DictationManager(
-        { ...DEFAULT_DICTATION_CONFIG, ...config.asr },
-        dataDir,
-      );
+      const asrConfig = { ...DEFAULT_DICTATION_CONFIG, ...config.asr } as DictationConfig;
+      // API keys: env vars take priority over config file
+      if (process.env.OPPI_STT_API_KEY) asrConfig.sttApiKey = process.env.OPPI_STT_API_KEY;
+      this.dictationManager = new DictationManager(asrConfig, dataDir);
     }
 
     // Server resource utilization sampler

@@ -364,8 +364,13 @@ export class DictationManager {
     formData.append("dictation_cleanup", "true");
 
     const url = `${this.config.sttEndpoint}/v1/audio/transcriptions`;
+    const headers: Record<string, string> = {};
+    if (this.config.sttApiKey) {
+      headers["Authorization"] = `Bearer ${this.config.sttApiKey}`;
+    }
     const response = await this.fetchFn(url, {
       method: "POST",
+      headers,
       body: formData,
       signal: AbortSignal.timeout(30_000),
     });

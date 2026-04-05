@@ -35,6 +35,7 @@ The iOS app falls back to Apple's on-device dictation.
 |-------|---------|-------------|
 | `sttEndpoint` | *(required)* | STT server URL (OpenAI-compatible) |
 | `sttModel` | `mlx-community/Qwen3-ASR-1.7B-bf16` | Model to request from the STT backend |
+| `sttApiKey` | *(none)* | API key for the STT backend (Bearer token) |
 | `llmEndpoint` | `http://localhost:8400` | LLM server for post-transcription correction |
 | `llmModel` | `Qwen3.5-122B-A10B-4bit` | LLM model for correction |
 | `llmCorrectionEnabled` | `true` | Run LLM correction on dictation stop |
@@ -42,7 +43,28 @@ The iOS app falls back to Apple's on-device dictation.
 | `maxDurationSec` | `300` | Max dictation session length (0 = unlimited) |
 | `retranscribeIntervalMs` | `2000` | Base interval for interim results |
 
-### Minimal config (STT only, no LLM correction)
+### Authentication
+
+For cloud STT providers that require an API key, set it via environment
+variable (recommended) or in the config file:
+
+```bash
+# Environment variable (takes priority)
+export OPPI_STT_API_KEY="gsk_..."
+```
+
+Or in `config.json`:
+
+```json
+{
+  "asr": {
+    "sttEndpoint": "https://api.groq.com/openai",
+    "sttApiKey": "gsk_..."
+  }
+}
+```
+
+### Example: Local STT (no auth)
 
 ```json
 {
@@ -53,7 +75,23 @@ The iOS app falls back to Apple's on-device dictation.
 }
 ```
 
-### Full config
+### Example: Groq (free, no credit card)
+
+Sign up at [console.groq.com/keys](https://console.groq.com/keys) to get
+a free API key. Free tier includes ~8 hours of transcription per day.
+
+```json
+{
+  "asr": {
+    "sttEndpoint": "https://api.groq.com/openai",
+    "sttModel": "whisper-large-v3-turbo",
+    "sttApiKey": "gsk_...",
+    "llmCorrectionEnabled": false
+  }
+}
+```
+
+### Example: Full config (local STT + local LLM)
 
 ```json
 {

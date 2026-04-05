@@ -263,6 +263,7 @@ export interface ServerConfig {
   asr?: {
     sttEndpoint?: string;
     sttModel?: string;
+    sttApiKey?: string;
     retranscribeIntervalMs?: number;
     preserveAudio?: boolean;
     maxDurationSec?: number;

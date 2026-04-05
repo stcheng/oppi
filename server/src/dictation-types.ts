@@ -14,6 +14,9 @@ export interface DictationConfig {
   /** Model to request from the STT backend. */
   sttModel: string;
 
+  /** API key for the STT backend (sent as Bearer token). Omit or empty = no auth. */
+  sttApiKey?: string;
+
   /** Base retranscribe interval in ms (adaptive — widens as audio grows). */
   retranscribeIntervalMs: number;
 
@@ -36,6 +39,7 @@ export interface DictationConfig {
 export const DEFAULT_DICTATION_CONFIG: DictationConfig = {
   sttEndpoint: "http://localhost:9847",
   sttModel: "mlx-community/Qwen3-ASR-1.7B-bf16",
+  sttApiKey: "",
   retranscribeIntervalMs: 2000,
   preserveAudio: true,
   maxDurationSec: 300,
