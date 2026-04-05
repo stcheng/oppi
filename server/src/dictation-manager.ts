@@ -1,9 +1,12 @@
 /**
  * Dictation pipeline manager.
  *
- * Handles per-WS-connection audio accumulation, adaptive retranscription,
- * HTTP proxy to a configurable STT backend, optional LLM post-correction,
- * and lossless audio preservation.
+ * Handles per-WS-connection lifecycle: audio accumulation for FLAC
+ * preservation, forwarding audio to the SttProvider, relaying transcript
+ * updates to the client, optional LLM post-correction, and audio archival.
+ *
+ * All STT providers implement the same streaming interface (SttProvider).
+ * DictationManager has one code path — no branching on provider type.
  */
 
 import { mkdir, readFile, writeFile } from "node:fs/promises";
@@ -18,8 +21,8 @@ import type {
   DictationDictionary,
   DictationAudioMetadata,
 } from "./dictation-types.js";
-import type { SttProvider, SttStreamProvider } from "./stt-provider.js";
-import { isSttStreamProvider } from "./stt-provider.js";
+import type { SttProvider } from "./stt-provider.js";
+import type { HttpSttAdapter } from "./stt-provider.js";
 import type { ServerMetricCollector } from "./server-metric-collector.js";
 
 // ─── Constants ───
@@ -30,26 +33,16 @@ const BITS_PER_SAMPLE = 16;
 const NUM_CHANNELS = 1;
 const BYTES_PER_SAMPLE = BITS_PER_SAMPLE / 8;
 
-/** Adaptive retranscribe thresholds (seconds of audio -> interval ms). */
-const ADAPTIVE_THRESHOLDS: Array<{ maxSeconds: number; intervalMs: number }> = [
-  { maxSeconds: 30, intervalMs: 2000 },
-  { maxSeconds: 60, intervalMs: 4000 },
-  { maxSeconds: 120, intervalMs: 6000 },
-  { maxSeconds: Infinity, intervalMs: 12000 },
-];
-
 /** Initial audio buffer capacity (64 KB ≈ 2s of 16kHz mono 16-bit). */
 const INITIAL_AUDIO_BUFFER_SIZE = 64 * 1024;
 
 // ─── Per-connection session state ───
 
 interface DictationSession {
-  /** Accumulated raw PCM audio (pre-concatenated, grows via amortized doubling). */
+  /** Accumulated raw PCM audio for FLAC preservation (amortized doubling). */
   audioBuffer: Buffer;
   /** Valid byte count within audioBuffer. */
   totalBytes: number;
-  /** Retranscribe timer handle. */
-  timer: ReturnType<typeof setInterval> | null;
   /** Monotonic version counter for dictation_result ordering. */
   version: number;
   /** ISO timestamp when dictation started. */
@@ -58,12 +51,8 @@ interface DictationSession {
   startHrMs: number;
   /** Language hint from client. */
   language?: string;
-  /** Whether a retranscribe request is in flight (prevents overlap). */
-  inflight: boolean;
   /** Set to true once dictation_stop is received. */
   stopping: boolean;
-  /** Count of retranscribe ticks that actually fired an STT call. */
-  retranscribeCount: number;
 }
 
 // ─── WAV encoding ───
@@ -79,22 +68,17 @@ export function encodeWav(pcmChunks: Buffer[]): Buffer {
   const byteRate = SAMPLE_RATE * NUM_CHANNELS * BYTES_PER_SAMPLE;
   const blockAlign = NUM_CHANNELS * BYTES_PER_SAMPLE;
 
-  // RIFF header
   header.write("RIFF", 0);
-  header.writeUInt32LE(36 + dataLength, 4); // file size - 8
+  header.writeUInt32LE(36 + dataLength, 4);
   header.write("WAVE", 8);
-
-  // fmt sub-chunk
   header.write("fmt ", 12);
-  header.writeUInt32LE(16, 16); // sub-chunk size
-  header.writeUInt16LE(1, 20); // audio format: PCM
+  header.writeUInt32LE(16, 16);
+  header.writeUInt16LE(1, 20);
   header.writeUInt16LE(NUM_CHANNELS, 22);
   header.writeUInt32LE(SAMPLE_RATE, 24);
   header.writeUInt32LE(byteRate, 28);
   header.writeUInt16LE(blockAlign, 32);
   header.writeUInt16LE(BITS_PER_SAMPLE, 34);
-
-  // data sub-chunk
   header.write("data", 36);
   header.writeUInt32LE(dataLength, 40);
 
@@ -124,20 +108,6 @@ function makeWavHeader(dataLength: number): Buffer {
   return header;
 }
 
-// ─── Adaptive interval ───
-
-/** Return the retranscribe interval for the given audio duration in seconds. */
-export function adaptiveInterval(audioSeconds: number, baseIntervalMs: number): number {
-  for (const threshold of ADAPTIVE_THRESHOLDS) {
-    if (audioSeconds < threshold.maxSeconds) {
-      // Scale relative to the base interval (default 2000ms)
-      const scale = threshold.intervalMs / 2000;
-      return Math.round(baseIntervalMs * scale);
-    }
-  }
-  return baseIntervalMs * 6; // fallback: 6x base
-}
-
 // ─── DictationManager ───
 
 export class DictationManager {
@@ -147,11 +117,7 @@ export class DictationManager {
   private dictionaryPath: string;
   private dictionaryLoaded = false;
 
-  /** STT provider — either batch (HTTP) or streaming (native process). */
-  private sttProvider: SttProvider | SttStreamProvider;
-
-  /** Whether the provider supports streaming (cached at construction). */
-  private isStreaming: boolean;
+  private sttProvider: SttProvider;
 
   /** Injected fetch — used for LLM correction calls. */
   private fetchFn: typeof globalThis.fetch;
@@ -162,7 +128,7 @@ export class DictationManager {
   constructor(
     config: DictationConfig,
     dataDir: string,
-    sttProvider: SttProvider | SttStreamProvider,
+    sttProvider: SttProvider,
     fetchFn: typeof globalThis.fetch = globalThis.fetch,
     metrics?: ServerMetricCollector,
   ) {
@@ -170,7 +136,6 @@ export class DictationManager {
     this.dataDir = dataDir;
     this.dictionaryPath = join(dataDir, "dictation", "dictionary.json");
     this.sttProvider = sttProvider;
-    this.isStreaming = isSttStreamProvider(sttProvider);
     this.fetchFn = fetchFn;
     this.metrics = metrics ?? null;
   }
@@ -183,11 +148,10 @@ export class DictationManager {
 
     ws.on("message", (data: RawData, isBinary: boolean) => {
       if (isBinary) {
-        // Binary frame = raw PCM audio
-        if (!session) return; // Ignore audio before dictation_start
+        if (!session) return;
         const buf = toBuffer(data);
 
-        // Accumulate for FLAC preservation (both paths need this)
+        // Accumulate for FLAC preservation
         const needed = session.totalBytes + buf.length;
         if (needed > session.audioBuffer.length) {
           const newCap = Math.max(session.audioBuffer.length * 2, needed);
@@ -198,10 +162,8 @@ export class DictationManager {
         buf.copy(session.audioBuffer, session.totalBytes);
         session.totalBytes += buf.length;
 
-        // Streaming: pipe audio to the native process
-        if (this.isStreaming) {
-          (this.sttProvider as SttStreamProvider).feedAudio(buf);
-        }
+        // Feed to STT provider
+        this.sttProvider.feedAudio(buf);
         return;
       }
 
@@ -227,14 +189,11 @@ export class DictationManager {
           session = {
             audioBuffer: Buffer.alloc(INITIAL_AUDIO_BUFFER_SIZE),
             totalBytes: 0,
-            timer: null,
             version: 0,
             startedAt: new Date().toISOString(),
             startHrMs: performance.now(),
             language: msg.language,
-            inflight: false,
             stopping: false,
-            retranscribeCount: 0,
           };
           this.startSession(ws, session);
           break;
@@ -255,7 +214,7 @@ export class DictationManager {
 
         case "dictation_cancel":
           if (session) {
-            this.cancelSession(session);
+            this.cancelSession();
             session = null;
           }
           break;
@@ -271,14 +230,14 @@ export class DictationManager {
 
     ws.on("close", () => {
       if (session) {
-        this.cancelSession(session);
+        this.cancelSession();
         session = null;
       }
     });
 
     ws.on("error", () => {
       if (session) {
-        this.cancelSession(session);
+        this.cancelSession();
         session = null;
       }
     });
@@ -287,7 +246,6 @@ export class DictationManager {
   // ─── Session lifecycle ───
 
   private startSession(ws: WebSocket, session: DictationSession): void {
-    // Load dictionary on first use
     void this.ensureDictionary();
 
     sendMessage(ws, {
@@ -297,96 +255,39 @@ export class DictationManager {
       llmCorrectionEnabled: this.config.llmCorrectionEnabled,
     });
 
-    if (this.isStreaming) {
-      // Streaming path: spawn the native process and wire token output
-      this.startStreamingSession(ws, session);
-    } else {
-      // HTTP path: start retranscribe timer
-      this.scheduleRetranscribe(ws, session);
-    }
-  }
-
-  private startStreamingSession(ws: WebSocket, session: DictationSession): void {
-    const provider = this.sttProvider as SttStreamProvider;
     try {
-      provider.start();
+      this.sttProvider.start();
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err);
       sendMessage(ws, {
         type: "dictation_error",
-        error: `STT process failed to start: ${errorMsg}`,
+        error: `STT failed to start: ${errorMsg}`,
         fatal: true,
       });
       return;
     }
 
-    // Forward tokens to the client as dictation_result
-    provider.onToken((_text: string) => {
+    // Forward transcript updates to the client
+    this.sttProvider.onToken((text: string) => {
       if (session.stopping) return;
       session.version++;
-      // Send the full accumulated text so far (provider accumulates internally)
-      // We read it on stop(); for interim results, build from tokens
       sendMessage(ws, {
         type: "dictation_result",
-        text: _text,
+        text,
         version: session.version,
       });
     });
   }
 
-  private scheduleRetranscribe(ws: WebSocket, session: DictationSession): void {
-    if (session.timer) clearInterval(session.timer);
-
-    const audioSeconds = session.totalBytes / (SAMPLE_RATE * BYTES_PER_SAMPLE * NUM_CHANNELS);
-    const intervalMs = adaptiveInterval(audioSeconds, this.config.retranscribeIntervalMs);
-
-    session.timer = setInterval(() => {
-      if (session.stopping) return;
-
-      // Re-schedule with updated interval if audio grew past a threshold
-      const currentSeconds = session.totalBytes / (SAMPLE_RATE * BYTES_PER_SAMPLE * NUM_CHANNELS);
-      const newInterval = adaptiveInterval(currentSeconds, this.config.retranscribeIntervalMs);
-      if (newInterval !== intervalMs) {
-        this.scheduleRetranscribe(ws, session);
-      }
-
-      // Check max duration
-      if (this.config.maxDurationSec > 0 && currentSeconds >= this.config.maxDurationSec) {
-        session.stopping = true;
-        sendMessage(ws, {
-          type: "dictation_error",
-          error: `Max duration reached (${this.config.maxDurationSec}s)`,
-          fatal: true,
-        });
-        this.finalizeSession(ws, session);
-        return;
-      }
-
-      void this.retranscribe(ws, session);
-    }, intervalMs);
-  }
-
-  private cancelSession(session: DictationSession): void {
-    if (session.timer) {
-      clearInterval(session.timer);
-      session.timer = null;
-    }
-    // Stop the streaming process if active (fire-and-forget)
-    if (this.isStreaming) {
-      void (this.sttProvider as SttStreamProvider).stop().catch(() => {});
-    }
+  private cancelSession(): void {
+    void this.sttProvider.stop().catch(() => {});
   }
 
   private async finalizeSession(ws: WebSocket, session: DictationSession): Promise<void> {
     const finalizeT0 = performance.now();
     const langTag = session.language ?? "unknown";
 
-    if (session.timer) {
-      clearInterval(session.timer);
-      session.timer = null;
-    }
-
-    // Emit session-level metrics regardless of outcome
+    // Emit session-level metrics
     const sessionMs = Math.round(performance.now() - session.startHrMs);
     const audioDurationMs = Math.round(
       (session.totalBytes / (SAMPLE_RATE * BYTES_PER_SAMPLE * NUM_CHANNELS)) * 1000,
@@ -401,33 +302,31 @@ export class DictationManager {
       audioDurationMs,
       this.metricTags({ language: langTag }),
     );
+
+    // Retranscribe count — available from HttpSttAdapter, 0 for native
+    const retranscribeCount =
+      "getRetranscribeCount" in this.sttProvider
+        ? (this.sttProvider as HttpSttAdapter).getRetranscribeCount()
+        : 0;
     this.metrics?.record(
       "server.dictation_retranscribe_count",
-      session.retranscribeCount,
+      retranscribeCount,
       this.metricTags({ language: langTag }),
     );
 
     if (session.totalBytes === 0) {
-      // For streaming, still need to stop the process
-      if (this.isStreaming) {
-        await (this.sttProvider as SttStreamProvider).stop().catch(() => {});
-      }
+      await this.sttProvider.stop().catch(() => {});
       sendMessage(ws, { type: "dictation_final", text: "" });
       return;
     }
 
-    // Final STT transcription
+    // Final STT — close audio stream, get final text
     const audioSeconds = session.totalBytes / (SAMPLE_RATE * BYTES_PER_SAMPLE * NUM_CHANNELS);
     let text: string;
     let finalSttMs = 0;
     const sttT0 = performance.now();
     try {
-      if (this.isStreaming) {
-        // Streaming: close stdin and wait for final text
-        text = await (this.sttProvider as SttStreamProvider).stop();
-      } else {
-        text = await this.callStt(session);
-      }
+      text = await this.sttProvider.stop();
       finalSttMs = Math.round(performance.now() - sttT0);
       this.metrics?.record(
         "server.dictation_stt_ms",
@@ -490,7 +389,6 @@ export class DictationManager {
           llmCorrectionMs,
           this.metricTags({ changed: "error", llm_model: this.config.llmModel, language: langTag }),
         );
-        // LLM failure is non-fatal — use raw ASR text
         console.warn(
           "[dictation] LLM correction failed, using raw ASR:",
           err instanceof Error ? err.message : err,
@@ -510,9 +408,9 @@ export class DictationManager {
         finalSttMs,
         sttRealTimeFactor: sttRtf,
         llmCorrectionMs,
-        audioSaveMs: 0, // updated after save completes
-        finalizeMs: 0, // updated after save completes
-        retranscribeCount: session.retranscribeCount,
+        audioSaveMs: 0,
+        finalizeMs: 0,
+        retranscribeCount,
       };
       try {
         audioId = await this.saveAudio(session, text, timing);
@@ -532,7 +430,6 @@ export class DictationManager {
       }
     }
 
-    // Total finalize duration
     const finalizeMs = Math.round(performance.now() - finalizeT0);
     this.metrics?.record(
       "server.dictation_finalize_ms",
@@ -548,71 +445,7 @@ export class DictationManager {
     });
   }
 
-  // ─── STT proxy ───
-
-  private async retranscribe(ws: WebSocket, session: DictationSession): Promise<void> {
-    if (session.inflight) {
-      this.metrics?.record(
-        "server.dictation_retranscribe_skip",
-        1,
-        this.metricTags({ reason: "inflight", language: session.language ?? "unknown" }),
-      );
-      return;
-    }
-    if (session.totalBytes === 0) {
-      this.metrics?.record(
-        "server.dictation_retranscribe_skip",
-        1,
-        this.metricTags({ reason: "empty", language: session.language ?? "unknown" }),
-      );
-      return;
-    }
-    session.inflight = true;
-    session.retranscribeCount++;
-
-    const audioSeconds = session.totalBytes / (SAMPLE_RATE * BYTES_PER_SAMPLE * NUM_CHANNELS);
-    const t0 = performance.now();
-    try {
-      const text = await this.callStt(session);
-      const sttMs = Math.round(performance.now() - t0);
-      this.metrics?.record(
-        "server.dictation_stt_ms",
-        sttMs,
-        this.metricTags({
-          phase: "retranscribe",
-          audio_seconds: String(Math.round(audioSeconds)),
-          language: session.language ?? "unknown",
-        }),
-      );
-      if (audioSeconds > 0) {
-        this.metrics?.record(
-          "server.dictation_stt_audio_ratio",
-          Math.round((sttMs / (audioSeconds * 1000)) * 100) / 100,
-          this.metricTags({ phase: "retranscribe", language: session.language ?? "unknown" }),
-        );
-      }
-      session.version++;
-      sendMessage(ws, { type: "dictation_result", text, version: session.version });
-    } catch (err) {
-      this.metrics?.record(
-        "server.dictation_error",
-        1,
-        this.metricTags({
-          phase: "stt",
-          fatal: "false",
-          error_kind: "stt",
-          language: session.language ?? "unknown",
-        }),
-      );
-      sendMessage(ws, {
-        type: "dictation_error",
-        error: `STT error: ${err instanceof Error ? err.message : String(err)}`,
-        fatal: false,
-      });
-    } finally {
-      session.inflight = false;
-    }
-  }
+  // ─── Metrics ───
 
   private metricTags(extra: Record<string, string>): Record<string, string> {
     return {
@@ -625,8 +458,12 @@ export class DictationManager {
   }
 
   private providerKind(): string {
-    if (this.isStreaming) return "local_binary";
-    return this.sttProvider.name === "mlx-server" ? "local_server" : "cloud";
+    // HttpSttAdapter has an `endpoint` property; native providers don't
+    if ("endpoint" in this.sttProvider) {
+      const name = this.sttProvider.name;
+      return name === "mlx-server" ? "local_server" : "cloud";
+    }
+    return "local_binary";
   }
 
   private providerId(): string {
@@ -646,20 +483,8 @@ export class DictationManager {
     }
   }
 
-  /** Encode accumulated audio and send to the STT provider (HTTP path only). */
-  async callStt(session: DictationSession): Promise<string> {
-    if (this.isStreaming) {
-      throw new Error("callStt() should not be used with streaming providers");
-    }
-    const provider = this.sttProvider as SttProvider;
-    const pcm = session.audioBuffer.subarray(0, session.totalBytes);
-    const wav = Buffer.concat([makeWavHeader(session.totalBytes), pcm]);
-    return provider.transcribe(wav);
-  }
-
   // ─── LLM correction ───
 
-  /** Run transcript through LLM for correction and dictionary maintenance. */
   async correctWithLlm(rawText: string): Promise<string | null> {
     const dictTerms =
       Object.entries(this.dictionary.corrections)
@@ -698,7 +523,6 @@ export class DictationManager {
     const content = completion.choices?.[0]?.message?.content;
     if (!content) return null;
 
-    // Parse JSON from the LLM response — handle markdown code fences
     const jsonStr = extractJsonFromResponse(content);
     let parsed: {
       corrected?: string;
@@ -712,7 +536,6 @@ export class DictationManager {
       return null;
     }
 
-    // Merge new corrections and terms into dictionary
     if (parsed.new_corrections?.length || parsed.new_terms?.length) {
       if (parsed.new_corrections) {
         for (const c of parsed.new_corrections) {
@@ -784,7 +607,6 @@ export class DictationManager {
     const pcm = session.audioBuffer.subarray(0, session.totalBytes);
     const wav = Buffer.concat([makeWavHeader(session.totalBytes), pcm]);
 
-    // Try FLAC via ffmpeg, fall back to WAV
     let audioPath: string;
     try {
       const flacData = await encodeFlac(wav);
@@ -795,10 +617,11 @@ export class DictationManager {
       await writeFile(audioPath, wav);
     }
 
-    // Save metadata
     const durationMs = Math.round(
       (session.totalBytes / (SAMPLE_RATE * BYTES_PER_SAMPLE * NUM_CHANNELS)) * 1000,
     );
+    const sttEndpoint =
+      "endpoint" in this.sttProvider ? (this.sttProvider as HttpSttAdapter).endpoint : "local";
     const metadata: DictationAudioMetadata = {
       audioId,
       startedAt: session.startedAt,
@@ -807,8 +630,7 @@ export class DictationManager {
       transcript,
       language: session.language,
       model: this.sttProvider.model,
-      sttEndpoint:
-        "endpoint" in this.sttProvider ? (this.sttProvider as SttProvider).endpoint : "local",
+      sttEndpoint,
       ...(timing ? { timing } : {}),
     };
     await writeFile(join(dir, `${audioId}.json`), JSON.stringify(metadata, null, 2));
@@ -832,28 +654,23 @@ function toBuffer(data: RawData): Buffer {
 }
 
 /**
- * Extract JSON from an LLM response that may be wrapped in markdown code fences
- * or prefixed with chain-of-thought text.
+ * Extract JSON from an LLM response that may be wrapped in markdown code fences.
  */
 export function extractJsonFromResponse(content: string): string {
-  // Try to extract from ```json ... ``` blocks
   const fenceMatch = content.match(/```(?:json)?\s*\n?([\s\S]*?)\n?\s*```/);
   if (fenceMatch) return fenceMatch[1].trim();
 
-  // Try to find a JSON object directly
   const braceStart = content.indexOf("{");
   const braceEnd = content.lastIndexOf("}");
   if (braceStart !== -1 && braceEnd > braceStart) {
     return content.slice(braceStart, braceEnd + 1);
   }
 
-  // Return as-is and let JSON.parse fail with a clear error
   return content;
 }
 
 /**
  * Encode WAV buffer to FLAC via ffmpeg subprocess.
- * Resolves with the FLAC buffer, rejects if ffmpeg is unavailable.
  */
 export function encodeFlac(wavBuffer: Buffer): Promise<Buffer> {
   return new Promise((resolve, reject) => {

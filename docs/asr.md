@@ -200,8 +200,8 @@ make blas          # uses Accelerate.framework on macOS
 Verify it works:
 
 ```bash
-# Should exit cleanly with no output (silence in, silence out)
-dd if=/dev/zero bs=32000 count=1 2>/dev/null | ./qwen_asr -d qwen3-asr-0.6b --stdin --stream --silent
+# Should print nothing meaningful (silence → no speech tokens)
+dd if=/dev/zero bs=32000 count=1 2>/dev/null | ./qwen_asr -d qwen3-asr-0.6b --stdin --stream
 ```
 
 Then point your Oppi config at the binary and model directory.

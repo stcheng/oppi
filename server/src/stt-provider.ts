@@ -1,64 +1,51 @@
 /**
  * STT provider interface and implementations.
  *
- * Each provider encapsulates its own HTTP call, auth, field mapping,
- * and response parsing. The DictationManager just calls transcribe().
+ * Single interface: SttProvider (streaming).
+ * All providers — native binary, HTTP batch — implement the same lifecycle:
+ *   start() → feedAudio()* → onToken() → stop() → final text
  *
- * Provider landscape (April 2026):
- * - OpenAI / Groq: multipart form, Bearer auth, {text} response
- * - Deepgram: raw audio body, Token auth, nested results.channels response
- * - ElevenLabs: multipart form, xi-api-key header, {text} response
- * - MLX Server (ours): OpenAI-compatible + extra knobs
+ * HTTP providers wrap their batch transcribe() behind HttpSttAdapter,
+ * which owns the retranscribe timer and WAV encoding internally.
+ * DictationManager never branches on provider type.
  */
 
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { homedir } from "node:os";
 import type { DictationConfig } from "./dictation-types.js";
 
+// ─── PCM constants (shared with dictation-manager) ───
+
+const SAMPLE_RATE = 16000;
+const BYTES_PER_SAMPLE = 2; // 16-bit
+const NUM_CHANNELS = 1;
+
 // ─── Interface ───
 
-/** Audio in → text out. That's the contract. */
-export interface SttProvider {
-  /** Provider identifier for logs/metrics (e.g. "mlx-server", "openai"). */
-  readonly name: string;
-  /** Model identifier used for transcription. */
-  readonly model: string;
-  /** Endpoint URL for metadata/debugging. */
-  readonly endpoint: string;
-  /** Transcribe WAV audio buffer to text. */
-  transcribe(audio: Buffer): Promise<string>;
-}
-
-// ─── Streaming Interface ───
-
 /**
- * Streaming STT provider. Instead of batch transcribe(), audio is piped
- * incrementally and tokens arrive via callback as they're decoded.
+ * Streaming STT provider. Audio is piped incrementally and transcript
+ * updates arrive via callback as they're produced.
  *
- * Lifecycle: start() → feedAudio()* → stop() → final text
+ * Lifecycle: start() → feedAudio()* → onToken() callbacks → stop() → final text
+ *
+ * Both native binary providers (qwen_asr) and HTTP batch providers
+ * (MLX, OpenAI, Deepgram, ElevenLabs) implement this interface.
+ * HTTP providers use HttpSttAdapter which handles accumulation,
+ * WAV encoding, and retranscribe timing internally.
  */
-export interface SttStreamProvider {
-  /** Provider identifier for logs/metrics. */
+export interface SttProvider {
+  /** Provider identifier for logs/metrics (e.g. "mlx-server", "qwen_asr"). */
   readonly name: string;
   /** Model identifier. */
   readonly model: string;
-  /** Spawn the STT process and prepare for audio input. */
+  /** Spawn the STT process / prepare for audio input. */
   start(): void;
-  /** Write raw PCM audio (s16le, 16kHz, mono) to the process. */
+  /** Write raw PCM audio (s16le, 16kHz, mono). */
   feedAudio(pcm: Buffer): void;
-  /** Register callback for incremental token output. */
+  /** Register callback for transcript updates (full replacement text each time). */
   onToken(cb: (text: string) => void): void;
-  /** Close audio input, wait for process exit, return full accumulated text. */
+  /** Close audio input, wait for completion, return full final text. */
   stop(): Promise<string>;
-}
-
-/** Type guard: does this provider support streaming? */
-export function isSttStreamProvider(
-  provider: SttProvider | SttStreamProvider,
-): provider is SttStreamProvider {
-  return (
-    "start" in provider && "feedAudio" in provider && "onToken" in provider && "stop" in provider
-  );
 }
 
 // ─── Helpers ───
@@ -70,254 +57,225 @@ function bufferToBlob(buf: Buffer, type: string): Blob {
   return new Blob([ab], { type });
 }
 
-// ─── MLX Server Provider ───
+/** Create a 44-byte WAV header for the given PCM data length. */
+function makeWavHeader(dataLength: number): Buffer {
+  const header = Buffer.alloc(44);
+  const byteRate = SAMPLE_RATE * NUM_CHANNELS * BYTES_PER_SAMPLE;
+  const blockAlign = NUM_CHANNELS * BYTES_PER_SAMPLE;
 
-export interface MlxServerSttOptions {
-  endpoint: string;
-  model: string;
-  apiKey?: string;
-  authStyle?: "bearer" | "x-api-key";
-  temperature?: number;
-  topK?: number;
-  topP?: number;
-  repetitionPenalty?: number;
-  repetitionContextSize?: number;
+  header.write("RIFF", 0);
+  header.writeUInt32LE(36 + dataLength, 4);
+  header.write("WAVE", 8);
+  header.write("fmt ", 12);
+  header.writeUInt32LE(16, 16);
+  header.writeUInt16LE(1, 20);
+  header.writeUInt16LE(NUM_CHANNELS, 22);
+  header.writeUInt32LE(SAMPLE_RATE, 24);
+  header.writeUInt32LE(byteRate, 28);
+  header.writeUInt16LE(blockAlign, 32);
+  header.writeUInt16LE(16, 34); // bits per sample
+  header.write("data", 36);
+  header.writeUInt32LE(dataLength, 40);
+
+  return header;
+}
+
+/** Resolve ~ to home directory in paths. */
+function expandTilde(p: string): string {
+  if (p.startsWith("~/")) return homedir() + p.slice(1);
+  return p;
+}
+
+// ─── Adaptive interval (used by HttpSttAdapter) ───
+
+const ADAPTIVE_THRESHOLDS: Array<{ maxSeconds: number; intervalMs: number }> = [
+  { maxSeconds: 30, intervalMs: 2000 },
+  { maxSeconds: 60, intervalMs: 4000 },
+  { maxSeconds: 120, intervalMs: 6000 },
+  { maxSeconds: Infinity, intervalMs: 12000 },
+];
+
+/** Return the retranscribe interval for the given audio duration. */
+export function adaptiveInterval(audioSeconds: number, baseIntervalMs: number): number {
+  for (const threshold of ADAPTIVE_THRESHOLDS) {
+    if (audioSeconds < threshold.maxSeconds) {
+      const scale = threshold.intervalMs / 2000;
+      return Math.round(baseIntervalMs * scale);
+    }
+  }
+  return baseIntervalMs * 6;
+}
+
+// ─── HTTP batch transcriber (internal, used by HttpSttAdapter) ───
+
+/**
+ * Batch transcription function. Implementations call an HTTP endpoint
+ * with a WAV buffer and return the transcript text.
+ */
+interface HttpTranscriber {
+  readonly name: string;
+  readonly model: string;
+  readonly endpoint: string;
+  transcribe(audio: Buffer): Promise<string>;
+}
+
+// ─── HttpSttAdapter ───
+
+/** Initial audio buffer capacity (64 KB ≈ 2s). */
+const INITIAL_AUDIO_BUFFER_SIZE = 64 * 1024;
+
+export interface HttpSttAdapterOptions {
+  /** Base retranscribe interval in ms (adaptive — widens as audio grows). */
+  retranscribeIntervalMs: number;
+  /** Max dictation session duration in seconds (0 = unlimited). */
+  maxDurationSec: number;
 }
 
 /**
- * Local MLX inference server (our own). OpenAI-compatible base +
- * extra knobs (repetition_penalty, top_k, etc.) and dictation_cleanup
- * post-processing.
+ * Wraps any HTTP batch transcriber behind the SttProvider streaming interface.
+ *
+ * Accumulates PCM audio, runs a retranscribe timer that periodically
+ * encodes WAV and calls the underlying transcriber, and fires the
+ * onToken callback with the full replacement text each time.
+ *
+ * The retranscribe timer, adaptive intervals, WAV encoding, and
+ * inflight guard all live here — not in DictationManager.
  */
-export class MlxServerSttProvider implements SttProvider {
-  readonly name = "mlx-server";
+export class HttpSttAdapter implements SttProvider {
+  readonly name: string;
   readonly model: string;
+  /** Endpoint URL (exposed for metadata/audio preservation). */
   readonly endpoint: string;
-  private opts: MlxServerSttOptions;
-  private fetchFn: typeof globalThis.fetch;
 
-  constructor(opts: MlxServerSttOptions, fetchFn: typeof globalThis.fetch = globalThis.fetch) {
+  /** @internal Exposed for testing. */
+  readonly transcriber: HttpTranscriber;
+  private opts: HttpSttAdapterOptions;
+  private tokenCb: ((text: string) => void) | null = null;
+
+  private audioBuffer: Buffer = Buffer.alloc(0);
+  private totalBytes = 0;
+  private timer: ReturnType<typeof setInterval> | null = null;
+  private inflight = false;
+  private stopped = false;
+  private lastText = "";
+  private retranscribeCount = 0;
+
+  constructor(transcriber: HttpTranscriber, opts: HttpSttAdapterOptions) {
+    this.transcriber = transcriber;
+    this.name = transcriber.name;
+    this.model = transcriber.model;
+    this.endpoint = transcriber.endpoint;
     this.opts = opts;
-    this.model = opts.model;
-    this.endpoint = opts.endpoint;
-    this.fetchFn = fetchFn;
   }
 
-  async transcribe(audio: Buffer): Promise<string> {
-    const formData = new FormData();
-    formData.append("file", bufferToBlob(audio, "audio/wav"), "audio.wav");
-    formData.append("model", this.opts.model);
+  start(): void {
+    this.audioBuffer = Buffer.alloc(INITIAL_AUDIO_BUFFER_SIZE);
+    this.totalBytes = 0;
+    this.lastText = "";
+    this.inflight = false;
+    this.stopped = false;
+    this.retranscribeCount = 0;
+    this.scheduleRetranscribe();
+  }
 
-    // MLX server decode knobs
-    if (this.opts.temperature !== undefined)
-      formData.append("temperature", String(this.opts.temperature));
-    if (this.opts.topK !== undefined) formData.append("top_k", String(this.opts.topK));
-    if (this.opts.topP !== undefined) formData.append("top_p", String(this.opts.topP));
-    if (this.opts.repetitionPenalty !== undefined)
-      formData.append("repetition_penalty", String(this.opts.repetitionPenalty));
-    if (this.opts.repetitionContextSize !== undefined)
-      formData.append("repetition_context_size", String(this.opts.repetitionContextSize));
+  feedAudio(pcm: Buffer): void {
+    if (this.stopped) return;
+    const needed = this.totalBytes + pcm.length;
+    if (needed > this.audioBuffer.length) {
+      const newCap = Math.max(this.audioBuffer.length * 2, needed);
+      const newBuf = Buffer.alloc(newCap);
+      this.audioBuffer.copy(newBuf, 0, 0, this.totalBytes);
+      this.audioBuffer = newBuf;
+    }
+    pcm.copy(this.audioBuffer, this.totalBytes);
+    this.totalBytes += pcm.length;
+  }
 
-    // MLX server post-processing
-    formData.append("dictation_cleanup", "true");
+  onToken(cb: (text: string) => void): void {
+    this.tokenCb = cb;
+  }
 
-    const url = `${this.opts.endpoint}/v1/audio/transcriptions`;
-    const headers: Record<string, string> = {};
-    if (this.opts.apiKey) {
-      const style = this.opts.authStyle ?? "bearer";
-      if (style === "x-api-key") {
-        headers["x-api-key"] = this.opts.apiKey;
-      } else {
-        headers["Authorization"] = `Bearer ${this.opts.apiKey}`;
+  async stop(): Promise<string> {
+    this.stopped = true;
+    if (this.timer) {
+      clearInterval(this.timer);
+      this.timer = null;
+    }
+
+    // Do one final transcription if we have audio
+    if (this.totalBytes > 0) {
+      try {
+        this.lastText = await this.callTranscribe();
+      } catch {
+        // Return whatever we had from the last successful retranscribe
       }
     }
+    return this.lastText;
+  }
 
-    const response = await this.fetchFn(url, {
-      method: "POST",
-      headers,
-      body: formData,
-      signal: AbortSignal.timeout(30_000),
-    });
+  /** Exposed for metrics: how many retranscribe calls were made. */
+  getRetranscribeCount(): number {
+    return this.retranscribeCount;
+  }
 
-    if (!response.ok) {
-      const body = await response.text().catch(() => "");
-      throw new Error(`STT HTTP ${response.status}: ${body}`);
+  // ─── Internal ───
+
+  private scheduleRetranscribe(): void {
+    if (this.timer) clearInterval(this.timer);
+    const audioSeconds = this.totalBytes / (SAMPLE_RATE * BYTES_PER_SAMPLE * NUM_CHANNELS);
+    const intervalMs = adaptiveInterval(audioSeconds, this.opts.retranscribeIntervalMs);
+
+    this.timer = setInterval(() => {
+      if (this.stopped) return;
+
+      // Re-schedule if audio grew past a threshold
+      const currentSeconds = this.totalBytes / (SAMPLE_RATE * BYTES_PER_SAMPLE * NUM_CHANNELS);
+      const newInterval = adaptiveInterval(currentSeconds, this.opts.retranscribeIntervalMs);
+      if (newInterval !== intervalMs) {
+        this.scheduleRetranscribe();
+      }
+
+      // Check max duration
+      if (this.opts.maxDurationSec > 0 && currentSeconds >= this.opts.maxDurationSec) {
+        this.stopped = true;
+        if (this.timer) {
+          clearInterval(this.timer);
+          this.timer = null;
+        }
+        return;
+      }
+
+      void this.retranscribe();
+    }, intervalMs);
+  }
+
+  private async retranscribe(): Promise<void> {
+    if (this.inflight || this.totalBytes === 0) return;
+    this.inflight = true;
+    this.retranscribeCount++;
+
+    try {
+      const text = await this.callTranscribe();
+      this.lastText = text;
+      this.tokenCb?.(text);
+    } catch (err) {
+      console.warn(
+        "[http-stt] Retranscribe error:",
+        err instanceof Error ? err.message : String(err),
+      );
+    } finally {
+      this.inflight = false;
     }
+  }
 
-    const result = (await response.json()) as { text?: string };
-    return result.text ?? "";
+  private async callTranscribe(): Promise<string> {
+    const pcm = this.audioBuffer.subarray(0, this.totalBytes);
+    const wav = Buffer.concat([makeWavHeader(this.totalBytes), pcm]);
+    return this.transcriber.transcribe(wav);
   }
 }
 
-// ─── OpenAI-Compatible Provider ───
-// Works with: OpenAI, Groq, and any OpenAI-compatible STT endpoint.
-
-export interface OpenAiSttOptions {
-  endpoint: string; // e.g. "https://api.openai.com" or "https://api.groq.com/openai"
-  model: string; // e.g. "whisper-1" or "whisper-large-v3-turbo"
-  apiKey: string;
-  language?: string;
-  temperature?: number;
-  prompt?: string;
-}
-
-/**
- * Standard OpenAI /v1/audio/transcriptions endpoint.
- * Also works with Groq (endpoint: "https://api.groq.com/openai").
- */
-export class OpenAiSttProvider implements SttProvider {
-  readonly name = "openai";
-  readonly model: string;
-  readonly endpoint: string;
-  private opts: OpenAiSttOptions;
-  private fetchFn: typeof globalThis.fetch;
-
-  constructor(opts: OpenAiSttOptions, fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.opts = opts;
-    this.model = opts.model;
-    this.endpoint = opts.endpoint;
-    this.fetchFn = fetchFn;
-  }
-
-  async transcribe(audio: Buffer): Promise<string> {
-    const formData = new FormData();
-    formData.append("file", bufferToBlob(audio, "audio/wav"), "audio.wav");
-    formData.append("model", this.opts.model);
-
-    // Standard OpenAI fields only
-    if (this.opts.language) formData.append("language", this.opts.language);
-    if (this.opts.temperature !== undefined)
-      formData.append("temperature", String(this.opts.temperature));
-    if (this.opts.prompt) formData.append("prompt", this.opts.prompt);
-
-    const url = `${this.opts.endpoint}/v1/audio/transcriptions`;
-    const response = await this.fetchFn(url, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${this.opts.apiKey}` },
-      body: formData,
-      signal: AbortSignal.timeout(30_000),
-    });
-
-    if (!response.ok) {
-      const body = await response.text().catch(() => "");
-      throw new Error(`STT HTTP ${response.status}: ${body}`);
-    }
-
-    const result = (await response.json()) as { text?: string };
-    return result.text ?? "";
-  }
-}
-
-// ─── Deepgram Provider ───
-
-export interface DeepgramSttOptions {
-  endpoint?: string; // default: "https://api.deepgram.com"
-  apiKey: string;
-  model?: string; // default: "nova-3"
-  language?: string;
-  smartFormat?: boolean; // default: true
-}
-
-/**
- * Deepgram pre-recorded audio API. Sends raw audio bytes (not multipart),
- * model/language as query params, auth via Token header.
- */
-export class DeepgramSttProvider implements SttProvider {
-  readonly name = "deepgram";
-  readonly model: string;
-  readonly endpoint: string;
-  private opts: DeepgramSttOptions;
-  private fetchFn: typeof globalThis.fetch;
-
-  constructor(opts: DeepgramSttOptions, fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.opts = opts;
-    this.model = opts.model ?? "nova-3";
-    this.endpoint = opts.endpoint ?? "https://api.deepgram.com";
-    this.fetchFn = fetchFn;
-  }
-
-  async transcribe(audio: Buffer): Promise<string> {
-    const params = new URLSearchParams();
-    params.set("model", this.model);
-    if (this.opts.smartFormat !== false) params.set("smart_format", "true");
-    if (this.opts.language) params.set("language", this.opts.language);
-
-    const url = `${this.endpoint}/v1/listen?${params.toString()}`;
-    const response = await this.fetchFn(url, {
-      method: "POST",
-      headers: {
-        Authorization: `Token ${this.opts.apiKey}`,
-        "Content-Type": "audio/wav",
-      },
-      body: new Uint8Array(audio),
-      signal: AbortSignal.timeout(30_000),
-    });
-
-    if (!response.ok) {
-      const body = await response.text().catch(() => "");
-      throw new Error(`STT HTTP ${response.status}: ${body}`);
-    }
-
-    // Deepgram nests transcript under results.channels[0].alternatives[0].transcript
-    const result = (await response.json()) as {
-      results?: { channels?: Array<{ alternatives?: Array<{ transcript?: string }> }> };
-    };
-    return result.results?.channels?.[0]?.alternatives?.[0]?.transcript ?? "";
-  }
-}
-
-// ─── ElevenLabs Provider ───
-
-export interface ElevenLabsSttOptions {
-  endpoint?: string; // default: "https://api.elevenlabs.io"
-  apiKey: string;
-  model?: string; // default: "scribe_v2"
-  languageCode?: string;
-}
-
-/**
- * ElevenLabs Speech-to-Text API. Multipart form with model_id (not model),
- * language_code (not language), auth via xi-api-key header.
- */
-export class ElevenLabsSttProvider implements SttProvider {
-  readonly name = "elevenlabs";
-  readonly model: string;
-  readonly endpoint: string;
-  private opts: ElevenLabsSttOptions;
-  private fetchFn: typeof globalThis.fetch;
-
-  constructor(opts: ElevenLabsSttOptions, fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.opts = opts;
-    this.model = opts.model ?? "scribe_v2";
-    this.endpoint = opts.endpoint ?? "https://api.elevenlabs.io";
-    this.fetchFn = fetchFn;
-  }
-
-  async transcribe(audio: Buffer): Promise<string> {
-    const formData = new FormData();
-    formData.append("file", bufferToBlob(audio, "audio/wav"), "audio.wav");
-    formData.append("model_id", this.model);
-    if (this.opts.languageCode) formData.append("language_code", this.opts.languageCode);
-
-    const url = `${this.endpoint}/v1/speech-to-text`;
-    const response = await this.fetchFn(url, {
-      method: "POST",
-      headers: { "xi-api-key": this.opts.apiKey },
-      body: formData,
-      signal: AbortSignal.timeout(30_000),
-    });
-
-    if (!response.ok) {
-      const body = await response.text().catch(() => "");
-      throw new Error(`STT HTTP ${response.status}: ${body}`);
-    }
-
-    const result = (await response.json()) as { text?: string };
-    return result.text ?? "";
-  }
-}
-
-// ─── Qwen ASR Provider ───
+// ─── Qwen ASR Provider (native binary) ───
 
 export interface QwenAsrOptions {
   /** Path to the qwen_asr binary. */
@@ -327,24 +285,23 @@ export interface QwenAsrOptions {
 }
 
 /**
- * Streaming STT via antirez/qwen-asr (pure C binary).
+ * Streaming STT via antirez/qwen-asr (pure C binary, MIT license).
+ * https://github.com/antirez/qwen-asr
  *
- * Spawns `qwen_asr -d <modelDir> --stdin --stream --silent` per session.
+ * Spawns `qwen_asr -d <modelDir> --stdin --stream` per session.
  * Pipes raw s16le 16kHz mono PCM to stdin, reads decoded tokens from stdout.
- * The binary handles internal chunking, prefix rollback, and sliding window.
+ * The binary handles internal 2s chunking, prefix rollback, and sliding window.
  */
-export class QwenAsrProvider implements SttStreamProvider {
+export class QwenAsrProvider implements SttProvider {
   readonly name = "qwen_asr";
   readonly model: string;
   private opts: QwenAsrOptions;
   private proc: ChildProcessWithoutNullStreams | null = null;
   private tokenCb: ((text: string) => void) | null = null;
   private accumulated = "";
-  private stdoutRemainder = "";
 
   constructor(opts: QwenAsrOptions) {
     this.opts = opts;
-    // Derive model name from the directory basename
     const parts = opts.modelDir.replace(/\/+$/, "").split("/");
     this.model = parts[parts.length - 1] || "qwen-asr";
   }
@@ -352,29 +309,22 @@ export class QwenAsrProvider implements SttStreamProvider {
   start(): void {
     if (this.proc) throw new Error("QwenAsrProvider already started");
     this.accumulated = "";
-    this.stdoutRemainder = "";
 
-    this.proc = spawn(
-      this.opts.binary,
-      ["-d", this.opts.modelDir, "--stdin", "--stream", "--silent"],
-      { stdio: ["pipe", "pipe", "pipe"] },
-    );
-
-    // Buffer stdout and fire token callback per line
-    this.proc.stdout.on("data", (chunk: Buffer) => {
-      const text = this.stdoutRemainder + chunk.toString("utf8");
-      const lines = text.split("\n");
-      // Keep incomplete last line in remainder
-      this.stdoutRemainder = lines.pop() ?? "";
-      for (const line of lines) {
-        if (line.length > 0) {
-          this.accumulated += (this.accumulated.length > 0 ? " " : "") + line;
-          this.tokenCb?.(line);
-        }
-      }
+    this.proc = spawn(this.opts.binary, ["-d", this.opts.modelDir, "--stdin", "--stream"], {
+      stdio: ["pipe", "pipe", "pipe"],
     });
 
-    // Log stderr (diagnostic only)
+    // Tokens stream as individual pieces (subwords/words), flushed after each
+    // decode step. We accumulate into a running transcript and fire the callback
+    // with the full text so far (iOS expects replacement semantics).
+    this.proc.stdout.on("data", (chunk: Buffer) => {
+      const text = chunk.toString("utf8");
+      const cleaned = text.replace(/\n$/, "");
+      if (cleaned.length === 0) return;
+      this.accumulated += cleaned;
+      this.tokenCb?.(this.accumulated);
+    });
+
     this.proc.stderr.on("data", (chunk: Buffer) => {
       const msg = chunk.toString("utf8").trim();
       if (msg) console.warn("[qwen-asr]", msg);
@@ -406,14 +356,6 @@ export class QwenAsrProvider implements SttStreamProvider {
       proc.on("close", (code) => {
         clearTimeout(timeout);
         this.proc = null;
-
-        // Flush any remaining stdout
-        if (this.stdoutRemainder.length > 0) {
-          this.accumulated += (this.accumulated.length > 0 ? " " : "") + this.stdoutRemainder;
-          this.tokenCb?.(this.stdoutRemainder);
-          this.stdoutRemainder = "";
-        }
-
         if (code !== 0 && code !== null) {
           reject(new Error(`qwen_asr exited with code ${code}`));
           return;
@@ -427,7 +369,6 @@ export class QwenAsrProvider implements SttStreamProvider {
         reject(new Error(`qwen_asr process error: ${err.message}`));
       });
 
-      // Signal end of audio
       if (!proc.stdin.destroyed) {
         proc.stdin.end();
       }
@@ -435,22 +376,225 @@ export class QwenAsrProvider implements SttStreamProvider {
   }
 }
 
-// ─── Factory ───
+// ─── HTTP transcriber implementations ───
 
-/** Resolve ~ to home directory in paths. */
-function expandTilde(p: string): string {
-  if (p.startsWith("~/")) return homedir() + p.slice(1);
-  return p;
+export interface MlxServerSttOptions {
+  endpoint: string;
+  model: string;
+  apiKey?: string;
+  authStyle?: "bearer" | "x-api-key";
+  temperature?: number;
+  topK?: number;
+  topP?: number;
+  repetitionPenalty?: number;
+  repetitionContextSize?: number;
 }
 
+export class MlxServerTranscriber implements HttpTranscriber {
+  readonly name = "mlx-server";
+  readonly model: string;
+  readonly endpoint: string;
+  private opts: MlxServerSttOptions;
+  private fetchFn: typeof globalThis.fetch;
+
+  constructor(opts: MlxServerSttOptions, fetchFn: typeof globalThis.fetch = globalThis.fetch) {
+    this.opts = opts;
+    this.model = opts.model;
+    this.endpoint = opts.endpoint;
+    this.fetchFn = fetchFn;
+  }
+
+  async transcribe(audio: Buffer): Promise<string> {
+    const formData = new FormData();
+    formData.append("file", bufferToBlob(audio, "audio/wav"), "audio.wav");
+    formData.append("model", this.opts.model);
+    if (this.opts.temperature !== undefined)
+      formData.append("temperature", String(this.opts.temperature));
+    if (this.opts.topK !== undefined) formData.append("top_k", String(this.opts.topK));
+    if (this.opts.topP !== undefined) formData.append("top_p", String(this.opts.topP));
+    if (this.opts.repetitionPenalty !== undefined)
+      formData.append("repetition_penalty", String(this.opts.repetitionPenalty));
+    if (this.opts.repetitionContextSize !== undefined)
+      formData.append("repetition_context_size", String(this.opts.repetitionContextSize));
+    formData.append("dictation_cleanup", "true");
+
+    const url = `${this.opts.endpoint}/v1/audio/transcriptions`;
+    const headers: Record<string, string> = {};
+    if (this.opts.apiKey) {
+      const style = this.opts.authStyle ?? "bearer";
+      if (style === "x-api-key") {
+        headers["x-api-key"] = this.opts.apiKey;
+      } else {
+        headers["Authorization"] = `Bearer ${this.opts.apiKey}`;
+      }
+    }
+
+    const response = await this.fetchFn(url, {
+      method: "POST",
+      headers,
+      body: formData,
+      signal: AbortSignal.timeout(30_000),
+    });
+    if (!response.ok) {
+      const body = await response.text().catch(() => "");
+      throw new Error(`STT HTTP ${response.status}: ${body}`);
+    }
+    const result = (await response.json()) as { text?: string };
+    return result.text ?? "";
+  }
+}
+
+export interface OpenAiSttOptions {
+  endpoint: string;
+  model: string;
+  apiKey: string;
+  language?: string;
+  temperature?: number;
+  prompt?: string;
+}
+
+export class OpenAiTranscriber implements HttpTranscriber {
+  readonly name = "openai";
+  readonly model: string;
+  readonly endpoint: string;
+  private opts: OpenAiSttOptions;
+  private fetchFn: typeof globalThis.fetch;
+
+  constructor(opts: OpenAiSttOptions, fetchFn: typeof globalThis.fetch = globalThis.fetch) {
+    this.opts = opts;
+    this.model = opts.model;
+    this.endpoint = opts.endpoint;
+    this.fetchFn = fetchFn;
+  }
+
+  async transcribe(audio: Buffer): Promise<string> {
+    const formData = new FormData();
+    formData.append("file", bufferToBlob(audio, "audio/wav"), "audio.wav");
+    formData.append("model", this.opts.model);
+    if (this.opts.language) formData.append("language", this.opts.language);
+    if (this.opts.temperature !== undefined)
+      formData.append("temperature", String(this.opts.temperature));
+    if (this.opts.prompt) formData.append("prompt", this.opts.prompt);
+
+    const url = `${this.opts.endpoint}/v1/audio/transcriptions`;
+    const response = await this.fetchFn(url, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${this.opts.apiKey}` },
+      body: formData,
+      signal: AbortSignal.timeout(30_000),
+    });
+    if (!response.ok) {
+      const body = await response.text().catch(() => "");
+      throw new Error(`STT HTTP ${response.status}: ${body}`);
+    }
+    const result = (await response.json()) as { text?: string };
+    return result.text ?? "";
+  }
+}
+
+export interface DeepgramSttOptions {
+  endpoint?: string;
+  apiKey: string;
+  model?: string;
+  language?: string;
+  smartFormat?: boolean;
+}
+
+export class DeepgramTranscriber implements HttpTranscriber {
+  readonly name = "deepgram";
+  readonly model: string;
+  readonly endpoint: string;
+  private opts: DeepgramSttOptions;
+  private fetchFn: typeof globalThis.fetch;
+
+  constructor(opts: DeepgramSttOptions, fetchFn: typeof globalThis.fetch = globalThis.fetch) {
+    this.opts = opts;
+    this.model = opts.model ?? "nova-3";
+    this.endpoint = opts.endpoint ?? "https://api.deepgram.com";
+    this.fetchFn = fetchFn;
+  }
+
+  async transcribe(audio: Buffer): Promise<string> {
+    const params = new URLSearchParams();
+    params.set("model", this.model);
+    if (this.opts.smartFormat !== false) params.set("smart_format", "true");
+    if (this.opts.language) params.set("language", this.opts.language);
+
+    const url = `${this.endpoint}/v1/listen?${params.toString()}`;
+    const response = await this.fetchFn(url, {
+      method: "POST",
+      headers: {
+        Authorization: `Token ${this.opts.apiKey}`,
+        "Content-Type": "audio/wav",
+      },
+      body: new Uint8Array(audio),
+      signal: AbortSignal.timeout(30_000),
+    });
+    if (!response.ok) {
+      const body = await response.text().catch(() => "");
+      throw new Error(`STT HTTP ${response.status}: ${body}`);
+    }
+    const result = (await response.json()) as {
+      results?: { channels?: Array<{ alternatives?: Array<{ transcript?: string }> }> };
+    };
+    return result.results?.channels?.[0]?.alternatives?.[0]?.transcript ?? "";
+  }
+}
+
+export interface ElevenLabsSttOptions {
+  endpoint?: string;
+  apiKey: string;
+  model?: string;
+  languageCode?: string;
+}
+
+export class ElevenLabsTranscriber implements HttpTranscriber {
+  readonly name = "elevenlabs";
+  readonly model: string;
+  readonly endpoint: string;
+  private opts: ElevenLabsSttOptions;
+  private fetchFn: typeof globalThis.fetch;
+
+  constructor(opts: ElevenLabsSttOptions, fetchFn: typeof globalThis.fetch = globalThis.fetch) {
+    this.opts = opts;
+    this.model = opts.model ?? "scribe_v2";
+    this.endpoint = opts.endpoint ?? "https://api.elevenlabs.io";
+    this.fetchFn = fetchFn;
+  }
+
+  async transcribe(audio: Buffer): Promise<string> {
+    const formData = new FormData();
+    formData.append("file", bufferToBlob(audio, "audio/wav"), "audio.wav");
+    formData.append("model_id", this.model);
+    if (this.opts.languageCode) formData.append("language_code", this.opts.languageCode);
+
+    const url = `${this.endpoint}/v1/speech-to-text`;
+    const response = await this.fetchFn(url, {
+      method: "POST",
+      headers: { "xi-api-key": this.opts.apiKey },
+      body: formData,
+      signal: AbortSignal.timeout(30_000),
+    });
+    if (!response.ok) {
+      const body = await response.text().catch(() => "");
+      throw new Error(`STT HTTP ${response.status}: ${body}`);
+    }
+    const result = (await response.json()) as { text?: string };
+    return result.text ?? "";
+  }
+}
+
+// ─── Factory ───
+
 /**
- * Create an SttProvider or SttStreamProvider from DictationConfig.
- * Provider type is selected by `config.sttProvider` (default: "mlx-server").
+ * Create an SttProvider from DictationConfig.
+ * All providers return the same SttProvider interface —
+ * HTTP batch providers are wrapped in HttpSttAdapter.
  */
 export function createSttProvider(
   config: DictationConfig,
   fetchFn: typeof globalThis.fetch = globalThis.fetch,
-): SttProvider | SttStreamProvider {
+): SttProvider {
   const providerType = config.sttProvider ?? "mlx-server";
 
   switch (providerType) {
@@ -472,53 +616,77 @@ export function createSttProvider(
     }
 
     case "mlx-server":
-      return new MlxServerSttProvider(
+      return new HttpSttAdapter(
+        new MlxServerTranscriber(
+          {
+            endpoint: config.sttEndpoint,
+            model: config.sttModel,
+            apiKey: config.sttApiKey,
+            authStyle: config.sttAuthStyle,
+            temperature: config.sttTemperature,
+            topK: config.sttTopK,
+            topP: config.sttTopP,
+            repetitionPenalty: config.sttRepetitionPenalty,
+            repetitionContextSize: config.sttRepetitionContextSize,
+          },
+          fetchFn,
+        ),
         {
-          endpoint: config.sttEndpoint,
-          model: config.sttModel,
-          apiKey: config.sttApiKey,
-          authStyle: config.sttAuthStyle,
-          temperature: config.sttTemperature,
-          topK: config.sttTopK,
-          topP: config.sttTopP,
-          repetitionPenalty: config.sttRepetitionPenalty,
-          repetitionContextSize: config.sttRepetitionContextSize,
+          retranscribeIntervalMs: config.retranscribeIntervalMs,
+          maxDurationSec: config.maxDurationSec,
         },
-        fetchFn,
       );
 
     case "openai":
-      return new OpenAiSttProvider(
+      return new HttpSttAdapter(
+        new OpenAiTranscriber(
+          {
+            endpoint: config.sttEndpoint,
+            model: config.sttModel,
+            apiKey: config.sttApiKey ?? "",
+            language: config.sttLanguage,
+            temperature: config.sttTemperature,
+          },
+          fetchFn,
+        ),
         {
-          endpoint: config.sttEndpoint,
-          model: config.sttModel,
-          apiKey: config.sttApiKey ?? "",
-          language: config.sttLanguage,
-          temperature: config.sttTemperature,
+          retranscribeIntervalMs: config.retranscribeIntervalMs,
+          maxDurationSec: config.maxDurationSec,
         },
-        fetchFn,
       );
 
     case "deepgram":
-      return new DeepgramSttProvider(
+      return new HttpSttAdapter(
+        new DeepgramTranscriber(
+          {
+            endpoint: config.sttEndpoint,
+            apiKey: config.sttApiKey ?? "",
+            model: config.sttModel,
+            language: config.sttLanguage,
+          },
+          fetchFn,
+        ),
         {
-          endpoint: config.sttEndpoint,
-          apiKey: config.sttApiKey ?? "",
-          model: config.sttModel,
-          language: config.sttLanguage,
+          retranscribeIntervalMs: config.retranscribeIntervalMs,
+          maxDurationSec: config.maxDurationSec,
         },
-        fetchFn,
       );
 
     case "elevenlabs":
-      return new ElevenLabsSttProvider(
+      return new HttpSttAdapter(
+        new ElevenLabsTranscriber(
+          {
+            endpoint: config.sttEndpoint,
+            apiKey: config.sttApiKey ?? "",
+            model: config.sttModel,
+            languageCode: config.sttLanguage,
+          },
+          fetchFn,
+        ),
         {
-          endpoint: config.sttEndpoint,
-          apiKey: config.sttApiKey ?? "",
-          model: config.sttModel,
-          languageCode: config.sttLanguage,
+          retranscribeIntervalMs: config.retranscribeIntervalMs,
+          maxDurationSec: config.maxDurationSec,
         },
-        fetchFn,
       );
 
     default:
