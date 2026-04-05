@@ -6,11 +6,11 @@ WebSocket, and the server transcribes it using an OpenAI-compatible STT endpoint
 
 ## Requirements
 
-- An STT server running an OpenAI-compatible `/v1/audio/transcriptions` endpoint
-- Recommended: [mlx_server](https://github.com/example/mlx_server) with
-  [Qwen3-ASR-1.7B](https://huggingface.co/mlx-community/Qwen3-ASR-1.7B-bf16)
-- Optional: A local LLM for post-transcription correction (e.g. Qwen3.5 on
-  [oMLX](https://github.com/jundot/omlx))
+- Any server running an OpenAI-compatible `/v1/audio/transcriptions` endpoint
+  (e.g. [oMLX](https://github.com/jundot/omlx), vLLM, LocalAI, or a cloud
+  provider like OpenAI, Groq, Deepgram)
+- Optional: A local LLM for post-transcription correction via an
+  OpenAI-compatible `/v1/chat/completions` endpoint
 
 ## Configuration
 
