@@ -7,8 +7,8 @@ WebSocket, and the server transcribes it using an OpenAI-compatible STT endpoint
 ## Requirements
 
 - Any server running an OpenAI-compatible `/v1/audio/transcriptions` endpoint
-  (e.g. [oMLX](https://github.com/jundot/omlx), vLLM, LocalAI, or a cloud
-  provider like OpenAI, Groq, Deepgram)
+  (e.g. mlx_server, vLLM, LocalAI, or a cloud provider like OpenAI, Groq,
+  Deepgram, ElevenLabs)
 - Optional: A local LLM for post-transcription correction via an
   OpenAI-compatible `/v1/chat/completions` endpoint
 
@@ -38,9 +38,9 @@ The iOS app falls back to Apple's on-device dictation.
 | `sttApiKey` | *(none)* | API key for the STT backend (Bearer token) |
 | `llmEndpoint` | `http://localhost:8400` | LLM server for post-transcription correction |
 | `llmModel` | `Qwen3.5-122B-A10B-4bit` | LLM model for correction |
-| `llmCorrectionEnabled` | `true` | Run LLM correction on dictation stop |
+| `llmCorrectionEnabled` | `false` | Run LLM correction on dictation stop |
 | `preserveAudio` | `true` | Save dictation audio as FLAC on the server |
-| `maxDurationSec` | `300` | Max dictation session length (0 = unlimited) |
+| `maxDurationSec` | `0` | Max dictation session length in seconds (0 = unlimited) |
 | `retranscribeIntervalMs` | `2000` | Base interval for interim results |
 
 ### Authentication
@@ -102,7 +102,7 @@ a free API key. Free tier includes ~8 hours of transcription per day.
     "llmModel": "Qwen3.5-122B-A10B-4bit",
     "llmCorrectionEnabled": true,
     "preserveAudio": true,
-    "maxDurationSec": 300,
+    "maxDurationSec": 0,
     "retranscribeIntervalMs": 2000
   }
 }
