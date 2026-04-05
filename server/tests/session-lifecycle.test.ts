@@ -321,11 +321,11 @@ describe("SessionManager extension UI", () => {
 // ─── Session End Cleanup ───
 
 describe("SessionManager session end", () => {
-  it("cleans up resources on session end", () => {
+  it("cleans up resources on session end", async () => {
     const { manager, events, gate } = makeManagerHarness();
 
-    // Trigger handleSessionEnd
-    (manager as unknown as { handleSessionEnd: (key: string, reason: string) => void })
+    // Trigger handleSessionEnd (async since dispose() became awaitable)
+    await (manager as unknown as { handleSessionEnd: (key: string, reason: string) => Promise<void> })
       .handleSessionEnd("s1", "completed");
 
     expect(events.some((e) => e.type === "session_ended")).toBe(true);

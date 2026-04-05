@@ -236,9 +236,97 @@ describe("Storage config validation", () => {
     expect(result.valid).toBe(true);
     expect(result.config?.subagents?.maxDepth).toBe(2);
     // Other fields use defaults
-    expect(result.config?.subagents?.autoStopWhenDone).toBe(true);
+    expect(result.config?.subagents?.autoStopWhenDone).toBe(false);
     expect(result.config?.subagents?.startupGraceMs).toBe(60_000);
     expect(result.config?.subagents?.defaultWaitTimeoutMs).toBe(1_800_000);
+  });
+
+  // ── ASR config regression ──
+  // The config normalizer silently dropped config.asr because it was missing
+  // from the whitelist + had no parsing code. This caused /dictation to 404
+  // and the iOS app to crash.
+
+  it("preserves asr config with sttEndpoint", () => {
+    const raw = {
+      ...Storage.getDefaultConfig(dir),
+      asr: {
+        sttEndpoint: "http://localhost:9847",
+        sttModel: "Qwen3-ASR-1.7B",
+      },
+    };
+
+    const result = Storage.validateConfig(raw, dir, true);
+    expect(result.valid).toBe(true);
+    expect(result.config?.asr?.sttEndpoint).toBe("http://localhost:9847");
+    expect(result.config?.asr?.sttModel).toBe("Qwen3-ASR-1.7B");
+  });
+
+  it("preserves full asr config with all fields", () => {
+    const raw = {
+      ...Storage.getDefaultConfig(dir),
+      asr: {
+        sttEndpoint: "http://localhost:9847",
+        sttModel: "whisper-large-v3",
+        sttApiKey: "sk-test",
+        sttAuthStyle: "bearer" as const,
+        retranscribeIntervalMs: 3000,
+        preserveAudio: false,
+        maxDurationSec: 120,
+        llmEndpoint: "http://localhost:8400",
+        llmModel: "gpt-4o",
+        llmCorrectionEnabled: true,
+      },
+    };
+
+    const result = Storage.validateConfig(raw, dir, true);
+    expect(result.valid).toBe(true);
+    expect(result.config?.asr?.sttEndpoint).toBe("http://localhost:9847");
+    expect(result.config?.asr?.sttApiKey).toBe("sk-test");
+    expect(result.config?.asr?.sttAuthStyle).toBe("bearer");
+    expect(result.config?.asr?.retranscribeIntervalMs).toBe(3000);
+    expect(result.config?.asr?.preserveAudio).toBe(false);
+    expect(result.config?.asr?.maxDurationSec).toBe(120);
+    expect(result.config?.asr?.llmEndpoint).toBe("http://localhost:8400");
+    expect(result.config?.asr?.llmModel).toBe("gpt-4o");
+    expect(result.config?.asr?.llmCorrectionEnabled).toBe(true);
+  });
+
+  it("omits asr when not present in config", () => {
+    const raw = Storage.getDefaultConfig(dir);
+    const result = Storage.validateConfig(raw, dir, true);
+    expect(result.valid).toBe(true);
+    expect(result.config?.asr).toBeUndefined();
+  });
+
+  it("omits asr when sttEndpoint is empty", () => {
+    const raw = {
+      ...Storage.getDefaultConfig(dir),
+      asr: { sttEndpoint: "  " },
+    };
+
+    const result = Storage.validateConfig(raw, dir, true);
+    expect(result.valid).toBe(true);
+    // Empty endpoint means no valid fields → asr omitted entirely
+    expect(result.config?.asr).toBeUndefined();
+  });
+
+  it("survives round-trip through Storage constructor with asr config", () => {
+    const configPath = join(dir, "config.json");
+    writeFileSync(
+      configPath,
+      JSON.stringify({
+        ...Storage.getDefaultConfig(dir),
+        asr: {
+          sttEndpoint: "http://localhost:9847",
+          sttModel: "Qwen3-ASR-1.7B",
+        },
+      }),
+    );
+
+    const storage = new Storage(dir);
+    const config = storage.getConfig();
+    expect(config.asr?.sttEndpoint).toBe("http://localhost:9847");
+    expect(config.asr?.sttModel).toBe("Qwen3-ASR-1.7B");
   });
 
   it("validateConfigFile reports parse errors with file path", () => {

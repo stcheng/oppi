@@ -108,6 +108,17 @@ final class DictationWebSocket {
     private var readyContinuation: CheckedContinuation<Void, Error>?
     private var readyTimeoutTask: Task<Void, Never>?
 
+    deinit {
+        // Prevent CheckedContinuation leak — Swift crashes if a continuation
+        // is dropped without being resumed.
+        readyTimeoutTask?.cancel()
+        if let cont = readyContinuation {
+            readyContinuation = nil
+            cont.resume(throwing: DictationWebSocketError.notConnected)
+        }
+        messageContinuation?.finish()
+    }
+
     /// Receive stream — yields decoded server messages until disconnect.
     /// All messages (including `dictation_ready`) are buffered here. The session
     /// can ignore `.ready` when iterating.

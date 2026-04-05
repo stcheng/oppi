@@ -96,80 +96,24 @@ final class OppiDictationSession: VoiceTranscriptionSession {
 
     // MARK: - Audio Capture
 
-    /// Start the audio engine, converting hardware input to 16kHz 16-bit mono PCM
-    /// and sending binary frames over the WebSocket.
+    /// Start the audio engine via a non-actor helper.
+    /// The `installTap` closure MUST NOT inherit @MainActor isolation —
+    /// it runs on the real-time audio thread and libdispatch will crash
+    /// with `EXC_BREAKPOINT: Block was expected to execute on queue
+    /// [com.apple.main-thread]` if the closure carries MainActor context.
     private func startAudioCapture() throws {
-        let engine = AVAudioEngine()
-        let inputNode = engine.inputNode
-        let inputFormat = inputNode.outputFormat(forBus: 0)
-
-        guard let format = AVAudioFormat(
-            commonFormat: .pcmFormatFloat32,
-            sampleRate: 16000,
-            channels: 1,
-            interleaved: false
-        ) else {
-            throw VoiceInputError.internalError("Cannot create 16kHz mono format")
-        }
-        self.targetFormat = format
-
-        let converter: AVAudioConverter?
-        if inputFormat != format {
-            converter = AVAudioConverter(from: inputFormat, to: format)
-        } else {
-            converter = nil
-        }
-        self.audioConverter = converter
-
-        // Capture weak references for the nonisolated audio tap
-        let weakWS = WeakRef(ws)
-        let levelContinuation = audioLevelContinuation
-
-        inputNode.installTap(onBus: 0, bufferSize: 1024, format: inputFormat) { buffer, _ in
-            // Convert to target format if needed
-            let outputBuffer: AVAudioPCMBuffer
-            if let converter {
-                let frameCapacity = AVAudioFrameCount(
-                    Double(buffer.frameLength) * format.sampleRate / inputFormat.sampleRate
-                )
-                guard let converted = AVAudioPCMBuffer(
-                    pcmFormat: format,
-                    frameCapacity: frameCapacity
-                ) else { return }
-
-                var error: NSError?
-                converter.convert(to: converted, error: &error) { _, outStatus in
-                    outStatus.pointee = .haveData
-                    return buffer
-                }
-                if error != nil { return }
-                outputBuffer = converted
-            } else {
-                outputBuffer = buffer
-            }
-
-            // Compute audio level from float samples
-            if let channelData = outputBuffer.floatChannelData?[0] {
-                let frameLength = UInt(outputBuffer.frameLength)
-                var rms: Float = 0
-                vDSP_rmsqv(channelData, 1, &rms, frameLength)
-                let level = min(1.0, rms * 25.0)
-                levelContinuation.yield(level)
-            }
-
-            // Convert float32 to 16-bit signed integer PCM and send as binary
-            let pcmData = Self.convertToInt16PCM(buffer: outputBuffer)
-            guard !pcmData.isEmpty else { return }
-
-            guard let ws = weakWS.value else { return }
-            Task { @MainActor in
-                try? await ws.sendAudio(pcmData)
-            }
-        }
-
-        engine.prepare()
-        try engine.start()
+        let (engine, levelStream) = try DictationAudioEngineHelper.startEngine(
+            ws: ws,
+            audioLevelContinuation: audioLevelContinuation
+        )
         self.audioEngine = engine
+
+        // Drain level stream in the background (inherits MainActor from class)
+        Task { [weak self] in
+            for await level in levelStream {
+                self?.audioLevelContinuation.yield(level)
+            }
+        }
 
         logger.info("Audio capture started (16kHz, 16-bit, mono)")
     }
@@ -255,6 +199,91 @@ final class OppiDictationSession: VoiceTranscriptionSession {
         messageListenTask = nil
         eventContinuation.finish()
         audioLevelContinuation.finish()
+    }
+}
+
+// MARK: - Non-actor audio engine helper
+
+/// Starts the AVAudioEngine + installTap outside any actor context.
+/// The installTap closure runs on the real-time audio thread.
+/// If it inherits @MainActor (from OppiDictationSession), libdispatch
+/// crashes with EXC_BREAKPOINT. This plain enum has no actor isolation.
+enum DictationAudioEngineHelper {
+    static func startEngine(
+        ws: DictationWebSocket,
+        audioLevelContinuation: AsyncStream<Float>.Continuation
+    ) throws -> (AVAudioEngine, AsyncStream<Float>) {
+        let engine = AVAudioEngine()
+        let inputNode = engine.inputNode
+        let inputFormat = inputNode.outputFormat(forBus: 0)
+
+        guard let targetFormat = AVAudioFormat(
+            commonFormat: .pcmFormatFloat32,
+            sampleRate: 16000,
+            channels: 1,
+            interleaved: false
+        ) else {
+            throw VoiceInputError.internalError("Cannot create 16kHz mono format")
+        }
+
+        let converter: AVAudioConverter?
+        if inputFormat != targetFormat {
+            converter = AVAudioConverter(from: inputFormat, to: targetFormat)
+        } else {
+            converter = nil
+        }
+
+        let weakWS = WeakRef(ws)
+        let (levelStream, levelContinuation) = AsyncStream<Float>.makeStream()
+
+        inputNode.installTap(onBus: 0, bufferSize: 1024, format: inputFormat) { buffer, _ in
+            let outputBuffer: AVAudioPCMBuffer
+            if let converter {
+                let frameCapacity = AVAudioFrameCount(
+                    Double(buffer.frameLength) * targetFormat.sampleRate / inputFormat.sampleRate
+                )
+                guard let converted = AVAudioPCMBuffer(
+                    pcmFormat: targetFormat,
+                    frameCapacity: frameCapacity
+                ) else { return }
+
+                var error: NSError?
+                converter.convert(to: converted, error: &error) { _, outStatus in
+                    outStatus.pointee = .haveData
+                    return buffer
+                }
+                if error != nil { return }
+                outputBuffer = converted
+            } else {
+                outputBuffer = buffer
+            }
+
+            // Audio level
+            if let channelData = outputBuffer.floatChannelData?[0] {
+                let frameLength = UInt(outputBuffer.frameLength)
+                var rms: Float = 0
+                vDSP_rmsqv(channelData, 1, &rms, frameLength)
+                let level = min(1.0, rms * 25.0)
+                levelContinuation.yield(level)
+            }
+
+            // Convert to 16-bit PCM and send over WS
+            let pcmData = OppiDictationSession.convertToInt16PCM(buffer: outputBuffer)
+            guard !pcmData.isEmpty else { return }
+            guard let ws = weakWS.value else { return }
+
+            // dispatch_async is safe from the RT audio thread.
+            // Task creation is NOT safe directly on RT threads.
+            DispatchQueue.global(qos: .userInitiated).async {
+                Task {
+                    try? await ws.sendAudio(pcmData)
+                }
+            }
+        }
+
+        engine.prepare()
+        try engine.start()
+        return (engine, levelStream)
     }
 }
 

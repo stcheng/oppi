@@ -112,6 +112,7 @@ function normalizeConfig(
     "thinkingLevelByModel",
     "autoTitle",
     "subagents",
+    "asr",
   ]);
 
   if (strictUnknown) {
@@ -692,6 +693,76 @@ function normalizeConfig(
       autoTitle.model = at.model.trim();
     }
     config.autoTitle = autoTitle;
+  }
+
+  // ASR / dictation pipeline config
+  if ("asr" in obj && isRecord(obj.asr)) {
+    const asr = obj.asr;
+    const allowedAsrKeys = new Set([
+      "sttEndpoint",
+      "sttModel",
+      "sttApiKey",
+      "sttAuthStyle",
+      "retranscribeIntervalMs",
+      "preserveAudio",
+      "maxDurationSec",
+      "llmEndpoint",
+      "llmModel",
+      "llmCorrectionEnabled",
+    ]);
+
+    if (strictUnknown) {
+      for (const key of Object.keys(asr)) {
+        if (!allowedAsrKeys.has(key)) {
+          errors.push(`config.asr.${key}: unknown key`);
+        }
+      }
+    }
+
+    const asrConfig: NonNullable<ServerConfig["asr"]> = {};
+
+    if (typeof asr.sttEndpoint === "string" && asr.sttEndpoint.trim().length > 0) {
+      asrConfig.sttEndpoint = asr.sttEndpoint.trim();
+    }
+    if (typeof asr.sttModel === "string" && asr.sttModel.trim().length > 0) {
+      asrConfig.sttModel = asr.sttModel.trim();
+    }
+    if (typeof asr.sttApiKey === "string") {
+      asrConfig.sttApiKey = asr.sttApiKey;
+    }
+    if (asr.sttAuthStyle === "bearer" || asr.sttAuthStyle === "x-api-key") {
+      asrConfig.sttAuthStyle = asr.sttAuthStyle;
+    }
+    if (
+      typeof asr.retranscribeIntervalMs === "number" &&
+      Number.isInteger(asr.retranscribeIntervalMs) &&
+      asr.retranscribeIntervalMs >= 100
+    ) {
+      asrConfig.retranscribeIntervalMs = asr.retranscribeIntervalMs;
+    }
+    if (typeof asr.preserveAudio === "boolean") {
+      asrConfig.preserveAudio = asr.preserveAudio;
+    }
+    if (
+      typeof asr.maxDurationSec === "number" &&
+      Number.isInteger(asr.maxDurationSec) &&
+      asr.maxDurationSec >= 0
+    ) {
+      asrConfig.maxDurationSec = asr.maxDurationSec;
+    }
+    if (typeof asr.llmEndpoint === "string" && asr.llmEndpoint.trim().length > 0) {
+      asrConfig.llmEndpoint = asr.llmEndpoint.trim();
+    }
+    if (typeof asr.llmModel === "string" && asr.llmModel.trim().length > 0) {
+      asrConfig.llmModel = asr.llmModel.trim();
+    }
+    if (typeof asr.llmCorrectionEnabled === "boolean") {
+      asrConfig.llmCorrectionEnabled = asr.llmCorrectionEnabled;
+    }
+
+    if (Object.keys(asrConfig).length > 0) {
+      config.asr = asrConfig;
+    }
   }
 
   // Subagent lifecycle config

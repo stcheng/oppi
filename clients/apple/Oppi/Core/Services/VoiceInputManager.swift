@@ -266,9 +266,9 @@ final class VoiceInputManager {
 
     private func provider(
         for engine: TranscriptionEngine
-    ) -> (any VoiceTranscriptionProvider) {
+    ) throws -> any VoiceTranscriptionProvider {
         guard let provider = providerRegistry.provider(for: engine) else {
-            fatalError("No voice provider registered for \(engine.rawValue)")
+            throw VoiceInputError.internalError("No voice provider registered for \(engine.rawValue)")
         }
         return provider
     }
@@ -439,7 +439,7 @@ final class VoiceInputManager {
             remoteEndpoint: remoteASREndpoint,
             serverCredentials: serverCredentials
         )
-        let provider = provider(for: engine)
+        let provider = try provider(for: engine)
         var modelPathTag = "warm_cache"
 
         do {
@@ -551,7 +551,7 @@ final class VoiceInputManager {
             // cannot flip us back into recording after cancel.
             activeStartRequestID = nil
             if let activeEngine {
-                provider(for: activeEngine).cancelPreparation()
+                try? provider(for: activeEngine).cancelPreparation()
             }
         }
 

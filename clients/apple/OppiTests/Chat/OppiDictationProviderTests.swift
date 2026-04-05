@@ -264,6 +264,82 @@ struct OppiDictationProviderTests {
     }
 }
 
+// MARK: - Crash Regression Tests
+
+@Suite("Dictation crash regression")
+@MainActor
+struct DictationCrashRegressionTests {
+
+    /// Regression: provider(for:) used fatalError on missing provider,
+    /// crashing the app when server returned 404 for /dictation.
+    /// Now throws VoiceInputError instead.
+    @Test func providerLookupDoesNotCrashOnMissingEngine() {
+        // Registry with NO providers at all
+        let registry = VoiceProviderRegistry(providers: [])
+        let provider = registry.provider(for: .remoteASR)
+        #expect(provider == nil, "Missing provider should return nil, not crash")
+    }
+
+    /// Regression: VoiceInputManager.provider(for:) used fatalError.
+    /// Verify it throws a recoverable error instead.
+    @Test func managerHandlesMissingProviderGracefully() async throws {
+        // Create manager with empty registry — no providers registered
+        let emptyRegistry = VoiceProviderRegistry(providers: [])
+        let manager = VoiceInputManager(
+            providerRegistry: emptyRegistry,
+            systemAccess: MockSystemAccess(hasPermissions: true)
+        )
+        manager.setEngineMode(.remote)
+
+        // Should throw, not crash
+        do {
+            try await manager.startRecording(source: "test")
+            Issue.record("Expected startRecording to throw for missing provider")
+        } catch {
+            // Error is expected — app stays alive
+            #expect(manager.state != .recording)
+        }
+    }
+
+    /// Verify DictationWebSocket deinit doesn't leak CheckedContinuation.
+    @Test func webSocketDeinitDoesNotLeakContinuation() async {
+        // Just verify we can create and immediately deallocate without crash
+        var ws: DictationWebSocket? = DictationWebSocket()
+        _ = ws?.messages  // Initialize the stream
+        ws = nil  // Should not crash from leaked continuation
+        // If we get here, no crash occurred
+    }
+
+    /// Regression: audio tap closure used `Task { @MainActor in ... }` to send
+    /// audio over the WS. The tap runs on the audio thread; creating a
+    /// @MainActor Task from there triggers:
+    ///   EXC_BREAKPOINT: Block was expected to execute on queue [com.apple.main-thread]
+    /// Fix: use `Task.detached` (no actor inheritance) for the WS send.
+    @Test func audioSendDoesNotRequireMainActor() throws {
+        // Verify sendAudio is nonisolated (callable from any context).
+        // DictationWebSocket.sendAudio must NOT be @MainActor-isolated
+        // so the audio tap can call it without dispatching to main thread.
+        let ws = DictationWebSocket()
+        // sendAudio should be callable from a detached (non-MainActor) task
+        // without crashing. We can't actually send (no connection), but
+        // the method signature must be `nonisolated` or accept calls
+        // from non-main-actor contexts.
+        Task.detached {
+            // This would fail to compile if sendAudio required @MainActor
+            try? await ws.sendAudio(Data([0, 1, 2, 3]))
+        }
+    }
+}
+
+// MARK: - Mock System Access (for crash regression tests)
+
+private struct MockSystemAccess: VoiceInputSystemAccessing {
+    let hasPermissions: Bool
+    func requestPermissions() async -> Bool { hasPermissions }
+    func activateAudioSession() throws {}
+    func deactivateAudioSession() {}
+}
+
 // MARK: - VoiceSessionEvent Equatable (test support)
 
 extension VoiceSessionEvent: @retroactive Equatable {
