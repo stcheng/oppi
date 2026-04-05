@@ -702,6 +702,8 @@ function normalizeConfig(
       "sttProvider",
       "sttEndpoint",
       "sttModel",
+      "sttBinary",
+      "sttModelDir",
       "sttApiKey",
       "sttAuthStyle",
       "sttLanguage",
@@ -723,13 +725,20 @@ function normalizeConfig(
 
     const asrConfig: NonNullable<ServerConfig["asr"]> = {};
 
-    const validProviders = ["mlx-server", "openai", "deepgram", "elevenlabs"];
+    const validProviders = ["mlx-server", "openai", "deepgram", "elevenlabs", "qwen_asr"];
     if (typeof asr.sttProvider === "string" && validProviders.includes(asr.sttProvider)) {
       asrConfig.sttProvider = asr.sttProvider as
         | "mlx-server"
         | "openai"
         | "deepgram"
-        | "elevenlabs";
+        | "elevenlabs"
+        | "qwen_asr";
+    }
+    if (typeof asr.sttBinary === "string" && asr.sttBinary.trim().length > 0) {
+      asrConfig.sttBinary = asr.sttBinary.trim();
+    }
+    if (typeof asr.sttModelDir === "string" && asr.sttModelDir.trim().length > 0) {
+      asrConfig.sttModelDir = asr.sttModelDir.trim();
     }
     if (typeof asr.sttEndpoint === "string" && asr.sttEndpoint.trim().length > 0) {
       asrConfig.sttEndpoint = asr.sttEndpoint.trim();
