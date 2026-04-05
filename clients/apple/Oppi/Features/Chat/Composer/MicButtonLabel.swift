@@ -54,11 +54,17 @@ struct MicButtonLabel: View {
                 ProgressView()
                     .controlSize(.mini)
             } else if isRecording {
-                Text(languageLabel ?? "??")
-                    .font(.system(size: diameter * 0.4, weight: .bold))
-                    .foregroundStyle(indicatorColor)
-                    .minimumScaleFactor(0.5)
-                    .lineLimit(1)
+                if engineBadge == .remote {
+                    Image(systemName: "cloud")
+                        .font(.system(size: diameter * 0.38, weight: .bold))
+                        .foregroundStyle(indicatorColor)
+                } else {
+                    Text(languageLabel ?? "??")
+                        .font(.system(size: diameter * 0.4, weight: .bold))
+                        .foregroundStyle(indicatorColor)
+                        .minimumScaleFactor(0.5)
+                        .lineLimit(1)
+                }
             } else {
                 Image(systemName: "mic")
                     .font(.system(size: diameter * 0.47, weight: .bold))
