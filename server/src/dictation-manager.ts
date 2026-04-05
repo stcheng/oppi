@@ -9,7 +9,7 @@
  * DictationManager has one code path — no branching on provider type.
  */
 
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
@@ -672,24 +672,29 @@ export function extractJsonFromResponse(content: string): string {
 /**
  * Encode WAV buffer to FLAC via ffmpeg subprocess.
  */
-export function encodeFlac(wavBuffer: Buffer): Promise<Buffer> {
-  return new Promise((resolve, reject) => {
-    const proc = spawn(
-      "ffmpeg",
-      ["-i", "pipe:0", "-f", "flac", "-compression_level", "5", "pipe:1"],
-      { stdio: ["pipe", "pipe", "pipe"] },
-    );
-    const chunks: Buffer[] = [];
-    proc.stdout.on("data", (chunk: Buffer) => chunks.push(chunk));
-    proc.on("close", (code) => {
-      if (code !== 0) {
-        reject(new Error(`ffmpeg exited with code ${code}`));
-        return;
-      }
-      resolve(Buffer.concat(chunks));
+export async function encodeFlac(wavBuffer: Buffer): Promise<Buffer> {
+  // Write to a temp file instead of stdout so ffmpeg can seek back and write
+  // the correct total_samples into the FLAC STREAMINFO block. Piping to
+  // stdout produces FLAC with a corrupt STREAMINFO (wrong sample_rate /
+  // total_samples) because ffmpeg cannot seek on a non-seekable pipe.
+  const tmp = join("/tmp", `oppi_flac_${randomBytes(6).toString("hex")}.flac`);
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const proc = spawn(
+        "ffmpeg",
+        ["-i", "pipe:0", "-f", "flac", "-compression_level", "5", "-y", tmp],
+        { stdio: ["pipe", "ignore", "ignore"] },
+      );
+      proc.on("close", (code) => {
+        if (code !== 0) reject(new Error(`ffmpeg exited with code ${code}`));
+        else resolve();
+      });
+      proc.on("error", reject);
+      proc.stdin.write(wavBuffer);
+      proc.stdin.end();
     });
-    proc.on("error", reject);
-    proc.stdin.write(wavBuffer);
-    proc.stdin.end();
-  });
+    return await readFile(tmp);
+  } finally {
+    await unlink(tmp).catch(() => undefined);
+  }
 }
