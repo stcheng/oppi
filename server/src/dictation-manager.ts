@@ -8,7 +8,7 @@
 
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { execFile } from "node:child_process";
+import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import type { WebSocket, RawData } from "ws";
 import type {
@@ -789,21 +789,24 @@ export function extractJsonFromResponse(content: string): string {
  * Encode WAV buffer to FLAC via ffmpeg subprocess.
  * Resolves with the FLAC buffer, rejects if ffmpeg is unavailable.
  */
-function encodeFlac(wavBuffer: Buffer): Promise<Buffer> {
+export function encodeFlac(wavBuffer: Buffer): Promise<Buffer> {
   return new Promise((resolve, reject) => {
-    const proc = execFile(
+    const proc = spawn(
       "ffmpeg",
       ["-i", "pipe:0", "-f", "flac", "-compression_level", "5", "pipe:1"],
-      { maxBuffer: 50 * 1024 * 1024 },
-      (err, stdout) => {
-        if (err) {
-          reject(err);
-          return;
-        }
-        resolve(Buffer.from(stdout, "binary"));
-      },
+      { stdio: ["pipe", "pipe", "pipe"] },
     );
-    proc.stdin?.write(wavBuffer);
-    proc.stdin?.end();
+    const chunks: Buffer[] = [];
+    proc.stdout.on("data", (chunk: Buffer) => chunks.push(chunk));
+    proc.on("close", (code) => {
+      if (code !== 0) {
+        reject(new Error(`ffmpeg exited with code ${code}`));
+        return;
+      }
+      resolve(Buffer.concat(chunks));
+    });
+    proc.on("error", reject);
+    proc.stdin.write(wavBuffer);
+    proc.stdin.end();
   });
 }

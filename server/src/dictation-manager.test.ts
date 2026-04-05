@@ -9,6 +9,7 @@ import { EventEmitter } from "events";
 import { WebSocket } from "ws";
 import {
   DictationManager,
+  encodeFlac,
   encodeWav,
   adaptiveInterval,
   extractJsonFromResponse,
@@ -145,6 +146,61 @@ describe("encodeWav", () => {
     expect(wav.readUInt32LE(28)).toBe(32000);
     // Block align = channels * bytesPerSample = 1 * 2 = 2
     expect(wav.readUInt16LE(32)).toBe(2);
+  });
+});
+
+describe("encodeFlac", () => {
+  it("produces valid FLAC from WAV with correct binary round-trip", async () => {
+    // Generate a WAV with known PCM data (1 second of 440Hz sine wave)
+    const sampleRate = 16000;
+    const duration = 1;
+    const numSamples = sampleRate * duration;
+    const pcm = Buffer.alloc(numSamples * 2);
+    for (let i = 0; i < numSamples; i++) {
+      const sample = Math.round(16000 * Math.sin((2 * Math.PI * 440 * i) / sampleRate));
+      pcm.writeInt16LE(sample, i * 2);
+    }
+    const wav = encodeWav([pcm]);
+
+    // Encode to FLAC
+    const flac = await encodeFlac(wav);
+
+    // Verify FLAC magic bytes
+    expect(flac.toString("ascii", 0, 4)).toBe("fLaC");
+    // Must be larger than just a header
+    expect(flac.length).toBeGreaterThan(100);
+
+    // Verify high bytes survive (the bug was Buffer.from(stdout, "binary")
+    // which destroys bytes > 127)
+    const highBytes = Array.from(flac).filter((b) => b > 127);
+    expect(highBytes.length).toBeGreaterThan(0);
+
+    // Verify the FLAC can be decoded back to WAV via ffmpeg
+    const { execFileSync } = await import("node:child_process");
+    const decoded = execFileSync(
+      "ffprobe",
+      [
+        "-v",
+        "quiet",
+        "-show_entries",
+        "stream=sample_rate,channels,codec_name",
+        "-of",
+        "json",
+        "-f",
+        "flac",
+        "pipe:0",
+      ],
+      { input: flac, maxBuffer: 10 * 1024 * 1024 },
+    );
+    const info = JSON.parse(decoded.toString());
+    const stream = info.streams[0];
+    expect(stream.codec_name).toBe("flac");
+    expect(stream.sample_rate).toBe("16000");
+    expect(stream.channels).toBe(1);
+  });
+
+  it("rejects on empty input", async () => {
+    await expect(encodeFlac(Buffer.alloc(0))).rejects.toThrow();
   });
 });
 

@@ -835,7 +835,8 @@ export const CHAT_METRIC_REGISTRY = {
   },
   "chat.dictation_preview_final_delta": {
     unit: "count",
-    description: "Edit distance ratio between preview and final transcript (0=identical, 1=completely different).",
+    description:
+      "Edit distance ratio between preview and final transcript (0=identical, 1=completely different).",
   },
   "chat.dictation_error": {
     unit: "count",
