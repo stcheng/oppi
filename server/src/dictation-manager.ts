@@ -22,7 +22,6 @@ import type {
   DictationAudioMetadata,
 } from "./dictation-types.js";
 import type { SttProvider } from "./stt-provider.js";
-import type { HttpSttAdapter } from "./stt-provider.js";
 import type { ServerMetricCollector } from "./server-metric-collector.js";
 
 // ─── Constants ───
@@ -303,11 +302,7 @@ export class DictationManager {
       this.metricTags({ language: langTag }),
     );
 
-    // Retranscribe count — available from HttpSttAdapter, 0 for native
-    const retranscribeCount =
-      "getRetranscribeCount" in this.sttProvider
-        ? (this.sttProvider as HttpSttAdapter).getRetranscribeCount()
-        : 0;
+    const retranscribeCount = 0;
     this.metrics?.record(
       "server.dictation_retranscribe_count",
       retranscribeCount,
@@ -458,7 +453,6 @@ export class DictationManager {
   }
 
   private providerKind(): string {
-    // HttpSttAdapter has an `endpoint` property; native providers don't
     if ("endpoint" in this.sttProvider) {
       const name = this.sttProvider.name;
       return name === "mlx-server" ? "local_server" : "cloud";
@@ -621,7 +615,9 @@ export class DictationManager {
       (session.totalBytes / (SAMPLE_RATE * BYTES_PER_SAMPLE * NUM_CHANNELS)) * 1000,
     );
     const sttEndpoint =
-      "endpoint" in this.sttProvider ? (this.sttProvider as HttpSttAdapter).endpoint : "local";
+      "endpoint" in this.sttProvider
+        ? (this.sttProvider as { endpoint: string }).endpoint
+        : "local";
     const metadata: DictationAudioMetadata = {
       audioId,
       startedAt: session.startedAt,

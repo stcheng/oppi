@@ -704,10 +704,7 @@ function normalizeConfig(
       "sttModel",
       "sttBinary",
       "sttModelDir",
-      "sttApiKey",
-      "sttAuthStyle",
       "sttLanguage",
-      "retranscribeIntervalMs",
       "preserveAudio",
       "maxDurationSec",
       "llmEndpoint",
@@ -725,22 +722,9 @@ function normalizeConfig(
 
     const asrConfig: NonNullable<ServerConfig["asr"]> = {};
 
-    const validProviders = [
-      "mlx-streaming",
-      "mlx-server",
-      "openai",
-      "deepgram",
-      "elevenlabs",
-      "qwen_asr",
-    ];
+    const validProviders = ["mlx-streaming", "qwen_asr"];
     if (typeof asr.sttProvider === "string" && validProviders.includes(asr.sttProvider)) {
-      asrConfig.sttProvider = asr.sttProvider as
-        | "mlx-streaming"
-        | "mlx-server"
-        | "openai"
-        | "deepgram"
-        | "elevenlabs"
-        | "qwen_asr";
+      asrConfig.sttProvider = asr.sttProvider as "mlx-streaming" | "qwen_asr";
     }
     if (typeof asr.sttBinary === "string" && asr.sttBinary.trim().length > 0) {
       asrConfig.sttBinary = asr.sttBinary.trim();
@@ -754,21 +738,8 @@ function normalizeConfig(
     if (typeof asr.sttModel === "string" && asr.sttModel.trim().length > 0) {
       asrConfig.sttModel = asr.sttModel.trim();
     }
-    if (typeof asr.sttApiKey === "string") {
-      asrConfig.sttApiKey = asr.sttApiKey;
-    }
-    if (asr.sttAuthStyle === "bearer" || asr.sttAuthStyle === "x-api-key") {
-      asrConfig.sttAuthStyle = asr.sttAuthStyle;
-    }
     if (typeof asr.sttLanguage === "string") {
       asrConfig.sttLanguage = asr.sttLanguage.trim() || undefined;
-    }
-    if (
-      typeof asr.retranscribeIntervalMs === "number" &&
-      Number.isInteger(asr.retranscribeIntervalMs) &&
-      asr.retranscribeIntervalMs >= 100
-    ) {
-      asrConfig.retranscribeIntervalMs = asr.retranscribeIntervalMs;
     }
     if (typeof asr.preserveAudio === "boolean") {
       asrConfig.preserveAudio = asr.preserveAudio;

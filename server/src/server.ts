@@ -435,8 +435,6 @@ export class Server {
       config.asr?.sttProvider === "qwen_asr" ? !!config.asr?.sttBinary : !!config.asr?.sttEndpoint;
     if (asrEnabled) {
       const asrConfig = { ...DEFAULT_DICTATION_CONFIG, ...config.asr } as DictationConfig;
-      // API keys: env vars take priority over config file
-      if (process.env.OPPI_STT_API_KEY) asrConfig.sttApiKey = process.env.OPPI_STT_API_KEY;
       const sttProvider = createSttProvider(asrConfig, globalThis.fetch);
       this.dictationManager = new DictationManager(
         asrConfig,

@@ -13,7 +13,7 @@ import {
   encodeWav,
   extractJsonFromResponse,
 } from "./dictation-manager.js";
-import { adaptiveInterval, HttpSttAdapter } from "./stt-provider.js";
+
 import type { DictationConfig, DictationServerMessage } from "./dictation-types.js";
 import type { SttProvider } from "./stt-provider.js";
 
@@ -23,7 +23,6 @@ function testConfig(overrides: Partial<DictationConfig> = {}): DictationConfig {
   return {
     sttEndpoint: "http://localhost:9847",
     sttModel: "test-model",
-    retranscribeIntervalMs: 2000,
     preserveAudio: false,
     maxDurationSec: 300,
     llmEndpoint: "http://localhost:8400",
@@ -121,29 +120,6 @@ function failingSttProvider(error: string) {
   return Object.assign(provider, { start: startFn, feedAudio: feedAudioFn, stop: stopFn });
 }
 
-/**
- * Create a mock HTTP transcriber for use with HttpSttAdapter.
- * Returns fixed text from transcribe().
- */
-function mockHttpTranscriber(text: string) {
-  return {
-    name: "mock-http",
-    model: "mock-http-model",
-    endpoint: "http://mock:9847",
-    transcribe: vi.fn().mockResolvedValue(text),
-  };
-}
-
-/** Create an HttpSttAdapter wrapping a mock transcriber. */
-function mockHttpProvider(text: string, config?: Partial<DictationConfig>) {
-  const transcriber = mockHttpTranscriber(text);
-  const adapter = new HttpSttAdapter(transcriber, {
-    retranscribeIntervalMs: config?.retranscribeIntervalMs ?? 2000,
-    maxDurationSec: config?.maxDurationSec ?? 300,
-  });
-  return Object.assign(adapter, { transcriber });
-}
-
 /** Create a mock fetch that handles LLM correction calls only. */
 function mockLlmFetch(llmResponse: Record<string, unknown>): typeof globalThis.fetch {
   return vi.fn().mockResolvedValue({
@@ -231,32 +207,6 @@ describe("encodeFlac", () => {
 
   it("rejects on empty input", async () => {
     await expect(encodeFlac(Buffer.alloc(0))).rejects.toThrow();
-  });
-});
-
-describe("adaptiveInterval", () => {
-  it("returns base interval for short audio", () => {
-    expect(adaptiveInterval(5, 2000)).toBe(2000);
-    expect(adaptiveInterval(29, 2000)).toBe(2000);
-  });
-
-  it("doubles interval at 30s threshold", () => {
-    expect(adaptiveInterval(30, 2000)).toBe(4000);
-  });
-
-  it("triples interval at 60s threshold", () => {
-    expect(adaptiveInterval(60, 2000)).toBe(6000);
-  });
-
-  it("6x interval at 120s+", () => {
-    expect(adaptiveInterval(120, 2000)).toBe(12000);
-  });
-
-  it("scales relative to base interval", () => {
-    expect(adaptiveInterval(5, 1000)).toBe(1000);
-    expect(adaptiveInterval(30, 1000)).toBe(2000);
-    expect(adaptiveInterval(60, 1000)).toBe(3000);
-    expect(adaptiveInterval(120, 1000)).toBe(6000);
   });
 });
 
@@ -521,99 +471,6 @@ describe("DictationManager", () => {
       const finals = messagesOfType(fakeWs, "dictation_final");
       expect(finals).toHaveLength(1);
       expect(finals[0].text).toBe("raw text");
-    });
-  });
-});
-
-// ─── HttpSttAdapter tests (retranscribe timer lives in the adapter now) ───
-
-describe("DictationManager with HttpSttAdapter", () => {
-  let manager: DictationManager;
-  let ws: FakeWebSocket;
-  let httpProvider: ReturnType<typeof mockHttpProvider>;
-
-  beforeEach(() => {
-    vi.useFakeTimers();
-    httpProvider = mockHttpProvider("hello world");
-    manager = new DictationManager(testConfig(), "/tmp/test-http", httpProvider);
-    ws = new FakeWebSocket();
-    manager.handleConnection(ws as unknown as WebSocket);
-  });
-
-  afterEach(() => {
-    vi.useRealTimers();
-  });
-
-  describe("retranscribe timer", () => {
-    it("calls HTTP transcriber after interval elapses", async () => {
-      sendControl(ws, { type: "dictation_start" });
-      sendAudio(ws, silencePcm(500));
-      await vi.advanceTimersByTimeAsync(2100);
-
-      expect(httpProvider.transcriber.transcribe).toHaveBeenCalled();
-      const results = messagesOfType(ws, "dictation_result");
-      expect(results.length).toBeGreaterThanOrEqual(1);
-      expect(results[0].text).toBe("hello world");
-    });
-
-    it("increments version on each retranscribe", async () => {
-      sendControl(ws, { type: "dictation_start" });
-      sendAudio(ws, silencePcm(500));
-      await vi.advanceTimersByTimeAsync(2100);
-      await vi.advanceTimersByTimeAsync(2100);
-
-      const results = messagesOfType(ws, "dictation_result");
-      expect(results.length).toBeGreaterThanOrEqual(2);
-      expect(results[1].version).toBeGreaterThan(results[0].version);
-    });
-
-    it("does not retranscribe with zero audio", async () => {
-      sendControl(ws, { type: "dictation_start" });
-      await vi.advanceTimersByTimeAsync(2100);
-      expect(httpProvider.transcriber.transcribe).not.toHaveBeenCalled();
-    });
-  });
-
-  describe("finalize", () => {
-    it("calls transcriber on finalize and returns text", async () => {
-      sendControl(ws, { type: "dictation_start" });
-      sendAudio(ws, silencePcm(1000));
-      sendControl(ws, { type: "dictation_stop" });
-      await vi.advanceTimersByTimeAsync(10);
-
-      const finals = messagesOfType(ws, "dictation_final");
-      expect(finals).toHaveLength(1);
-      expect(finals[0].text).toBe("hello world");
-    });
-
-    it("sends WAV with valid header to transcriber", async () => {
-      sendControl(ws, { type: "dictation_start" });
-      sendAudio(ws, silencePcm(1000));
-      sendControl(ws, { type: "dictation_stop" });
-      await vi.advanceTimersByTimeAsync(10);
-
-      expect(httpProvider.transcriber.transcribe).toHaveBeenCalled();
-      const wav = httpProvider.transcriber.transcribe.mock.calls[0][0] as Buffer;
-      expect(wav.toString("ascii", 0, 4)).toBe("RIFF");
-      expect(wav.toString("ascii", 8, 12)).toBe("WAVE");
-    });
-  });
-
-  describe("max duration", () => {
-    it("stops retranscribe timer when max duration exceeded", async () => {
-      const hp = mockHttpProvider("test", { maxDurationSec: 1 });
-      const mgr = new DictationManager(testConfig(), "/tmp/test", hp);
-      const fakeWs = new FakeWebSocket();
-      mgr.handleConnection(fakeWs as unknown as WebSocket);
-
-      sendControl(fakeWs, { type: "dictation_start" });
-      sendAudio(fakeWs, silencePcm(2000));
-      await vi.advanceTimersByTimeAsync(2100);
-
-      // After max duration, adapter stops itself. Further ticks produce nothing.
-      const callCountAfterStop = hp.transcriber.transcribe.mock.calls.length;
-      await vi.advanceTimersByTimeAsync(4000);
-      expect(hp.transcriber.transcribe.mock.calls.length).toBe(callCountAfterStop);
     });
   });
 });

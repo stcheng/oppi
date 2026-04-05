@@ -31,17 +31,8 @@ export interface DictationConfig {
   /** Model to request from the STT backend. */
   sttModel: string;
 
-  /** API key for the STT backend. Omit or empty = no auth. */
-  sttApiKey?: string;
-
-  /** Auth header style: "bearer" (default, OpenAI-style) or "x-api-key" (NanoGPT-style). */
-  sttAuthStyle?: "bearer" | "x-api-key";
-
   /** Language hint for providers that support it (ISO-639-1). */
   sttLanguage?: string;
-
-  /** Base retranscribe interval in ms (adaptive — widens as audio grows). */
-  retranscribeIntervalMs: number;
 
   /** Save audio as FLAC on finalize. */
   preserveAudio: boolean;
@@ -57,36 +48,16 @@ export interface DictationConfig {
 
   /** Whether to run LLM correction on finalize. */
   llmCorrectionEnabled: boolean;
-
-  // ─── STT decode knobs (mlx-server specific, ignored by other providers) ───
-  /** Sampling temperature sent to the STT model (0 = greedy). */
-  sttTemperature?: number;
-  /** Top-k sampling for STT model. */
-  sttTopK?: number;
-  /** Top-p (nucleus) sampling for STT model. */
-  sttTopP?: number;
-  /** Repetition penalty for STT model. */
-  sttRepetitionPenalty?: number;
-  /** Context size used for repetition penalty calculation. */
-  sttRepetitionContextSize?: number;
 }
 
 export const DEFAULT_DICTATION_CONFIG: DictationConfig = {
   sttEndpoint: "http://localhost:9847",
   sttModel: "mlx-community/Qwen3-ASR-1.7B-bf16",
-  sttApiKey: "",
-  retranscribeIntervalMs: 2000,
   preserveAudio: true,
   maxDurationSec: 0,
   llmEndpoint: "http://localhost:8400",
   llmModel: "Qwen3.5-122B-A10B-4bit",
   llmCorrectionEnabled: false,
-  // STT decode knobs — tuned for live dictation with Qwen3-ASR
-  sttTemperature: 0.01,
-  sttTopK: 1,
-  sttTopP: 0.9,
-  sttRepetitionPenalty: 1.28,
-  sttRepetitionContextSize: 64,
 };
 
 // ─── Client -> Server messages ───

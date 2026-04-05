@@ -265,11 +265,9 @@ describe("Storage config validation", () => {
     const raw = {
       ...Storage.getDefaultConfig(dir),
       asr: {
+        sttProvider: "mlx-streaming" as const,
         sttEndpoint: "http://localhost:9847",
-        sttModel: "whisper-large-v3",
-        sttApiKey: "sk-test",
-        sttAuthStyle: "bearer" as const,
-        retranscribeIntervalMs: 3000,
+        sttModel: "Qwen3-ASR-1.7B-bf16",
         preserveAudio: false,
         maxDurationSec: 120,
         llmEndpoint: "http://localhost:8400",
@@ -280,10 +278,8 @@ describe("Storage config validation", () => {
 
     const result = Storage.validateConfig(raw, dir, true);
     expect(result.valid).toBe(true);
+    expect(result.config?.asr?.sttProvider).toBe("mlx-streaming");
     expect(result.config?.asr?.sttEndpoint).toBe("http://localhost:9847");
-    expect(result.config?.asr?.sttApiKey).toBe("sk-test");
-    expect(result.config?.asr?.sttAuthStyle).toBe("bearer");
-    expect(result.config?.asr?.retranscribeIntervalMs).toBe(3000);
     expect(result.config?.asr?.preserveAudio).toBe(false);
     expect(result.config?.asr?.maxDurationSec).toBe(120);
     expect(result.config?.asr?.llmEndpoint).toBe("http://localhost:8400");
