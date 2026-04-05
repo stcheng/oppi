@@ -384,6 +384,199 @@ export function defaultPolicy(): PolicyConfig {
         match: { tool: "bash", executable: "git", commandMatches: "git push*" },
       },
 
+      // ── Package installation → ask ──
+      // Every dependency install must go through approval. Container mode is exempt.
+
+      // Node.js
+      {
+        id: "ask-npm-install",
+        decision: "ask",
+        label: "Package install (npm)",
+        reason: "Dependency installation requires approval",
+        match: { tool: "bash", executable: "npm", commandMatches: "npm i*" },
+      },
+      {
+        id: "ask-npm-ci",
+        decision: "ask",
+        label: "Package install (npm ci)",
+        reason: "Dependency installation requires approval",
+        match: { tool: "bash", executable: "npm", commandMatches: "npm ci*" },
+      },
+      {
+        id: "ask-npm-add",
+        decision: "ask",
+        label: "Package install (npm)",
+        reason: "Dependency installation requires approval",
+        match: { tool: "bash", executable: "npm", commandMatches: "npm add*" },
+      },
+      {
+        id: "ask-yarn-install",
+        decision: "ask",
+        label: "Package install (yarn)",
+        reason: "Dependency installation requires approval",
+        match: { tool: "bash", executable: "yarn", commandMatches: "yarn install*" },
+      },
+      {
+        id: "ask-yarn-add",
+        decision: "ask",
+        label: "Package install (yarn)",
+        reason: "Dependency installation requires approval",
+        match: { tool: "bash", executable: "yarn", commandMatches: "yarn add*" },
+      },
+      {
+        id: "ask-pnpm-install",
+        decision: "ask",
+        label: "Package install (pnpm)",
+        reason: "Dependency installation requires approval",
+        match: { tool: "bash", executable: "pnpm", commandMatches: "pnpm i*" },
+      },
+      {
+        id: "ask-pnpm-add",
+        decision: "ask",
+        label: "Package install (pnpm)",
+        reason: "Dependency installation requires approval",
+        match: { tool: "bash", executable: "pnpm", commandMatches: "pnpm add*" },
+      },
+      {
+        id: "ask-bun-install",
+        decision: "ask",
+        label: "Package install (bun)",
+        reason: "Dependency installation requires approval",
+        match: { tool: "bash", executable: "bun", commandMatches: "bun i*" },
+      },
+      {
+        id: "ask-bun-add",
+        decision: "ask",
+        label: "Package install (bun)",
+        reason: "Dependency installation requires approval",
+        match: { tool: "bash", executable: "bun", commandMatches: "bun add*" },
+      },
+
+      // Python
+      {
+        id: "ask-pip-install",
+        decision: "ask",
+        label: "Package install (pip)",
+        reason: "Dependency installation requires approval",
+        match: { tool: "bash", executable: "pip", commandMatches: "pip install*" },
+      },
+      {
+        id: "ask-pip3-install",
+        decision: "ask",
+        label: "Package install (pip)",
+        reason: "Dependency installation requires approval",
+        match: { tool: "bash", executable: "pip3", commandMatches: "pip3 install*" },
+      },
+      {
+        id: "ask-uv-pip-install",
+        decision: "ask",
+        label: "Package install (uv)",
+        reason: "Dependency installation requires approval",
+        match: { tool: "bash", executable: "uv", commandMatches: "uv pip install*" },
+      },
+      {
+        id: "ask-uv-add",
+        decision: "ask",
+        label: "Package install (uv)",
+        reason: "Dependency installation requires approval",
+        match: { tool: "bash", executable: "uv", commandMatches: "uv add*" },
+      },
+      {
+        id: "ask-pipx-install",
+        decision: "ask",
+        label: "Package install (pipx)",
+        reason: "Dependency installation requires approval",
+        match: { tool: "bash", executable: "pipx", commandMatches: "pipx install*" },
+      },
+
+      // System
+      {
+        id: "ask-brew-install",
+        decision: "ask",
+        label: "Package install (brew)",
+        reason: "Dependency installation requires approval",
+        match: { tool: "bash", executable: "brew", commandMatches: "brew install*" },
+      },
+      {
+        id: "ask-brew-reinstall",
+        decision: "ask",
+        label: "Package install (brew)",
+        reason: "Dependency installation requires approval",
+        match: { tool: "bash", executable: "brew", commandMatches: "brew reinstall*" },
+      },
+      {
+        id: "ask-apt-install",
+        decision: "ask",
+        label: "Package install (apt)",
+        reason: "Dependency installation requires approval",
+        match: { tool: "bash", executable: "apt", commandMatches: "apt install*" },
+      },
+      {
+        id: "ask-apt-get-install",
+        decision: "ask",
+        label: "Package install (apt)",
+        reason: "Dependency installation requires approval",
+        match: { tool: "bash", executable: "apt-get", commandMatches: "apt-get install*" },
+      },
+      {
+        id: "ask-apk-add",
+        decision: "ask",
+        label: "Package install (apk)",
+        reason: "Dependency installation requires approval",
+        match: { tool: "bash", executable: "apk", commandMatches: "apk add*" },
+      },
+
+      // Other languages
+      {
+        id: "ask-cargo-install",
+        decision: "ask",
+        label: "Package install (cargo)",
+        reason: "Dependency installation requires approval",
+        match: { tool: "bash", executable: "cargo", commandMatches: "cargo install*" },
+      },
+      {
+        id: "ask-cargo-add",
+        decision: "ask",
+        label: "Package install (cargo)",
+        reason: "Dependency installation requires approval",
+        match: { tool: "bash", executable: "cargo", commandMatches: "cargo add*" },
+      },
+      {
+        id: "ask-go-install",
+        decision: "ask",
+        label: "Package install (go)",
+        reason: "Dependency installation requires approval",
+        match: { tool: "bash", executable: "go", commandMatches: "go install*" },
+      },
+      {
+        id: "ask-go-get",
+        decision: "ask",
+        label: "Package install (go)",
+        reason: "Dependency installation requires approval",
+        match: { tool: "bash", executable: "go", commandMatches: "go get*" },
+      },
+      {
+        id: "ask-gem-install",
+        decision: "ask",
+        label: "Package install (gem)",
+        reason: "Dependency installation requires approval",
+        match: { tool: "bash", executable: "gem", commandMatches: "gem install*" },
+      },
+      {
+        id: "ask-composer-require",
+        decision: "ask",
+        label: "Package install (composer)",
+        reason: "Dependency installation requires approval",
+        match: { tool: "bash", executable: "composer", commandMatches: "composer require*" },
+      },
+      {
+        id: "ask-composer-install",
+        decision: "ask",
+        label: "Package install (composer)",
+        reason: "Dependency installation requires approval",
+        match: { tool: "bash", executable: "composer", commandMatches: "composer install*" },
+      },
+
       // ── Package publishing → ask ──
       {
         id: "ask-npm-publish",
@@ -880,6 +1073,158 @@ const HOST_EXTERNAL_ASK_RULES: PolicyRule[] = [
     pattern: "git push*",
     action: "ask",
     label: "Git push",
+  },
+
+  // ── Package installation → ask ──
+  // Agents must get approval before pulling dependencies.
+  // Container mode is deliberately exempt (sandboxed).
+
+  // Node.js
+  { tool: "bash", exec: "npm", pattern: "npm i*", action: "ask", label: "Package install (npm)" },
+  {
+    tool: "bash",
+    exec: "npm",
+    pattern: "npm ci*",
+    action: "ask",
+    label: "Package install (npm ci)",
+  },
+  { tool: "bash", exec: "npm", pattern: "npm add*", action: "ask", label: "Package install (npm)" },
+  {
+    tool: "bash",
+    exec: "yarn",
+    pattern: "yarn install*",
+    action: "ask",
+    label: "Package install (yarn)",
+  },
+  {
+    tool: "bash",
+    exec: "yarn",
+    pattern: "yarn add*",
+    action: "ask",
+    label: "Package install (yarn)",
+  },
+  {
+    tool: "bash",
+    exec: "pnpm",
+    pattern: "pnpm i*",
+    action: "ask",
+    label: "Package install (pnpm)",
+  },
+  {
+    tool: "bash",
+    exec: "pnpm",
+    pattern: "pnpm add*",
+    action: "ask",
+    label: "Package install (pnpm)",
+  },
+  { tool: "bash", exec: "bun", pattern: "bun i*", action: "ask", label: "Package install (bun)" },
+  { tool: "bash", exec: "bun", pattern: "bun add*", action: "ask", label: "Package install (bun)" },
+
+  // Python
+  {
+    tool: "bash",
+    exec: "pip",
+    pattern: "pip install*",
+    action: "ask",
+    label: "Package install (pip)",
+  },
+  {
+    tool: "bash",
+    exec: "pip3",
+    pattern: "pip3 install*",
+    action: "ask",
+    label: "Package install (pip)",
+  },
+  {
+    tool: "bash",
+    exec: "uv",
+    pattern: "uv pip install*",
+    action: "ask",
+    label: "Package install (uv)",
+  },
+  { tool: "bash", exec: "uv", pattern: "uv add*", action: "ask", label: "Package install (uv)" },
+  {
+    tool: "bash",
+    exec: "pipx",
+    pattern: "pipx install*",
+    action: "ask",
+    label: "Package install (pipx)",
+  },
+
+  // System
+  {
+    tool: "bash",
+    exec: "brew",
+    pattern: "brew install*",
+    action: "ask",
+    label: "Package install (brew)",
+  },
+  {
+    tool: "bash",
+    exec: "brew",
+    pattern: "brew reinstall*",
+    action: "ask",
+    label: "Package install (brew)",
+  },
+  {
+    tool: "bash",
+    exec: "apt",
+    pattern: "apt install*",
+    action: "ask",
+    label: "Package install (apt)",
+  },
+  {
+    tool: "bash",
+    exec: "apt-get",
+    pattern: "apt-get install*",
+    action: "ask",
+    label: "Package install (apt)",
+  },
+  { tool: "bash", exec: "apk", pattern: "apk add*", action: "ask", label: "Package install (apk)" },
+
+  // Other languages
+  {
+    tool: "bash",
+    exec: "cargo",
+    pattern: "cargo install*",
+    action: "ask",
+    label: "Package install (cargo)",
+  },
+  {
+    tool: "bash",
+    exec: "cargo",
+    pattern: "cargo add*",
+    action: "ask",
+    label: "Package install (cargo)",
+  },
+  {
+    tool: "bash",
+    exec: "go",
+    pattern: "go install*",
+    action: "ask",
+    label: "Package install (go)",
+  },
+  { tool: "bash", exec: "go", pattern: "go get*", action: "ask", label: "Package install (go)" },
+  {
+    tool: "bash",
+    exec: "gem",
+    pattern: "gem install*",
+    action: "ask",
+    label: "Package install (gem)",
+  },
+  {
+    tool: "bash",
+    exec: "composer",
+    pattern: "composer require*",
+    action: "ask",
+    label: "Package install (composer)",
+  },
+  {
+    tool: "bash",
+    exec: "composer",
+    pattern: "composer install*",
+    action: "ask",
+    label: "Package install (composer)",
   },
 
   // Package publishing

@@ -61,7 +61,6 @@ describe("host preset: default allow (like pi CLI)", () => {
     "rm file.txt", "mv old.txt new.txt", "cp -r src/ backup/",
     "chmod 755 script.sh", "mkdir -p new/dir", "touch newfile.txt",
     // System tools — allowed (host = trusted)
-    "brew install ripgrep", "pip install flask",
     "curl https://api.com/data", "curl -s https://example.com",
     "rsync -avz . user@server:/data",
   ];
@@ -145,6 +144,23 @@ describe("host preset: external actions gated", () => {
   });
   it("asks for chained ssh", () => {
     expect(policy.evaluate(bash("echo ok; ssh user@server.com")).action).toBe("ask");
+  });
+});
+
+// ─── Package installation → ask ───
+
+describe("host preset: package installs gated", () => {
+  it("asks for brew install", () => {
+    expect(policy.evaluate(bash("brew install ripgrep")).action).toBe("ask");
+  });
+  it("asks for pip install", () => {
+    expect(policy.evaluate(bash("pip install flask")).action).toBe("ask");
+  });
+  it("asks for npm install", () => {
+    expect(policy.evaluate(bash("npm install express")).action).toBe("ask");
+  });
+  it("asks for cargo add", () => {
+    expect(policy.evaluate(bash("cargo add serde")).action).toBe("ask");
   });
 });
 
