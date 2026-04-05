@@ -46,6 +46,8 @@ export interface SttProvider {
   onToken(cb: (text: string) => void): void;
   /** Close audio input, wait for completion, return full final text. */
   stop(): Promise<string>;
+  /** Clean up provider resources (e.g. remote sessions). Call on shutdown. */
+  dispose?(): Promise<void>;
 }
 
 // ─── Helpers ───
@@ -603,6 +605,7 @@ export class MlxStreamingSttProvider implements SttProvider {
   readonly endpoint: string;
   private fetchFn: typeof globalThis.fetch;
   private sessionId: string | null = null;
+  private warmSessionId: string | null = null;
   private tokenCb: ((text: string) => void) | null = null;
   private lastText = "";
   private audioQueue: Buffer[] = [];
@@ -621,17 +624,35 @@ export class MlxStreamingSttProvider implements SttProvider {
     this.model = opts.model;
     this.fetchFn = fetchFn;
     this.feedIntervalMs = feedIntervalMs;
+    // Pre-warm a session at construction time
+    void this.warmUpSession();
   }
 
   start(): void {
-    this.sessionId = null;
+    // Cleanup existing active session if start() called again without stop()
+    if (this.sessionId) {
+      void this.deleteSession(this.sessionId);
+      this.sessionId = null;
+    }
+    if (this.feedTimer) {
+      clearInterval(this.feedTimer);
+      this.feedTimer = null;
+    }
+
     this.lastText = "";
     this.audioQueue = [];
     this.feeding = false;
     this.stopped = false;
 
-    // Create session
-    void this.createSession();
+    // Use warm session if available, otherwise create fresh
+    if (this.warmSessionId) {
+      this.sessionId = this.warmSessionId;
+      this.warmSessionId = null;
+      this.feedTimer = setInterval(() => void this.flushAudio(), this.feedIntervalMs);
+    } else {
+      this.sessionId = null;
+      void this.createSession();
+    }
   }
 
   feedAudio(pcm: Buffer): void {
@@ -677,12 +698,77 @@ export class MlxStreamingSttProvider implements SttProvider {
       this.sessionId = null;
     }
 
+    // Pre-warm next session so next mic tap is instant
+    void this.warmUpSession();
+
     return this.lastText;
+  }
+
+  /** Cleanup all sessions. Call on server shutdown. */
+  async dispose(): Promise<void> {
+    this.stopped = true;
+    if (this.feedTimer) {
+      clearInterval(this.feedTimer);
+      this.feedTimer = null;
+    }
+
+    const promises: Promise<void>[] = [];
+    if (this.sessionId) {
+      promises.push(this.deleteSession(this.sessionId));
+      this.sessionId = null;
+    }
+    if (this.warmSessionId) {
+      promises.push(this.deleteSession(this.warmSessionId));
+      this.warmSessionId = null;
+    }
+    await Promise.allSettled(promises);
   }
 
   // ─── Internal ───
 
+  /** DELETE a session on the MLX server. Best-effort, logs errors. */
+  private async deleteSession(id: string): Promise<void> {
+    try {
+      const url = `${this.endpoint}/v1/audio/transcriptions/stream/${id}`;
+      await this.fetchFn(url, {
+        method: "DELETE",
+        signal: AbortSignal.timeout(5_000),
+      });
+    } catch (err) {
+      console.warn(
+        "[mlx-streaming] Failed to delete session:",
+        id,
+        err instanceof Error ? err.message : String(err),
+      );
+    }
+  }
+
+  private async warmUpSession(): Promise<void> {
+    // Cleanup existing warm session to prevent leak
+    if (this.warmSessionId) {
+      await this.deleteSession(this.warmSessionId);
+      this.warmSessionId = null;
+    }
+
+    try {
+      const url = `${this.endpoint}/v1/audio/transcriptions/stream`;
+      const res = await this.fetchFn(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ model: this.model }),
+        signal: AbortSignal.timeout(10_000),
+      });
+      if (res.ok) {
+        const data = (await res.json()) as { session_id?: string };
+        this.warmSessionId = data.session_id ?? null;
+      }
+    } catch {
+      // Non-fatal — will create on demand in start()
+    }
+  }
+
   private async createSession(): Promise<void> {
+    if (this.stopped) return;
     try {
       const url = `${this.endpoint}/v1/audio/transcriptions/stream`;
       const res = await this.fetchFn(url, {
@@ -733,6 +819,15 @@ export class MlxStreamingSttProvider implements SttProvider {
           this.lastText = text;
           this.tokenCb?.(text);
         }
+      } else if (res.status === 404) {
+        // Stale session — MLX server likely restarted
+        console.warn("[mlx-streaming] Session", this.sessionId, "not found (404), recreating");
+        this.sessionId = null;
+        if (this.feedTimer) {
+          clearInterval(this.feedTimer);
+          this.feedTimer = null;
+        }
+        await this.createSession();
       }
     } catch (err) {
       console.warn("[mlx-streaming] Feed error:", err instanceof Error ? err.message : String(err));
