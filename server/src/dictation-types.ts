@@ -7,7 +7,13 @@
 
 // ─── Config ───
 
-export type SttProviderType = "mlx-server" | "openai" | "deepgram" | "elevenlabs" | "qwen_asr";
+export type SttProviderType =
+  | "mlx-streaming"
+  | "mlx-server"
+  | "openai"
+  | "deepgram"
+  | "elevenlabs"
+  | "qwen_asr";
 
 export interface DictationConfig {
   /** STT provider type. Default: "mlx-server". */

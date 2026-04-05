@@ -584,6 +584,164 @@ export class ElevenLabsTranscriber implements HttpTranscriber {
   }
 }
 
+// ─── MLX Streaming Provider ───
+
+/**
+ * Streaming STT via MLX server's stateful session endpoint.
+ *
+ * Uses encoder window caching + decoder KV reuse + prefix rollback
+ * for O(1) per-chunk latency instead of O(n) retranscribe.
+ *
+ * API:
+ *   POST /v1/audio/transcriptions/stream      → create session
+ *   POST /v1/audio/transcriptions/stream/:id   → feed chunk (raw PCM)
+ *   DELETE /v1/audio/transcriptions/stream/:id  → stop, get final text
+ */
+export class MlxStreamingSttProvider implements SttProvider {
+  readonly name = "mlx-streaming";
+  readonly model: string;
+  readonly endpoint: string;
+  private fetchFn: typeof globalThis.fetch;
+  private sessionId: string | null = null;
+  private tokenCb: ((text: string) => void) | null = null;
+  private lastText = "";
+  private audioQueue: Buffer[] = [];
+  private feeding = false;
+  private stopped = false;
+  private feedTimer: ReturnType<typeof setInterval> | null = null;
+  /** How often to flush accumulated audio to the session (ms). */
+  private feedIntervalMs: number;
+
+  constructor(
+    opts: { endpoint: string; model: string },
+    fetchFn: typeof globalThis.fetch = globalThis.fetch,
+    feedIntervalMs = 2000,
+  ) {
+    this.endpoint = opts.endpoint;
+    this.model = opts.model;
+    this.fetchFn = fetchFn;
+    this.feedIntervalMs = feedIntervalMs;
+  }
+
+  start(): void {
+    this.sessionId = null;
+    this.lastText = "";
+    this.audioQueue = [];
+    this.feeding = false;
+    this.stopped = false;
+
+    // Create session
+    void this.createSession();
+  }
+
+  feedAudio(pcm: Buffer): void {
+    if (this.stopped) return;
+    this.audioQueue.push(pcm);
+  }
+
+  onToken(cb: (text: string) => void): void {
+    this.tokenCb = cb;
+  }
+
+  async stop(): Promise<string> {
+    this.stopped = true;
+    if (this.feedTimer) {
+      clearInterval(this.feedTimer);
+      this.feedTimer = null;
+    }
+
+    // Flush remaining audio
+    if (this.sessionId && this.audioQueue.length > 0) {
+      try {
+        await this.flushAudio();
+      } catch {
+        // Best effort
+      }
+    }
+
+    // Stop session and get final text
+    if (this.sessionId) {
+      try {
+        const url = `${this.endpoint}/v1/audio/transcriptions/stream/${this.sessionId}`;
+        const res = await this.fetchFn(url, {
+          method: "DELETE",
+          signal: AbortSignal.timeout(10_000),
+        });
+        if (res.ok) {
+          const data = (await res.json()) as { text?: string };
+          this.lastText = data.text ?? this.lastText;
+        }
+      } catch {
+        // Return whatever we had
+      }
+      this.sessionId = null;
+    }
+
+    return this.lastText;
+  }
+
+  // ─── Internal ───
+
+  private async createSession(): Promise<void> {
+    try {
+      const url = `${this.endpoint}/v1/audio/transcriptions/stream`;
+      const res = await this.fetchFn(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ model: this.model }),
+        signal: AbortSignal.timeout(10_000),
+      });
+      if (!res.ok) {
+        const body = await res.text().catch(() => "");
+        throw new Error(`Create session HTTP ${res.status}: ${body}`);
+      }
+      const data = (await res.json()) as { session_id?: string };
+      this.sessionId = data.session_id ?? null;
+      if (this.sessionId) {
+        // Start the feed timer
+        this.feedTimer = setInterval(() => void this.flushAudio(), this.feedIntervalMs);
+      }
+    } catch (err) {
+      console.error(
+        "[mlx-streaming] Failed to create session:",
+        err instanceof Error ? err.message : String(err),
+      );
+    }
+  }
+
+  private async flushAudio(): Promise<void> {
+    if (this.feeding || !this.sessionId || this.audioQueue.length === 0) return;
+    this.feeding = true;
+
+    try {
+      // Concatenate queued chunks into one buffer
+      const pcm = Buffer.concat(this.audioQueue);
+      this.audioQueue = [];
+
+      const url = `${this.endpoint}/v1/audio/transcriptions/stream/${this.sessionId}`;
+      const res = await this.fetchFn(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/octet-stream" },
+        body: new Uint8Array(pcm),
+        signal: AbortSignal.timeout(10_000),
+      });
+
+      if (res.ok) {
+        const data = (await res.json()) as { text?: string };
+        const text = data.text ?? "";
+        if (text) {
+          this.lastText = text;
+          this.tokenCb?.(text);
+        }
+      }
+    } catch (err) {
+      console.warn("[mlx-streaming] Feed error:", err instanceof Error ? err.message : String(err));
+    } finally {
+      this.feeding = false;
+    }
+  }
+}
+
 // ─── Factory ───
 
 /**
@@ -614,6 +772,15 @@ export function createSttProvider(
         modelDir: expandTilde(config.sttModelDir),
       });
     }
+
+    case "mlx-streaming":
+      return new MlxStreamingSttProvider(
+        {
+          endpoint: config.sttEndpoint,
+          model: config.sttModel,
+        },
+        fetchFn,
+      );
 
     case "mlx-server":
       return new HttpSttAdapter(
@@ -692,7 +859,7 @@ export function createSttProvider(
     default:
       throw new Error(
         `Unknown STT provider: "${providerType}". ` +
-          `Supported: qwen_asr, mlx-server, openai, deepgram, elevenlabs`,
+          `Supported: mlx-streaming, qwen_asr, mlx-server, openai, deepgram, elevenlabs`,
       );
   }
 }

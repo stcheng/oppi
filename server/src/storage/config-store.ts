@@ -725,9 +725,17 @@ function normalizeConfig(
 
     const asrConfig: NonNullable<ServerConfig["asr"]> = {};
 
-    const validProviders = ["mlx-server", "openai", "deepgram", "elevenlabs", "qwen_asr"];
+    const validProviders = [
+      "mlx-streaming",
+      "mlx-server",
+      "openai",
+      "deepgram",
+      "elevenlabs",
+      "qwen_asr",
+    ];
     if (typeof asr.sttProvider === "string" && validProviders.includes(asr.sttProvider)) {
       asrConfig.sttProvider = asr.sttProvider as
+        | "mlx-streaming"
         | "mlx-server"
         | "openai"
         | "deepgram"

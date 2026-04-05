@@ -261,7 +261,13 @@ export interface ServerConfig {
    * STT backend, LLM correction, and audio preservation.
    */
   asr?: {
-    sttProvider?: "mlx-server" | "openai" | "deepgram" | "elevenlabs" | "qwen_asr";
+    sttProvider?:
+      | "mlx-streaming"
+      | "mlx-server"
+      | "openai"
+      | "deepgram"
+      | "elevenlabs"
+      | "qwen_asr";
     sttEndpoint?: string;
     sttModel?: string;
     sttBinary?: string;
