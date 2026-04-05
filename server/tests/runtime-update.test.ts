@@ -16,18 +16,25 @@ describe("RuntimeUpdateManager", () => {
   });
 
   it("returns error when runtime dir not found", async () => {
-    // In test environment, process.argv[1] won't point to a valid runtime dir
-    // and ~/.config/oppi/server-runtime likely doesn't exist, so updateRuntime
-    // should fail gracefully.
-    const manager = new RuntimeUpdateManager({
-      currentVersion: "0.62.0",
-    });
+    // Override HOME so resolveRuntimeDir() can't find ~/.config/oppi/server-runtime
+    const origHome = process.env.HOME;
+    const origArgv1 = process.argv[1];
+    try {
+      process.env.HOME = "/tmp/nonexistent-oppi-test";
+      process.argv[1] = "/tmp/nonexistent-oppi-test/cli.js";
 
-    const result = await manager.updateRuntime();
+      const manager = new RuntimeUpdateManager({
+        currentVersion: "0.62.0",
+      });
 
-    // Either runtime dir not found or no package manager — both are acceptable
-    expect(result.ok).toBe(false);
-    expect(result.restartRequired).toBe(false);
+      const result = await manager.updateRuntime();
+
+      expect(result.ok).toBe(false);
+      expect(result.restartRequired).toBe(false);
+    } finally {
+      process.env.HOME = origHome;
+      process.argv[1] = origArgv1;
+    }
   });
 
   it("uses custom package name", async () => {
