@@ -97,8 +97,14 @@ final class VoiceInputManager {
     private(set) var activeEngine: TranscriptionEngine?
 
     var currentTranscript: String {
-        (finalizedTranscript + volatileTranscript)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let base: String
+        if typewriterAnimator.isAnimating {
+            // During animation, show the partially revealed text
+            base = typewriterAnimator.displayText + volatileTranscript
+        } else {
+            base = finalizedTranscript + volatileTranscript
+        }
+        return base.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     var isRecording: Bool { state == .recording }
@@ -135,6 +141,9 @@ final class VoiceInputManager {
     private let routeResolver: VoiceInputRouteResolver
     private let sessionMonitor: VoiceInputSessionMonitor
     private let systemAccess: any VoiceInputSystemAccessing
+
+    /// Drives character-by-character text reveal for server dictation updates.
+    let typewriterAnimator = TypewriterAnimator()
 
     /// Operation lock — prevents overlapping async operations.
     private var operationInFlight = false
@@ -491,6 +500,7 @@ final class VoiceInputManager {
         defer { operationInFlight = false }
 
         state = .processing
+        typewriterAnimator.commitCurrentAnimation()
         logger.info("Stopping recording")
 
         let finalizeStart = ContinuousClock.now
@@ -703,6 +713,9 @@ final class VoiceInputManager {
             finalizedTranscript = text
             volatileTranscript = ""
             resultUpdateCount += 1
+            if state == .recording {
+                typewriterAnimator.update(fullText: text)
+            }
             logger.debug("Finalized replace: \(text.count) chars")
         case .remoteChunkTelemetry(let chunk):
             recordRemoteChunkTelemetry(chunk, annotation: annotation)
@@ -712,6 +725,7 @@ final class VoiceInputManager {
     // MARK: - Cleanup
 
     private func teardownSession() {
+        typewriterAnimator.reset()
         sessionMonitor.teardown()
         audioLevel = 0
         activeLanguageLabel = nil
