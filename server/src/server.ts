@@ -430,8 +430,10 @@ export class Server {
       untrackConnection: (ws) => this.untrackConnection(ws),
     });
 
-    // Dictation pipeline (accumulate-and-retranscribe STT proxy)
-    if (config.asr?.sttEndpoint) {
+    // Dictation pipeline (streaming native or HTTP retranscribe)
+    const asrEnabled =
+      config.asr?.sttProvider === "qwen_asr" ? !!config.asr?.sttBinary : !!config.asr?.sttEndpoint;
+    if (asrEnabled) {
       const asrConfig = { ...DEFAULT_DICTATION_CONFIG, ...config.asr } as DictationConfig;
       // API keys: env vars take priority over config file
       if (process.env.OPPI_STT_API_KEY) asrConfig.sttApiKey = process.env.OPPI_STT_API_KEY;

@@ -11,6 +11,8 @@
  * - MLX Server (ours): OpenAI-compatible + extra knobs
  */
 
+import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { homedir } from "node:os";
 import type { DictationConfig } from "./dictation-types.js";
 
 // ─── Interface ───
@@ -25,6 +27,38 @@ export interface SttProvider {
   readonly endpoint: string;
   /** Transcribe WAV audio buffer to text. */
   transcribe(audio: Buffer): Promise<string>;
+}
+
+// ─── Streaming Interface ───
+
+/**
+ * Streaming STT provider. Instead of batch transcribe(), audio is piped
+ * incrementally and tokens arrive via callback as they're decoded.
+ *
+ * Lifecycle: start() → feedAudio()* → stop() → final text
+ */
+export interface SttStreamProvider {
+  /** Provider identifier for logs/metrics. */
+  readonly name: string;
+  /** Model identifier. */
+  readonly model: string;
+  /** Spawn the STT process and prepare for audio input. */
+  start(): void;
+  /** Write raw PCM audio (s16le, 16kHz, mono) to the process. */
+  feedAudio(pcm: Buffer): void;
+  /** Register callback for incremental token output. */
+  onToken(cb: (text: string) => void): void;
+  /** Close audio input, wait for process exit, return full accumulated text. */
+  stop(): Promise<string>;
+}
+
+/** Type guard: does this provider support streaming? */
+export function isSttStreamProvider(
+  provider: SttProvider | SttStreamProvider,
+): provider is SttStreamProvider {
+  return (
+    "start" in provider && "feedAudio" in provider && "onToken" in provider && "stop" in provider
+  );
 }
 
 // ─── Helpers ───
@@ -283,19 +317,160 @@ export class ElevenLabsSttProvider implements SttProvider {
   }
 }
 
-// ─── Factory ───
+// ─── Qwen ASR Provider ───
+
+export interface QwenAsrOptions {
+  /** Path to the qwen_asr binary. */
+  binary: string;
+  /** Path to the model directory (with *.safetensors, vocab.json). */
+  modelDir: string;
+}
 
 /**
- * Create an SttProvider from DictationConfig.
+ * Streaming STT via antirez/qwen-asr (pure C binary).
+ *
+ * Spawns `qwen_asr -d <modelDir> --stdin --stream --silent` per session.
+ * Pipes raw s16le 16kHz mono PCM to stdin, reads decoded tokens from stdout.
+ * The binary handles internal chunking, prefix rollback, and sliding window.
+ */
+export class QwenAsrProvider implements SttStreamProvider {
+  readonly name = "qwen_asr";
+  readonly model: string;
+  private opts: QwenAsrOptions;
+  private proc: ChildProcessWithoutNullStreams | null = null;
+  private tokenCb: ((text: string) => void) | null = null;
+  private accumulated = "";
+  private stdoutRemainder = "";
+
+  constructor(opts: QwenAsrOptions) {
+    this.opts = opts;
+    // Derive model name from the directory basename
+    const parts = opts.modelDir.replace(/\/+$/, "").split("/");
+    this.model = parts[parts.length - 1] || "qwen-asr";
+  }
+
+  start(): void {
+    if (this.proc) throw new Error("QwenAsrProvider already started");
+    this.accumulated = "";
+    this.stdoutRemainder = "";
+
+    this.proc = spawn(
+      this.opts.binary,
+      ["-d", this.opts.modelDir, "--stdin", "--stream", "--silent"],
+      { stdio: ["pipe", "pipe", "pipe"] },
+    );
+
+    // Buffer stdout and fire token callback per line
+    this.proc.stdout.on("data", (chunk: Buffer) => {
+      const text = this.stdoutRemainder + chunk.toString("utf8");
+      const lines = text.split("\n");
+      // Keep incomplete last line in remainder
+      this.stdoutRemainder = lines.pop() ?? "";
+      for (const line of lines) {
+        if (line.length > 0) {
+          this.accumulated += (this.accumulated.length > 0 ? " " : "") + line;
+          this.tokenCb?.(line);
+        }
+      }
+    });
+
+    // Log stderr (diagnostic only)
+    this.proc.stderr.on("data", (chunk: Buffer) => {
+      const msg = chunk.toString("utf8").trim();
+      if (msg) console.warn("[qwen-asr]", msg);
+    });
+  }
+
+  feedAudio(pcm: Buffer): void {
+    if (!this.proc || this.proc.stdin.destroyed) return;
+    this.proc.stdin.write(pcm);
+  }
+
+  onToken(cb: (text: string) => void): void {
+    this.tokenCb = cb;
+  }
+
+  stop(): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const proc = this.proc;
+      if (!proc) {
+        resolve(this.accumulated);
+        return;
+      }
+
+      const timeout = setTimeout(() => {
+        proc.kill("SIGKILL");
+        reject(new Error("qwen_asr did not exit within 30s after stdin close"));
+      }, 30_000);
+
+      proc.on("close", (code) => {
+        clearTimeout(timeout);
+        this.proc = null;
+
+        // Flush any remaining stdout
+        if (this.stdoutRemainder.length > 0) {
+          this.accumulated += (this.accumulated.length > 0 ? " " : "") + this.stdoutRemainder;
+          this.tokenCb?.(this.stdoutRemainder);
+          this.stdoutRemainder = "";
+        }
+
+        if (code !== 0 && code !== null) {
+          reject(new Error(`qwen_asr exited with code ${code}`));
+          return;
+        }
+        resolve(this.accumulated);
+      });
+
+      proc.on("error", (err) => {
+        clearTimeout(timeout);
+        this.proc = null;
+        reject(new Error(`qwen_asr process error: ${err.message}`));
+      });
+
+      // Signal end of audio
+      if (!proc.stdin.destroyed) {
+        proc.stdin.end();
+      }
+    });
+  }
+}
+
+// ─── Factory ───
+
+/** Resolve ~ to home directory in paths. */
+function expandTilde(p: string): string {
+  if (p.startsWith("~/")) return homedir() + p.slice(1);
+  return p;
+}
+
+/**
+ * Create an SttProvider or SttStreamProvider from DictationConfig.
  * Provider type is selected by `config.sttProvider` (default: "mlx-server").
  */
 export function createSttProvider(
   config: DictationConfig,
   fetchFn: typeof globalThis.fetch = globalThis.fetch,
-): SttProvider {
+): SttProvider | SttStreamProvider {
   const providerType = config.sttProvider ?? "mlx-server";
 
   switch (providerType) {
+    case "qwen_asr": {
+      if (!config.sttBinary) {
+        throw new Error(
+          'qwen_asr provider requires "sttBinary" in asr config (path to qwen_asr binary)',
+        );
+      }
+      if (!config.sttModelDir) {
+        throw new Error(
+          'qwen_asr provider requires "sttModelDir" in asr config (path to model directory)',
+        );
+      }
+      return new QwenAsrProvider({
+        binary: expandTilde(config.sttBinary),
+        modelDir: expandTilde(config.sttModelDir),
+      });
+    }
+
     case "mlx-server":
       return new MlxServerSttProvider(
         {
@@ -349,7 +524,7 @@ export function createSttProvider(
     default:
       throw new Error(
         `Unknown STT provider: "${providerType}". ` +
-          `Supported: mlx-server, openai, deepgram, elevenlabs`,
+          `Supported: qwen_asr, mlx-server, openai, deepgram, elevenlabs`,
       );
   }
 }

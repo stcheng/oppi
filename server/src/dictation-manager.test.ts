@@ -15,7 +15,8 @@ import {
   extractJsonFromResponse,
 } from "./dictation-manager.js";
 import type { DictationConfig, DictationServerMessage } from "./dictation-types.js";
-import type { SttProvider } from "./stt-provider.js";
+import type { SttProvider, SttStreamProvider } from "./stt-provider.js";
+import { isSttStreamProvider } from "./stt-provider.js";
 
 // ─── Test helpers ───
 
@@ -725,6 +726,225 @@ describe("DictationManager", () => {
       // ws2 should get a result since it has audio
       const results = messagesOfType(ws2, "dictation_result");
       expect(results.length).toBeGreaterThanOrEqual(1);
+    });
+  });
+});
+
+// ─── Streaming provider tests ───
+
+/** Create a mock SttStreamProvider that simulates token-by-token output. */
+function mockStreamProvider(tokens: string[]) {
+  let tokenCb: ((text: string) => void) | null = null;
+  const accumulated = tokens.join(" ");
+
+  const startFn = vi.fn<() => void>();
+  const feedAudioFn = vi.fn<(pcm: Buffer) => void>();
+  const stopFn = vi.fn<() => Promise<string>>().mockResolvedValue(accumulated);
+
+  const provider: SttStreamProvider & { _fireTokens: () => void } = {
+    name: "mock-stream",
+    model: "mock-stream-model",
+    start: startFn,
+    feedAudio: feedAudioFn,
+    onToken(cb: (text: string) => void) {
+      tokenCb = cb;
+    },
+    stop: stopFn,
+    /** Manually fire all tokens (simulates async stdout). */
+    _fireTokens() {
+      for (const t of tokens) {
+        tokenCb?.(t);
+      }
+    },
+  };
+  return Object.assign(provider, { start: startFn, feedAudio: feedAudioFn, stop: stopFn });
+}
+
+/** Create a mock SttStreamProvider whose stop() rejects. */
+function failingStreamProvider(error: string) {
+  const startFn = vi.fn<() => void>();
+  const feedAudioFn = vi.fn<(pcm: Buffer) => void>();
+  const stopFn = vi.fn<() => Promise<string>>().mockRejectedValue(new Error(error));
+
+  const provider: SttStreamProvider = {
+    name: "mock-stream",
+    model: "mock-stream-model",
+    start: startFn,
+    feedAudio: feedAudioFn,
+    onToken() {},
+    stop: stopFn,
+  };
+  return Object.assign(provider, { start: startFn, feedAudio: feedAudioFn, stop: stopFn });
+}
+
+describe("isSttStreamProvider", () => {
+  it("returns true for stream providers", () => {
+    const stream = mockStreamProvider(["hello"]);
+    expect(isSttStreamProvider(stream)).toBe(true);
+  });
+
+  it("returns false for batch providers", () => {
+    const batch = mockSttProvider("hello");
+    expect(isSttStreamProvider(batch)).toBe(false);
+  });
+});
+
+describe("DictationManager (streaming)", () => {
+  let manager: DictationManager;
+  let ws: FakeWebSocket;
+  let streamProvider: ReturnType<typeof mockStreamProvider>;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    streamProvider = mockStreamProvider(["hello", "world"]);
+    manager = new DictationManager(testConfig(), "/tmp/test-streaming", streamProvider);
+    ws = new FakeWebSocket();
+    manager.handleConnection(ws as unknown as WebSocket);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  describe("session lifecycle", () => {
+    it("calls start() on dictation_start", () => {
+      sendControl(ws, { type: "dictation_start" });
+      expect(streamProvider.start).toHaveBeenCalledTimes(1);
+      expect(messagesOfType(ws, "dictation_ready")).toHaveLength(1);
+    });
+
+    it("dictation_ready includes streaming provider metadata", () => {
+      sendControl(ws, { type: "dictation_start" });
+      const ready = messagesOfType(ws, "dictation_ready")[0];
+      expect(ready.sttProvider).toBe("mock-stream");
+      expect(ready.sttModel).toBe("mock-stream-model");
+    });
+
+    it("pipes audio via feedAudio()", () => {
+      sendControl(ws, { type: "dictation_start" });
+      const pcm = silencePcm(500);
+      sendAudio(ws, pcm);
+      expect(streamProvider.feedAudio).toHaveBeenCalledTimes(1);
+      expect(streamProvider.feedAudio).toHaveBeenCalledWith(pcm);
+    });
+
+    it("does not start retranscribe timer", async () => {
+      sendControl(ws, { type: "dictation_start" });
+      sendAudio(ws, silencePcm(500));
+      await vi.advanceTimersByTimeAsync(5000);
+      // No dictation_result from timer — only from token callbacks
+      expect(messagesOfType(ws, "dictation_result")).toHaveLength(0);
+    });
+  });
+
+  describe("token streaming", () => {
+    it("sends dictation_result for each token", () => {
+      sendControl(ws, { type: "dictation_start" });
+      sendAudio(ws, silencePcm(500));
+      streamProvider._fireTokens();
+
+      const results = messagesOfType(ws, "dictation_result");
+      expect(results).toHaveLength(2);
+      expect(results[0].text).toBe("hello");
+      expect(results[0].version).toBe(1);
+      expect(results[1].text).toBe("world");
+      expect(results[1].version).toBe(2);
+    });
+
+    it("increments version per token", () => {
+      sendControl(ws, { type: "dictation_start" });
+      streamProvider._fireTokens();
+      const results = messagesOfType(ws, "dictation_result");
+      const versions = results.map((r) => r.version);
+      expect(versions).toEqual([1, 2]);
+    });
+  });
+
+  describe("finalize", () => {
+    it("calls stop() and returns accumulated text", async () => {
+      sendControl(ws, { type: "dictation_start" });
+      sendAudio(ws, silencePcm(1000));
+      sendControl(ws, { type: "dictation_stop" });
+
+      await vi.advanceTimersByTimeAsync(10);
+
+      expect(streamProvider.stop).toHaveBeenCalledTimes(1);
+      const finals = messagesOfType(ws, "dictation_final");
+      expect(finals).toHaveLength(1);
+      expect(finals[0].text).toBe("hello world");
+    });
+
+    it("sends empty final for stop with no audio", async () => {
+      sendControl(ws, { type: "dictation_start" });
+      sendControl(ws, { type: "dictation_stop" });
+
+      await vi.advanceTimersByTimeAsync(10);
+
+      expect(streamProvider.stop).toHaveBeenCalledTimes(1);
+      const finals = messagesOfType(ws, "dictation_final");
+      expect(finals).toHaveLength(1);
+      expect(finals[0].text).toBe("");
+    });
+
+    it("handles stop() failure with fatal error", async () => {
+      const failStream = failingStreamProvider("process crashed");
+      const mgr = new DictationManager(testConfig(), "/tmp/test", failStream);
+      const fakeWs = new FakeWebSocket();
+      mgr.handleConnection(fakeWs as unknown as WebSocket);
+
+      sendControl(fakeWs, { type: "dictation_start" });
+      sendAudio(fakeWs, silencePcm(500));
+      sendControl(fakeWs, { type: "dictation_stop" });
+
+      await vi.advanceTimersByTimeAsync(10);
+
+      const errors = messagesOfType(fakeWs, "dictation_error");
+      expect(errors).toHaveLength(1);
+      expect(errors[0].error).toContain("STT failed");
+      expect(errors[0].fatal).toBe(true);
+    });
+
+    it("applies LLM correction on streaming final text", async () => {
+      const llmResponse = {
+        corrected: "Hello World",
+        new_corrections: [],
+        new_terms: [],
+      };
+      const llmFetch = mockLlmFetch(llmResponse);
+      const sp = mockStreamProvider(["hello", "world"]);
+      const mgr = new DictationManager(
+        testConfig({ llmCorrectionEnabled: true }),
+        "/tmp/test",
+        sp,
+        llmFetch,
+      );
+      const fakeWs = new FakeWebSocket();
+      mgr.handleConnection(fakeWs as unknown as WebSocket);
+
+      sendControl(fakeWs, { type: "dictation_start" });
+      sendAudio(fakeWs, silencePcm(1000));
+      sendControl(fakeWs, { type: "dictation_stop" });
+
+      await vi.advanceTimersByTimeAsync(10);
+
+      const finals = messagesOfType(fakeWs, "dictation_final");
+      expect(finals).toHaveLength(1);
+      expect(finals[0].text).toBe("Hello World");
+      expect(finals[0].uncorrected).toBe("hello world");
+    });
+  });
+
+  describe("cancel", () => {
+    it("calls stop() on cancel", () => {
+      sendControl(ws, { type: "dictation_start" });
+      sendControl(ws, { type: "dictation_cancel" });
+      expect(streamProvider.stop).toHaveBeenCalledTimes(1);
+    });
+
+    it("calls stop() on WS close", () => {
+      sendControl(ws, { type: "dictation_start" });
+      ws.emit("close");
+      expect(streamProvider.stop).toHaveBeenCalledTimes(1);
     });
   });
 });

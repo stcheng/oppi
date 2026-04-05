@@ -7,14 +7,20 @@
 
 // ─── Config ───
 
-export type SttProviderType = "mlx-server" | "openai" | "deepgram" | "elevenlabs";
+export type SttProviderType = "mlx-server" | "openai" | "deepgram" | "elevenlabs" | "qwen_asr";
 
 export interface DictationConfig {
   /** STT provider type. Default: "mlx-server". */
   sttProvider?: SttProviderType;
 
-  /** STT backend endpoint. */
+  /** STT backend endpoint (required for HTTP providers, ignored for native). */
   sttEndpoint: string;
+
+  /** Path to qwen_asr binary. Only used when provider is "qwen_asr". */
+  sttBinary?: string;
+
+  /** Path to qwen_asr model directory. Only used when provider is "qwen_asr". */
+  sttModelDir?: string;
 
   /** Model to request from the STT backend. */
   sttModel: string;
