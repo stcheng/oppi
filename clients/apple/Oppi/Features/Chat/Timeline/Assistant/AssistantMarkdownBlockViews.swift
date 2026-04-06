@@ -417,46 +417,21 @@ final class NativeTableBlockView: UIView {
         }
     }
 
-    /// Monospaced column width of a string — counts emoji/CJK as 2 columns.
-    private static func monoColumnWidth(_ string: String) -> Int {
-        var width = 0
-        for scalar in string.unicodeScalars {
-            let value = scalar.value
-            switch value {
-            case 0x20...0x7E:
-                width += 1
-            case 0x1100...0x115F,
-                 0x2E80...0x303E,
-                 0x3041...0x33BF,
-                 0x3400...0x4DBF,
-                 0x4E00...0x9FFF,
-                 0xA000...0xA4CF,
-                 0xAC00...0xD7AF,
-                 0xF900...0xFAFF,
-                 0xFE30...0xFE6F,
-                 0xFF01...0xFF60,
-                 0xFFE0...0xFFE6,
-                 0x20000...0x2FFFF,
-                 0x30000...0x3FFFF:
-                width += 2
-            case 0x2600...0x27BF,
-                 0x1F300...0x1F9FF,
-                 0x1FA00...0x1FA6F,
-                 0x1FA70...0x1FAFF:
-                width += 2
-            case 0xFE00...0xFE0F, 0x200D, 0x20E3:
-                break
-            default:
-                width += 1
-            }
-        }
-        return width
+    /// Measure the actual rendered width of a string in the given font.
+    /// This correctly handles CJK, emoji, and mixed-script text by using
+    /// the real font metrics instead of assuming character-width ratios.
+    private static func measuredTextWidth(_ string: String, font: UIFont) -> CGFloat {
+        guard !string.isEmpty else { return 0 }
+        return ceil((string as NSString).size(withAttributes: [.font: font]).width)
     }
 
-    private static func monoPad(_ string: String, toColumnWidth target: Int) -> String {
-        let currentWidth = monoColumnWidth(string)
-        let padding = max(0, target - currentWidth)
-        return string + String(repeating: " ", count: padding)
+    /// Number of space characters needed to pad from `currentWidth` to `targetWidth`.
+    private static func paddingSpaceCount(
+        currentWidth: CGFloat, targetWidth: CGFloat, spaceWidth: CGFloat
+    ) -> Int {
+        let diff = targetWidth - currentWidth
+        guard diff > 0.5 else { return 0 }
+        return Int(round(diff / spaceWidth))
     }
 
     private static func makeTableAttributedText(
@@ -467,14 +442,23 @@ final class NativeTableBlockView: UIView {
         let colCount = max(headers.count, rows.first?.count ?? 0)
         guard colCount > 0 else { return NSAttributedString() }
 
-        // Compute column widths from plain text content.
-        var colWidths = [Int](repeating: 0, count: colCount)
+        // Compute column widths in points from actual rendered text.
+        // SF Mono is monospaced for ASCII but CJK/emoji fall back to
+        // system fonts whose glyph widths aren't exact multiples of the
+        // ASCII advance — measuring avoids misalignment.
+        let cellFont = AppFont.monoMedium
+        let headerFont = AppFont.monoMediumBold
+        let spaceWidth = measuredTextWidth(" ", font: cellFont)
+
+        var colWidths = [CGFloat](repeating: 0, count: colCount)
         for (index, header) in headers.enumerated() where index < colCount {
-            colWidths[index] = max(colWidths[index], monoColumnWidth(plainText(from: header)))
+            let w = measuredTextWidth(plainText(from: header), font: headerFont)
+            colWidths[index] = max(colWidths[index], w)
         }
         for row in rows {
             for (index, cell) in row.enumerated() where index < colCount {
-                colWidths[index] = max(colWidths[index], monoColumnWidth(plainText(from: cell)))
+                let w = measuredTextWidth(plainText(from: cell), font: cellFont)
+                colWidths[index] = max(colWidths[index], w)
             }
         }
 
@@ -483,8 +467,6 @@ final class NativeTableBlockView: UIView {
         paragraph.lineBreakMode = .byClipping
         paragraph.lineSpacing = 5
 
-        let headerFont = AppFont.monoMediumBold
-        let cellFont = AppFont.monoMedium
         let headerColor = UIColor(palette.cyan)
         let cellColor = UIColor(palette.fg)
         let linkColor = UIColor(palette.blue)
@@ -495,18 +477,27 @@ final class NativeTableBlockView: UIView {
         let headerStart = result.length
         for (index, header) in headers.enumerated() {
             let text = plainText(from: header)
-            let padded = monoPad(text, toColumnWidth: colWidths[index])
             let prefix = index == 0 ? "  " : "  │  "
             result.append(NSAttributedString(string: prefix, attributes: [
                 .font: cellFont,
                 .foregroundColor: dimColor,
                 .paragraphStyle: paragraph,
             ]))
-            result.append(NSAttributedString(string: padded, attributes: [
+            result.append(NSAttributedString(string: text, attributes: [
                 .font: headerFont,
                 .foregroundColor: headerColor,
                 .paragraphStyle: paragraph,
             ]))
+            let textWidth = measuredTextWidth(text, font: headerFont)
+            let pad = paddingSpaceCount(
+                currentWidth: textWidth, targetWidth: colWidths[index], spaceWidth: spaceWidth
+            )
+            if pad > 0 {
+                result.append(NSAttributedString(
+                    string: String(repeating: " ", count: pad),
+                    attributes: [.font: cellFont, .paragraphStyle: paragraph]
+                ))
+            }
         }
         result.append(NSAttributedString(string: "  ", attributes: [
             .font: cellFont,
@@ -520,8 +511,15 @@ final class NativeTableBlockView: UIView {
         )
 
         // Separator line between header and body rows.
-        let separatorWidth = colWidths.reduce(0, +) + colCount * 5 + 2
-        let separatorLine = String(repeating: "─", count: separatorWidth)
+        let dashWidth = measuredTextWidth("─", font: cellFont)
+        let prefixWidth = measuredTextWidth("  │  ", font: cellFont)
+        let leadPadWidth = measuredTextWidth("  ", font: cellFont)
+        let totalPtWidth = colWidths.reduce(CGFloat(0), +)
+            + leadPadWidth
+            + prefixWidth * CGFloat(colCount - 1)
+            + leadPadWidth  // trailing padding
+        let separatorCharCount = max(1, Int(ceil(totalPtWidth / dashWidth)))
+        let separatorLine = String(repeating: "─", count: separatorCharCount)
         result.append(NSAttributedString(string: "\n"))
         result.append(NSAttributedString(string: separatorLine, attributes: [
             .font: cellFont,
@@ -550,11 +548,14 @@ final class NativeTableBlockView: UIView {
                     linkColor: linkColor,
                     paragraph: paragraph
                 )
-                // Pad remaining width with spaces.
-                let padding = max(0, colWidths[index] - monoColumnWidth(cellText))
-                if padding > 0 {
+                // Pad remaining width with spaces using measured widths.
+                let cellWidth = measuredTextWidth(cellText, font: cellFont)
+                let pad = paddingSpaceCount(
+                    currentWidth: cellWidth, targetWidth: colWidths[index], spaceWidth: spaceWidth
+                )
+                if pad > 0 {
                     result.append(NSAttributedString(
-                        string: String(repeating: " ", count: padding),
+                        string: String(repeating: " ", count: pad),
                         attributes: [.font: cellFont, .paragraphStyle: paragraph]
                     ))
                 }
