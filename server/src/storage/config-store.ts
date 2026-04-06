@@ -714,6 +714,7 @@ function normalizeConfig(
       "termSheetExtraFiles",
       "termSheetExtraDirs",
       "termSheetManualTerms",
+      "termSheetLlmCurationEnabled",
     ]);
 
     if (strictUnknown) {
@@ -781,6 +782,9 @@ function normalizeConfig(
       asrConfig.termSheetManualTerms = (asr.termSheetManualTerms as unknown[]).filter(
         (v): v is string => typeof v === "string" && v.trim().length > 0,
       );
+    }
+    if (typeof asr.termSheetLlmCurationEnabled === "boolean") {
+      asrConfig.termSheetLlmCurationEnabled = asr.termSheetLlmCurationEnabled;
     }
 
     if (Object.keys(asrConfig).length > 0) {
