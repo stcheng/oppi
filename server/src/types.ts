@@ -276,6 +276,8 @@ export interface ServerConfig {
     termSheetExtraFiles?: string[];
     termSheetExtraDirs?: string[];
     termSheetManualTerms?: string[];
+    /** Run regex-extracted term candidates through a local LLM to filter noise. */
+    termSheetLlmCurationEnabled?: boolean;
   };
 }
 

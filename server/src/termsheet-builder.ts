@@ -17,6 +17,7 @@
 import { readFile, readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { homedir } from "node:os";
+import { createHash } from "node:crypto";
 
 // ─── Types ───
 
@@ -43,6 +44,11 @@ export interface TermSheetConfig {
   manualTerms?: string[];
   /** Extra TermSource paths to scan (globs or absolute paths to files). */
   extraFiles?: string[];
+  /** When set, filter regex candidates through this LLM before output. */
+  llmCuration?: {
+    endpoint: string;
+    model: string;
+  };
 }
 
 // ─── Constants ───
@@ -54,36 +60,194 @@ const MAX_TERM_LENGTH = 30;
 /** Common words to exclude — these never help ASR. */
 const STOP_WORDS = new Set([
   // English function words
-  "the", "this", "that", "when", "with", "from", "into", "use",
-  "for", "not", "but", "and", "has", "get", "set", "new", "run",
-  "all", "any", "each", "only", "also", "must", "will", "can",
-  "may", "should", "could", "would", "does", "did", "was", "were",
-  "are", "its", "our", "per", "via", "using", "keep", "make",
-  "like", "just", "same", "more", "less", "than", "then", "here",
-  "there", "where", "what", "which", "about", "been", "being",
-  "have", "having", "other", "before", "after", "some", "every",
-  "used", "based", "want", "need", "take", "give", "well",
+  "the",
+  "this",
+  "that",
+  "when",
+  "with",
+  "from",
+  "into",
+  "use",
+  "for",
+  "not",
+  "but",
+  "and",
+  "has",
+  "get",
+  "set",
+  "new",
+  "run",
+  "all",
+  "any",
+  "each",
+  "only",
+  "also",
+  "must",
+  "will",
+  "can",
+  "may",
+  "should",
+  "could",
+  "would",
+  "does",
+  "did",
+  "was",
+  "were",
+  "are",
+  "its",
+  "our",
+  "per",
+  "via",
+  "using",
+  "keep",
+  "make",
+  "like",
+  "just",
+  "same",
+  "more",
+  "less",
+  "than",
+  "then",
+  "here",
+  "there",
+  "where",
+  "what",
+  "which",
+  "about",
+  "been",
+  "being",
+  "have",
+  "having",
+  "other",
+  "before",
+  "after",
+  "some",
+  "every",
+  "used",
+  "based",
+  "want",
+  "need",
+  "take",
+  "give",
+  "well",
   // Generic programming terms (too common to help ASR)
-  "default", "string", "none", "true", "false", "error", "returns",
-  "optional", "function", "object", "array", "buffer", "promise",
-  "async", "config", "type", "class", "protocol", "struct", "enum",
-  "int", "bool", "float", "double", "void", "server", "client",
-  "session", "model", "view", "test", "file", "data", "path",
-  "name", "list", "item", "index", "value", "state", "event",
-  "action", "result", "status", "message", "request", "response",
-  "handler", "manager", "provider", "service", "update", "create",
-  "delete", "start", "stop", "open", "close", "read", "write",
-  "send", "check", "build", "note", "prefer", "always", "never",
-  "code", "command", "content", "directory", "document", "example",
-  "feature", "guide", "install", "library", "notes", "output",
-  "overview", "private", "production", "public", "quick", "reference",
-  "running", "setup", "shared", "structure", "testing", "version",
+  "default",
+  "string",
+  "none",
+  "true",
+  "false",
+  "error",
+  "returns",
+  "optional",
+  "function",
+  "object",
+  "array",
+  "buffer",
+  "promise",
+  "async",
+  "config",
+  "type",
+  "class",
+  "protocol",
+  "struct",
+  "enum",
+  "int",
+  "bool",
+  "float",
+  "double",
+  "void",
+  "server",
+  "client",
+  "session",
+  "model",
+  "view",
+  "test",
+  "file",
+  "data",
+  "path",
+  "name",
+  "list",
+  "item",
+  "index",
+  "value",
+  "state",
+  "event",
+  "action",
+  "result",
+  "status",
+  "message",
+  "request",
+  "response",
+  "handler",
+  "manager",
+  "provider",
+  "service",
+  "update",
+  "create",
+  "delete",
+  "start",
+  "stop",
+  "open",
+  "close",
+  "read",
+  "write",
+  "send",
+  "check",
+  "build",
+  "note",
+  "prefer",
+  "always",
+  "never",
+  "code",
+  "command",
+  "content",
+  "directory",
+  "document",
+  "example",
+  "feature",
+  "guide",
+  "install",
+  "library",
+  "notes",
+  "output",
+  "overview",
+  "private",
+  "production",
+  "public",
+  "quick",
+  "reference",
+  "running",
+  "setup",
+  "shared",
+  "structure",
+  "testing",
+  "version",
   // Markdown heading words (extracted by CamelCase regex from Title Case)
-  "description", "development", "documentation", "getting", "purpose",
-  "requirements", "usage", "visible", "available", "commands",
-  "configuration", "contributing", "deployment", "frontend",
-  "architecture", "platform", "design", "skill", "trail",
-  "club", "committee", "hold", "post", "used", "tip",
+  "description",
+  "development",
+  "documentation",
+  "getting",
+  "purpose",
+  "requirements",
+  "usage",
+  "visible",
+  "available",
+  "commands",
+  "configuration",
+  "contributing",
+  "deployment",
+  "frontend",
+  "architecture",
+  "platform",
+  "design",
+  "skill",
+  "trail",
+  "club",
+  "committee",
+  "hold",
+  "post",
+  "used",
+  "tip",
 ]);
 
 // ─── Text extraction helpers ───
@@ -166,12 +330,12 @@ function isCleanTerm(t: string): boolean {
   return (
     t.length > MIN_TERM_LENGTH &&
     t.length < MAX_TERM_LENGTH &&
-    !/^[-/.#@$*]/.test(t) &&        // no paths, markdown bold
-    !/[(){}=;|&*]/.test(t) &&       // no code syntax
-    !/^\d+$/.test(t) &&             // no pure numbers
-    !/\//.test(t) &&                 // no paths (content/, docs/)
-    !/:$/.test(t) &&                 // no labels (chore:, feat:)
-    !/^http/.test(t)                 // no URLs
+    !/^[-/.#@$*]/.test(t) && // no paths, markdown bold
+    !/[(){}=;|&*]/.test(t) && // no code syntax
+    !/^\d+$/.test(t) && // no pure numbers
+    !/\//.test(t) && // no paths (content/, docs/)
+    !/:$/.test(t) && // no labels (chore:, feat:)
+    !/^http/.test(t) // no URLs
   );
 }
 
@@ -193,8 +357,12 @@ export class WorkspaceMarkdownSource implements TermSource {
   async collect(): Promise<WeightedTerm[]> {
     const terms: WeightedTerm[] = [];
     const filenames = [
-      "AGENTS.md", "README.md", "CLAUDE.md", "CONTRIBUTING.md",
-      "docs/AGENTS.md", "docs/README.md",
+      "AGENTS.md",
+      "README.md",
+      "CLAUDE.md",
+      "CONTRIBUTING.md",
+      "docs/AGENTS.md",
+      "docs/README.md",
     ];
     for (const dir of this.dirs) {
       for (const filename of filenames) {
@@ -231,7 +399,9 @@ export class ProjectManifestSource implements TermSource {
       try {
         const text = await readFile(join(dir, "package.json"), "utf-8");
         terms.push(...extractJsonNames(text));
-      } catch { /* skip */ }
+      } catch {
+        /* skip */
+      }
 
       // project.yml (Xcode)
       try {
@@ -241,7 +411,9 @@ export class ProjectManifestSource implements TermSource {
           const n = nameMatch[1].trim();
           if (isCleanTerm(n)) terms.push({ term: n, weight: 4 });
         }
-      } catch { /* skip */ }
+      } catch {
+        /* skip */
+      }
 
       // Cargo.toml
       try {
@@ -251,7 +423,9 @@ export class ProjectManifestSource implements TermSource {
           const n = nameMatch[1].trim();
           if (isCleanTerm(n)) terms.push({ term: n, weight: 4 });
         }
-      } catch { /* skip */ }
+      } catch {
+        /* skip */
+      }
 
       // go.mod
       try {
@@ -262,7 +436,9 @@ export class ProjectManifestSource implements TermSource {
           const n = parts[parts.length - 1];
           if (isCleanTerm(n)) terms.push({ term: n, weight: 4 });
         }
-      } catch { /* skip */ }
+      } catch {
+        /* skip */
+      }
 
       // pyproject.toml
       try {
@@ -272,7 +448,9 @@ export class ProjectManifestSource implements TermSource {
           const n = nameMatch[1].trim();
           if (isCleanTerm(n)) terms.push({ term: n, weight: 4 });
         }
-      } catch { /* skip */ }
+      } catch {
+        /* skip */
+      }
     }
     return terms;
   }
@@ -357,58 +535,21 @@ export class DirectorySource implements TermSource {
                 if (entry.description) {
                   terms.push(...extractCodeTerms(entry.description));
                 }
-              } catch { /* malformed line */ }
+              } catch {
+                /* malformed line */
+              }
             }
           } else {
             terms.push(...extractTableTerms(content));
             terms.push(...extractBacktickTerms(content));
             terms.push(...extractCodeTerms(content));
           }
-        } catch { /* unreadable file */ }
+        } catch {
+          /* unreadable file */
+        }
       }
     } catch {
       /* directory doesn't exist */
-    }
-    return terms;
-  }
-}
-
-/**
- * Read corrections and domain_terms from a dictation dictionary.json.
- * Optional — only runs if the file exists.
- */
-export class DictationDictionarySource implements TermSource {
-  readonly name = "dictation-dictionary";
-  private path: string;
-
-  constructor(dictionaryPath: string) {
-    this.path = dictionaryPath;
-  }
-
-  async collect(): Promise<WeightedTerm[]> {
-    const terms: WeightedTerm[] = [];
-    try {
-      const raw = await readFile(this.path, "utf-8");
-      const dict = JSON.parse(raw) as {
-        corrections?: Record<string, string>;
-        domain_terms?: string[];
-      };
-      if (dict.corrections) {
-        for (const target of Object.values(dict.corrections)) {
-          if (target.length > MIN_TERM_LENGTH) {
-            terms.push({ term: target, weight: 4 });
-          }
-        }
-      }
-      if (dict.domain_terms) {
-        for (const term of dict.domain_terms) {
-          if (term.length > MIN_TERM_LENGTH) {
-            terms.push({ term: term, weight: 4 });
-          }
-        }
-      }
-    } catch {
-      /* no dictionary */
     }
     return terms;
   }
@@ -459,21 +600,40 @@ export async function buildTermSheet(
   }
 
   // Filter, sort, truncate
-  const sorted = [...weightMap.entries()]
+  let sorted = [...weightMap.entries()]
     .filter(
       ([term]) =>
         term.length > MIN_TERM_LENGTH &&
         term.length < MAX_TERM_LENGTH &&
         !STOP_WORDS.has(term.toLowerCase()) &&
-        !/^\d+$/.test(term) &&             // no pure numbers (port numbers etc.)
-        !/^[*_]/.test(term) &&             // no markdown formatting
-        !/[:/]$/.test(term) &&             // no path/label suffixes
-        !/^http/.test(term) &&             // no URLs
+        !/^\d+$/.test(term) && // no pure numbers (port numbers etc.)
+        !/^[*_]/.test(term) && // no markdown formatting
+        !/[:/]$/.test(term) && // no path/label suffixes
+        !/^http/.test(term) && // no URLs
         isCleanTerm(term),
     )
     .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
     .slice(0, maxTerms)
     .map(([term]) => term);
+
+  // Optional LLM curation — filter noise through a local model
+  if (config?.llmCuration && sorted.length > 0) {
+    try {
+      const curated = await curateTermsWithLlm(
+        sorted,
+        config.llmCuration.endpoint,
+        config.llmCuration.model,
+      );
+      if (curated.length > 0) {
+        sorted = curated;
+      }
+    } catch (err) {
+      console.warn(
+        "[termsheet] LLM curation failed, using raw terms:",
+        err instanceof Error ? err.message : err,
+      );
+    }
+  }
 
   if (sorted.length === 0) return "";
   return `Domain terms and proper nouns (transcribe exactly): ${sorted.join(", ")}`;
@@ -491,7 +651,6 @@ export async function buildTermSheet(
 export function defaultSources(opts: {
   workspaceDirs: string[];
   extraDirs?: string[];
-  dictionaryPath?: string;
 }): TermSource[] {
   const sources: TermSource[] = [
     new WorkspaceMarkdownSource(opts.workspaceDirs),
@@ -501,9 +660,6 @@ export function defaultSources(opts: {
     for (const dir of opts.extraDirs) {
       sources.push(new DirectorySource(expandTilde(dir)));
     }
-  }
-  if (opts.dictionaryPath) {
-    sources.push(new DictationDictionarySource(opts.dictionaryPath));
   }
   return sources;
 }
@@ -526,9 +682,9 @@ export async function discoverWorkspaceDirs(dataDir: string): Promise<string[]> 
     for (const entry of entries) {
       if (!entry.endsWith(".json")) continue;
       try {
-        const config = JSON.parse(
-          await readFile(join(workspacesDir, entry), "utf-8"),
-        ) as { hostMount?: string };
+        const config = JSON.parse(await readFile(join(workspacesDir, entry), "utf-8")) as {
+          hostMount?: string;
+        };
         if (config.hostMount) {
           const resolved = expandTilde(config.hostMount);
           const s = await stat(resolved);
@@ -536,8 +692,124 @@ export async function discoverWorkspaceDirs(dataDir: string): Promise<string[]> 
             dirs.push(resolved);
           }
         }
-      } catch { /* skip */ }
+      } catch {
+        /* skip */
+      }
     }
-  } catch { /* no workspaces dir */ }
+  } catch {
+    /* no workspaces dir */
+  }
   return dirs;
+}
+
+// ─── LLM Curation ───
+
+/** In-memory cache: hash of raw candidates → curated result. */
+let curationCache: { hash: string; terms: string[] } | null = null;
+
+/**
+ * Filter regex-extracted term candidates through a local LLM.
+ *
+ * Sends the raw term list to the model with instructions to keep only
+ * terms that an ASR model would likely mishear or not know. Returns
+ * the filtered list. Results are cached by input hash — repeated calls
+ * with the same candidates skip the LLM.
+ */
+export async function curateTermsWithLlm(
+  rawTerms: string[],
+  endpoint: string,
+  model: string,
+): Promise<string[]> {
+  const hash = createHash("sha256").update(rawTerms.join("\n")).digest("hex");
+  if (curationCache?.hash === hash) {
+    console.log(`[termsheet] LLM curation cache hit (${curationCache.terms.length} terms)`);
+    return curationCache.terms;
+  }
+
+  const prompt = [
+    "You are filtering a list of candidate terms for a speech recognition system prompt.",
+    "The goal: keep only terms the model needs help with. Remove noise.",
+    "",
+    "KEEP:",
+    "- Names of people, places, projects, products, organizations",
+    "- Technology acronyms relevant to software development",
+    "- Technical terms: library names, tool names, framework names, CLI commands",
+    "- Non-English words",
+    "",
+    "REMOVE:",
+    "- Ordinary English words that happen to be capitalized or extracted from headings",
+    "- Non-technology acronyms that are common abbreviations or unrelated to software",
+    "  (e.g. CFO, BBQ, CMS when it means content management, SPC, DOVER)",
+    "- File/doc convention names: README, LICENSE, CONTRIBUTING, CHANGELOG, AGENTS",
+    "- Date/time placeholders and template patterns",
+    "- Multi-word phrases that are normal English sentences, not domain terms",
+    "- Generic programming concepts that are common English words (e.g. Reducer, Secretary)",
+    "",
+    "Return ONLY a JSON array of the terms to keep. No explanation.",
+    "",
+    `Terms: ${JSON.stringify(rawTerms)}`,
+  ].join("\n");
+
+  const url = `${endpoint}/v1/chat/completions`;
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model,
+      messages: [{ role: "user", content: prompt }],
+      temperature: 0,
+      chat_template_kwargs: { enable_thinking: false },
+    }),
+    signal: AbortSignal.timeout(30_000),
+  });
+
+  if (!response.ok) {
+    const body = await response.text().catch(() => "");
+    throw new Error(`LLM HTTP ${response.status}: ${body.slice(0, 200)}`);
+  }
+
+  const completion = (await response.json()) as {
+    choices?: Array<{ message?: { content?: string } }>;
+  };
+  const content = completion.choices?.[0]?.message?.content;
+  if (!content) {
+    throw new Error("LLM returned empty response");
+  }
+
+  // Parse JSON array from response (may be wrapped in code fences)
+  const jsonStr = extractJsonArray(content);
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(jsonStr);
+  } catch {
+    throw new Error(`LLM returned non-JSON: ${content.slice(0, 200)}`);
+  }
+
+  if (!Array.isArray(parsed)) {
+    throw new Error(`LLM returned non-array: ${typeof parsed}`);
+  }
+
+  // Validate: only keep strings that were in the original list
+  const rawSet = new Set(rawTerms);
+  const curated = (parsed as unknown[]).filter(
+    (t): t is string => typeof t === "string" && rawSet.has(t),
+  );
+
+  curationCache = { hash, terms: curated };
+  console.log(`[termsheet] LLM curation: ${rawTerms.length} candidates -> ${curated.length} kept`);
+  return curated;
+}
+
+/** Extract a JSON array from an LLM response (handles code fences). */
+function extractJsonArray(content: string): string {
+  const fenceMatch = content.match(/```(?:json)?\s*\n?([\s\S]*?)\n?\s*```/);
+  if (fenceMatch) return fenceMatch[1].trim();
+
+  const bracketStart = content.indexOf("[");
+  const bracketEnd = content.lastIndexOf("]");
+  if (bracketStart !== -1 && bracketEnd > bracketStart) {
+    return content.slice(bracketStart, bracketEnd + 1);
+  }
+
+  return content;
 }

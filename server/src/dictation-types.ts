@@ -65,6 +65,13 @@ export interface DictationConfig {
 
   /** Whether to run LLM correction on finalize. */
   llmCorrectionEnabled: boolean;
+
+  /**
+   * Run regex-extracted term sheet candidates through a local LLM to
+   * filter noise (generic English, formatting artifacts, well-known
+   * acronyms). Uses the same llmEndpoint. Default: false.
+   */
+  termSheetLlmCurationEnabled?: boolean;
 }
 
 export const DEFAULT_DICTATION_CONFIG: DictationConfig = {
@@ -76,6 +83,7 @@ export const DEFAULT_DICTATION_CONFIG: DictationConfig = {
   llmModel: "Qwen3.5-122B-A10B-4bit",
   llmCorrectionEnabled: false,
   termSheetEnabled: true,
+  termSheetLlmCurationEnabled: false,
 };
 
 // ─── Client -> Server messages ───

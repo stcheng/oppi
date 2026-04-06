@@ -794,11 +794,13 @@ export class Server {
       const sources = defaultSources({
         workspaceDirs,
         extraDirs: asrConfig.termSheetExtraDirs,
-        dictionaryPath: join(dataDir, "dictation", "dictionary.json"),
       });
       const termSheet = await buildTermSheet(sources, {
         manualTerms: asrConfig.termSheetManualTerms,
         extraFiles: asrConfig.termSheetExtraFiles,
+        llmCuration: asrConfig.termSheetLlmCurationEnabled
+          ? { endpoint: asrConfig.llmEndpoint, model: "Qwen3.5-27B-8bit" }
+          : undefined,
       });
       if (termSheet && "setSystemPrompt" in sttProvider) {
         (sttProvider as { setSystemPrompt: (p: string | undefined) => void }).setSystemPrompt(
@@ -807,9 +809,9 @@ export class Server {
         // Persist to disk for inspection
         const termSheetDir = join(dataDir, "dictation");
         await import("node:fs/promises").then((fs) =>
-          fs.mkdir(termSheetDir, { recursive: true }).then(() =>
-            fs.writeFile(join(termSheetDir, "termsheet.txt"), termSheet),
-          ),
+          fs
+            .mkdir(termSheetDir, { recursive: true })
+            .then(() => fs.writeFile(join(termSheetDir, "termsheet.txt"), termSheet)),
         );
         console.log(
           `[dictation] Term sheet loaded (${termSheet.split(",").length} terms, ${termSheet.length} chars)`,
