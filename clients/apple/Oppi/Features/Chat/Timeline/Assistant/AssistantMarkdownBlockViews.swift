@@ -418,23 +418,14 @@ final class NativeTableBlockView: UIView {
     }
 
     /// Measure the actual rendered width of a string in the given font.
-    /// This correctly handles CJK, emoji, and mixed-script text by using
-    /// the real font metrics instead of assuming character-width ratios.
+    /// Correctly handles CJK, emoji, and mixed-script text via real metrics.
     private static func measuredTextWidth(_ string: String, font: UIFont) -> CGFloat {
         guard !string.isEmpty else { return 0 }
         return ceil((string as NSString).size(withAttributes: [.font: font]).width)
     }
 
-    /// Number of space characters needed to pad from `currentWidth` to `targetWidth`.
-    private static func paddingSpaceCount(
-        currentWidth: CGFloat, targetWidth: CGFloat, spaceWidth: CGFloat
-    ) -> Int {
-        let diff = targetWidth - currentWidth
-        guard diff > 0.5 else { return 0 }
-        return Int(round(diff / spaceWidth))
-    }
-
-    private static func makeTableAttributedText(
+    // internal for testing — called from TableColumnAlignmentTests
+    static func makeTableAttributedText(
         headers: [[MarkdownInline]],
         rows: [[[MarkdownInline]]],
         palette: ThemePalette
@@ -442,14 +433,13 @@ final class NativeTableBlockView: UIView {
         let colCount = max(headers.count, rows.first?.count ?? 0)
         guard colCount > 0 else { return NSAttributedString() }
 
-        // Compute column widths in points from actual rendered text.
-        // SF Mono is monospaced for ASCII but CJK/emoji fall back to
-        // system fonts whose glyph widths aren't exact multiples of the
-        // ASCII advance — measuring avoids misalignment.
         let cellFont = AppFont.monoMedium
         let headerFont = AppFont.monoMediumBold
-        let spaceWidth = measuredTextWidth(" ", font: cellFont)
 
+        // Compute column widths in points from actual rendered text.
+        // SF Mono is monospaced for ASCII but CJK/emoji fall back to
+        // system fonts whose advance widths don't divide evenly into
+        // the ASCII space width. Measuring avoids misalignment.
         var colWidths = [CGFloat](repeating: 0, count: colCount)
         for (index, header) in headers.enumerated() where index < colCount {
             let w = measuredTextWidth(plainText(from: header), font: headerFont)
@@ -462,10 +452,30 @@ final class NativeTableBlockView: UIView {
             }
         }
 
+        // Build tab stops for pixel-perfect column alignment.
+        // Each column gets one tab stop at its right edge. After rendering
+        // cell content, a \t character advances the cursor to the exact
+        // tab-stop position — no space-padding rounding errors.
+        let leadPadWidth = measuredTextWidth("  ", font: cellFont)
+        let sepWidth = measuredTextWidth("  │  ", font: cellFont)
+        let trailPadWidth = leadPadWidth  // "  " trailing
+        // +1 buffer: when content exactly fills the column the cursor sits
+        // ON the tab stop; a \t would then skip to the *next* stop.
+        let buffer: CGFloat = 1
+
+        var tabStops: [NSTextTab] = []
+        var pos = leadPadWidth
+        for i in 0..<colCount {
+            pos += colWidths[i] + buffer
+            tabStops.append(NSTextTab(textAlignment: .left, location: pos))
+            if i < colCount - 1 { pos += sepWidth }
+        }
+
         let result = NSMutableAttributedString()
         let paragraph = NSMutableParagraphStyle()
         paragraph.lineBreakMode = .byClipping
         paragraph.lineSpacing = 5
+        paragraph.tabStops = tabStops
 
         let headerColor = UIColor(palette.cyan)
         let cellColor = UIColor(palette.fg)
@@ -474,34 +484,28 @@ final class NativeTableBlockView: UIView {
         let headerBgColor = UIColor(palette.bgHighlight)
         let altRowBgColor = UIColor(palette.bgHighlight).withAlphaComponent(0.45)
 
+        // --- Header row ---
         let headerStart = result.length
         for (index, header) in headers.enumerated() {
             let text = plainText(from: header)
-            let prefix = index == 0 ? "  " : "  │  "
-            result.append(NSAttributedString(string: prefix, attributes: [
-                .font: cellFont,
-                .foregroundColor: dimColor,
-                .paragraphStyle: paragraph,
-            ]))
+            // Leading pad for first column; tab-to-separator for subsequent.
+            if index == 0 {
+                result.append(NSAttributedString(string: "  ", attributes: [
+                    .font: cellFont, .foregroundColor: dimColor, .paragraphStyle: paragraph,
+                ]))
+            }
             result.append(NSAttributedString(string: text, attributes: [
-                .font: headerFont,
-                .foregroundColor: headerColor,
-                .paragraphStyle: paragraph,
+                .font: headerFont, .foregroundColor: headerColor, .paragraphStyle: paragraph,
             ]))
-            let textWidth = measuredTextWidth(text, font: headerFont)
-            let pad = paddingSpaceCount(
-                currentWidth: textWidth, targetWidth: colWidths[index], spaceWidth: spaceWidth
-            )
-            if pad > 0 {
-                result.append(NSAttributedString(
-                    string: String(repeating: " ", count: pad),
-                    attributes: [.font: cellFont, .paragraphStyle: paragraph]
-                ))
+            if index < colCount - 1 {
+                result.append(NSAttributedString(string: "\t  │  ", attributes: [
+                    .font: cellFont, .foregroundColor: dimColor, .paragraphStyle: paragraph,
+                ]))
             }
         }
-        result.append(NSAttributedString(string: "  ", attributes: [
-            .font: cellFont,
-            .paragraphStyle: paragraph,
+        // Trailing pad via tab stop.
+        result.append(NSAttributedString(string: "\t  ", attributes: [
+            .font: cellFont, .paragraphStyle: paragraph,
         ]))
         let headerEnd = result.length
         result.addAttribute(
@@ -510,36 +514,33 @@ final class NativeTableBlockView: UIView {
             range: NSRange(location: headerStart, length: headerEnd - headerStart)
         )
 
-        // Separator line between header and body rows.
+        // --- Separator line ---
         let dashWidth = measuredTextWidth("─", font: cellFont)
-        let prefixWidth = measuredTextWidth("  │  ", font: cellFont)
-        let leadPadWidth = measuredTextWidth("  ", font: cellFont)
-        let totalPtWidth = colWidths.reduce(CGFloat(0), +)
-            + leadPadWidth
-            + prefixWidth * CGFloat(colCount - 1)
-            + leadPadWidth  // trailing padding
+        let totalPtWidth = (tabStops.last?.location ?? 0) + trailPadWidth
         let separatorCharCount = max(1, Int(ceil(totalPtWidth / dashWidth)))
         let separatorLine = String(repeating: "─", count: separatorCharCount)
+        // Separator uses its own paragraph style without tab stops so the
+        // dash characters don't get eaten by tab expansion.
+        let sepParagraph = NSMutableParagraphStyle()
+        sepParagraph.lineBreakMode = .byClipping
+        sepParagraph.lineSpacing = 5
         result.append(NSAttributedString(string: "\n"))
         result.append(NSAttributedString(string: separatorLine, attributes: [
-            .font: cellFont,
-            .foregroundColor: dimColor,
-            .paragraphStyle: paragraph,
+            .font: cellFont, .foregroundColor: dimColor, .paragraphStyle: sepParagraph,
         ]))
 
+        // --- Body rows ---
         for (rowIndex, row) in rows.enumerated() {
             result.append(NSAttributedString(string: "\n"))
             let rowStart = result.length
 
             for index in 0..<colCount {
                 let inlines: [MarkdownInline] = index < row.count ? row[index] : [.text("")]
-                let prefix = index == 0 ? "  " : "  │  "
-                result.append(NSAttributedString(string: prefix, attributes: [
-                    .font: cellFont,
-                    .foregroundColor: dimColor,
-                    .paragraphStyle: paragraph,
-                ]))
-                let cellText = plainText(from: inlines)
+                if index == 0 {
+                    result.append(NSAttributedString(string: "  ", attributes: [
+                        .font: cellFont, .foregroundColor: dimColor, .paragraphStyle: paragraph,
+                    ]))
+                }
                 appendTableCellInlines(
                     inlines,
                     to: result,
@@ -548,21 +549,15 @@ final class NativeTableBlockView: UIView {
                     linkColor: linkColor,
                     paragraph: paragraph
                 )
-                // Pad remaining width with spaces using measured widths.
-                let cellWidth = measuredTextWidth(cellText, font: cellFont)
-                let pad = paddingSpaceCount(
-                    currentWidth: cellWidth, targetWidth: colWidths[index], spaceWidth: spaceWidth
-                )
-                if pad > 0 {
-                    result.append(NSAttributedString(
-                        string: String(repeating: " ", count: pad),
-                        attributes: [.font: cellFont, .paragraphStyle: paragraph]
-                    ))
+                if index < colCount - 1 {
+                    result.append(NSAttributedString(string: "\t  │  ", attributes: [
+                        .font: cellFont, .foregroundColor: dimColor, .paragraphStyle: paragraph,
+                    ]))
                 }
             }
-            result.append(NSAttributedString(string: "  ", attributes: [
-                .font: cellFont,
-                .paragraphStyle: paragraph,
+            // Trailing pad via tab stop.
+            result.append(NSAttributedString(string: "\t  ", attributes: [
+                .font: cellFont, .paragraphStyle: paragraph,
             ]))
 
             if rowIndex % 2 == 1 {
