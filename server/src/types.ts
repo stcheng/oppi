@@ -272,6 +272,10 @@ export interface ServerConfig {
     llmEndpoint?: string;
     llmModel?: string;
     llmCorrectionEnabled?: boolean;
+    termSheetEnabled?: boolean;
+    termSheetExtraFiles?: string[];
+    termSheetExtraDirs?: string[];
+    termSheetManualTerms?: string[];
   };
 }
 

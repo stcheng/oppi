@@ -34,6 +34,23 @@ export interface DictationConfig {
   /** Language hint for providers that support it (ISO-639-1). */
   sttLanguage?: string;
 
+  /**
+   * Auto-generate a domain term sheet from workspace context and inject
+   * it into the ASR model's system prompt. Improves accuracy for project-
+   * specific proper nouns and technical terms at zero latency cost.
+   * Default: true.
+   */
+  termSheetEnabled?: boolean;
+
+  /** Extra file paths to include in term sheet extraction. */
+  termSheetExtraFiles?: string[];
+
+  /** Extra directories to scan for JSONL/text files containing terms. */
+  termSheetExtraDirs?: string[];
+
+  /** Manually-specified terms (always included when term sheet is enabled). */
+  termSheetManualTerms?: string[];
+
   /** Save audio as FLAC on finalize. */
   preserveAudio: boolean;
 
@@ -58,6 +75,7 @@ export const DEFAULT_DICTATION_CONFIG: DictationConfig = {
   llmEndpoint: "http://localhost:8400",
   llmModel: "Qwen3.5-122B-A10B-4bit",
   llmCorrectionEnabled: false,
+  termSheetEnabled: true,
 };
 
 // ─── Client -> Server messages ───

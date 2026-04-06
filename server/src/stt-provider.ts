@@ -176,18 +176,26 @@ export class MlxStreamingSttProvider implements SttProvider {
   private feedTimer: ReturnType<typeof setInterval> | null = null;
   /** How often to flush accumulated audio to the session (ms). */
   private feedIntervalMs: number;
+  /** ASR system prompt (domain term sheet). Injected into every session. */
+  private systemPrompt: string | undefined;
 
   constructor(
-    opts: { endpoint: string; model: string },
+    opts: { endpoint: string; model: string; systemPrompt?: string },
     fetchFn: typeof globalThis.fetch = globalThis.fetch,
-    feedIntervalMs = 2000,
+    feedIntervalMs = 1000,
   ) {
     this.endpoint = opts.endpoint;
     this.model = opts.model;
+    this.systemPrompt = opts.systemPrompt;
     this.fetchFn = fetchFn;
     this.feedIntervalMs = feedIntervalMs;
     // Pre-warm a session at construction time
     void this.warmUpSession();
+  }
+
+  /** Update the system prompt (e.g., after term sheet rebuild). */
+  setSystemPrompt(prompt: string | undefined): void {
+    this.systemPrompt = prompt;
   }
 
   start(): void {
@@ -305,6 +313,15 @@ export class MlxStreamingSttProvider implements SttProvider {
     }
   }
 
+  /** Build the JSON body for session creation (model + optional stream_config). */
+  private sessionCreateBody(): string {
+    const body: Record<string, unknown> = { model: this.model };
+    if (this.systemPrompt) {
+      body.stream_config = { system_prompt: this.systemPrompt };
+    }
+    return JSON.stringify(body);
+  }
+
   private async warmUpSession(): Promise<void> {
     // Cleanup existing warm session to prevent leak
     if (this.warmSessionId) {
@@ -317,7 +334,7 @@ export class MlxStreamingSttProvider implements SttProvider {
       const res = await this.fetchFn(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ model: this.model }),
+        body: this.sessionCreateBody(),
         signal: AbortSignal.timeout(10_000),
       });
       if (res.ok) {
@@ -336,7 +353,7 @@ export class MlxStreamingSttProvider implements SttProvider {
       const res = await this.fetchFn(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ model: this.model }),
+        body: this.sessionCreateBody(),
         signal: AbortSignal.timeout(10_000),
       });
       if (!res.ok) {
@@ -376,8 +393,8 @@ export class MlxStreamingSttProvider implements SttProvider {
 
       if (res.ok) {
         const data = (await res.json()) as { text?: string };
-        const text = data.text ?? "";
-        if (text) {
+        const text = (data.text ?? "").trim();
+        if (text && text !== this.lastText) {
           this.lastText = text;
           this.tokenCb?.(text);
         }

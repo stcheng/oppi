@@ -62,7 +62,8 @@ import { RuntimeUpdateManager } from "./runtime-update.js";
 import { SessionTitleGenerator } from "./session-title-generator.js";
 import { DictationManager } from "./dictation-manager.js";
 import { DEFAULT_DICTATION_CONFIG, type DictationConfig } from "./dictation-types.js";
-import { createSttProvider } from "./stt-provider.js";
+import { buildTermSheet, defaultSources, discoverWorkspaceDirs } from "./termsheet-builder.js";
+import { createSttProvider, type SttProvider } from "./stt-provider.js";
 
 function hasAuthHeader(header: string | string[] | undefined): boolean {
   if (typeof header === "string") {
@@ -443,6 +444,11 @@ export class Server {
         globalThis.fetch,
         this.opsMetrics,
       );
+
+      // Build ASR term sheet (async, non-blocking)
+      if (asrConfig.termSheetEnabled !== false) {
+        void this.refreshTermSheet(dataDir, asrConfig, sttProvider);
+      }
     }
 
     // Server resource utilization sampler
@@ -775,6 +781,46 @@ export class Server {
     this.closeActiveConnections(WS_CLOSE_GOING_AWAY, "Server shutting down");
     this.wss.close();
     this.httpServer.close();
+  }
+
+  /** Build/refresh the ASR domain term sheet and inject into the STT provider. */
+  private async refreshTermSheet(
+    dataDir: string,
+    asrConfig: DictationConfig,
+    sttProvider: SttProvider,
+  ): Promise<void> {
+    try {
+      const workspaceDirs = await discoverWorkspaceDirs(dataDir);
+      const sources = defaultSources({
+        workspaceDirs,
+        extraDirs: asrConfig.termSheetExtraDirs,
+        dictionaryPath: join(dataDir, "dictation", "dictionary.json"),
+      });
+      const termSheet = await buildTermSheet(sources, {
+        manualTerms: asrConfig.termSheetManualTerms,
+        extraFiles: asrConfig.termSheetExtraFiles,
+      });
+      if (termSheet && "setSystemPrompt" in sttProvider) {
+        (sttProvider as { setSystemPrompt: (p: string | undefined) => void }).setSystemPrompt(
+          termSheet,
+        );
+        // Persist to disk for inspection
+        const termSheetDir = join(dataDir, "dictation");
+        await import("node:fs/promises").then((fs) =>
+          fs.mkdir(termSheetDir, { recursive: true }).then(() =>
+            fs.writeFile(join(termSheetDir, "termsheet.txt"), termSheet),
+          ),
+        );
+        console.log(
+          `[dictation] Term sheet loaded (${termSheet.split(",").length} terms, ${termSheet.length} chars)`,
+        );
+      }
+    } catch (err) {
+      console.warn(
+        "[dictation] Failed to build term sheet:",
+        err instanceof Error ? err.message : err,
+      );
+    }
   }
 
   private startBonjourAdvertisement(): void {

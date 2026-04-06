@@ -710,6 +710,10 @@ function normalizeConfig(
       "llmEndpoint",
       "llmModel",
       "llmCorrectionEnabled",
+      "termSheetEnabled",
+      "termSheetExtraFiles",
+      "termSheetExtraDirs",
+      "termSheetManualTerms",
     ]);
 
     if (strictUnknown) {
@@ -759,6 +763,24 @@ function normalizeConfig(
     }
     if (typeof asr.llmCorrectionEnabled === "boolean") {
       asrConfig.llmCorrectionEnabled = asr.llmCorrectionEnabled;
+    }
+    if (typeof asr.termSheetEnabled === "boolean") {
+      asrConfig.termSheetEnabled = asr.termSheetEnabled;
+    }
+    if (Array.isArray(asr.termSheetExtraFiles)) {
+      asrConfig.termSheetExtraFiles = (asr.termSheetExtraFiles as unknown[]).filter(
+        (v): v is string => typeof v === "string" && v.trim().length > 0,
+      );
+    }
+    if (Array.isArray(asr.termSheetExtraDirs)) {
+      asrConfig.termSheetExtraDirs = (asr.termSheetExtraDirs as unknown[]).filter(
+        (v): v is string => typeof v === "string" && v.trim().length > 0,
+      );
+    }
+    if (Array.isArray(asr.termSheetManualTerms)) {
+      asrConfig.termSheetManualTerms = (asr.termSheetManualTerms as unknown[]).filter(
+        (v): v is string => typeof v === "string" && v.trim().length > 0,
+      );
     }
 
     if (Object.keys(asrConfig).length > 0) {
