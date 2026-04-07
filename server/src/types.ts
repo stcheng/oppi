@@ -261,11 +261,8 @@ export interface ServerConfig {
    * STT backend, LLM correction, and audio preservation.
    */
   asr?: {
-    sttProvider?: "mlx-streaming" | "qwen_asr";
     sttEndpoint?: string;
     sttModel?: string;
-    sttBinary?: string;
-    sttModelDir?: string;
     sttLanguage?: string;
     preserveAudio?: boolean;
     maxDurationSec?: number;
@@ -839,7 +836,7 @@ export const CHAT_METRIC_REGISTRY = {
     description: "Number of transcript update events during a dictation session.",
   },
   "chat.dictation_preview_final_delta": {
-    unit: "count",
+    unit: "ratio",
     description:
       "Edit distance ratio between preview and final transcript (0=identical, 1=completely different).",
   },

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { MlxStreamingSttProvider } from "./stt-provider.js";
+import { StreamingSttProvider } from "./stt-provider.js";
 
 // ─── Mock helpers ───
 
@@ -58,7 +58,8 @@ const isDelete = (url: string, method: string) =>
 /** Drain async microtasks (constructor warmUpSession, createSession, etc.). */
 async function flush(): Promise<void> {
   for (let i = 0; i < 10; i++) {
-    await vi.advanceTimersByTimeAsync(0);
+    vi.advanceTimersByTime(0);
+    await Promise.resolve();
   }
 }
 
@@ -66,17 +67,13 @@ async function flush(): Promise<void> {
 function makeProvider(
   fetchFn: typeof globalThis.fetch,
   feedIntervalMs = 100,
-): MlxStreamingSttProvider {
-  return new MlxStreamingSttProvider(
-    { endpoint: BASE, model: "test-model" },
-    fetchFn,
-    feedIntervalMs,
-  );
+): StreamingSttProvider {
+  return new StreamingSttProvider({ endpoint: BASE, model: "test-model" }, fetchFn, feedIntervalMs);
 }
 
 // ─── Tests ───
 
-describe("MlxStreamingSttProvider", () => {
+describe("StreamingSttProvider", () => {
   beforeEach(() => {
     vi.useFakeTimers();
   });
@@ -109,7 +106,8 @@ describe("MlxStreamingSttProvider", () => {
     provider.feedAudio(Buffer.from([1, 2, 3, 4]));
 
     // Advance timer to trigger flushAudio
-    await vi.advanceTimersByTimeAsync(100);
+    vi.advanceTimersByTime(100);
+    await flush();
 
     // Feed should have fired
     const feedCalls = calls.filter((c) => isFeed(c.url, c.method));
@@ -241,19 +239,21 @@ describe("MlxStreamingSttProvider", () => {
 
     // Queue audio and flush — should succeed
     provider.feedAudio(Buffer.from([1, 2]));
-    await vi.advanceTimersByTimeAsync(100);
+    vi.advanceTimersByTime(100);
+    await flush();
     expect(tokens).toEqual(["recovered"]);
 
     // Now make feed return 404
     feedStatus = 404;
     provider.feedAudio(Buffer.from([3, 4]));
-    await vi.advanceTimersByTimeAsync(100);
-    await flush(); // let createSession complete
+    vi.advanceTimersByTime(100);
+    await flush(); // let 404 handling + createSession complete
 
     // Session should have been recreated (s2 from createSession, warm was consumed as s1)
     feedStatus = 200;
     provider.feedAudio(Buffer.from([5, 6]));
-    await vi.advanceTimersByTimeAsync(100);
+    vi.advanceTimersByTime(100);
+    await flush();
     expect(tokens[tokens.length - 1]).toBe("recovered");
 
     // Verify we created more than the initial warm session
@@ -355,7 +355,8 @@ describe("MlxStreamingSttProvider", () => {
     await flush(); // createSession completes → s2
 
     // Now advance timer to flush queued audio
-    await vi.advanceTimersByTimeAsync(100);
+    vi.advanceTimersByTime(100);
+    await Promise.resolve();
 
     const feedCalls = calls.filter((c) => isFeed(c.url, c.method));
     expect(feedCalls).toHaveLength(1); // Both buffers flushed in one concat
@@ -386,7 +387,8 @@ describe("MlxStreamingSttProvider", () => {
     expect(calls.filter((c) => isFeed(c.url, c.method))).toHaveLength(0);
 
     // Advance past one interval
-    await vi.advanceTimersByTimeAsync(100);
+    vi.advanceTimersByTime(100);
+    await Promise.resolve();
 
     // All three chunks sent as one request
     const feedCalls = calls.filter((c) => isFeed(c.url, c.method));
@@ -433,7 +435,8 @@ describe("MlxStreamingSttProvider", () => {
     provider.onToken(() => {});
     provider.start();
     provider.feedAudio(Buffer.from([1, 2]));
-    await vi.advanceTimersByTimeAsync(100);
+    vi.advanceTimersByTime(100);
+    await flush();
 
     const result = await provider.stop();
     expect(result).toBe("partial");

@@ -432,8 +432,7 @@ export class Server {
     });
 
     // Dictation pipeline (streaming native or HTTP retranscribe)
-    const asrEnabled =
-      config.asr?.sttProvider === "qwen_asr" ? !!config.asr?.sttBinary : !!config.asr?.sttEndpoint;
+    const asrEnabled = !!config.asr?.sttEndpoint;
     if (asrEnabled) {
       const asrConfig = { ...DEFAULT_DICTATION_CONFIG, ...config.asr } as DictationConfig;
       const sttProvider = createSttProvider(asrConfig, globalThis.fetch);
@@ -802,10 +801,8 @@ export class Server {
           ? { endpoint: asrConfig.llmEndpoint, model: "Qwen3.5-27B-8bit" }
           : undefined,
       });
-      if (termSheet && "setSystemPrompt" in sttProvider) {
-        (sttProvider as { setSystemPrompt: (p: string | undefined) => void }).setSystemPrompt(
-          termSheet,
-        );
+      if (termSheet && sttProvider.setSystemPrompt) {
+        sttProvider.setSystemPrompt(termSheet);
         // Persist to disk for inspection
         const termSheetDir = join(dataDir, "dictation");
         await import("node:fs/promises").then((fs) =>
@@ -1245,7 +1242,11 @@ export class Server {
       }
       this.wss.handleUpgrade(req, socket, head, (ws) => {
         this.trackConnection(ws);
-        ws.on("close", () => this.untrackConnection(ws));
+        ws.on("close", () => {
+          this.untrackConnection(ws);
+          console.log("[ws] Disconnected /dictation", { owner: this.storage.getOwnerName() });
+        });
+        console.log("[ws] Connected: /dictation", { owner: this.storage.getOwnerName() });
         // Safe: guarded by `!this.dictationManager` check above
         // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
         this.dictationManager!.handleConnection(ws);

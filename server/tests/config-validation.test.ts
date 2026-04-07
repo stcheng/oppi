@@ -265,7 +265,6 @@ describe("Storage config validation", () => {
     const raw = {
       ...Storage.getDefaultConfig(dir),
       asr: {
-        sttProvider: "mlx-streaming" as const,
         sttEndpoint: "http://localhost:9847",
         sttModel: "Qwen3-ASR-1.7B-bf16",
         preserveAudio: false,
@@ -278,7 +277,6 @@ describe("Storage config validation", () => {
 
     const result = Storage.validateConfig(raw, dir, true);
     expect(result.valid).toBe(true);
-    expect(result.config?.asr?.sttProvider).toBe("mlx-streaming");
     expect(result.config?.asr?.sttEndpoint).toBe("http://localhost:9847");
     expect(result.config?.asr?.preserveAudio).toBe(false);
     expect(result.config?.asr?.maxDurationSec).toBe(120);

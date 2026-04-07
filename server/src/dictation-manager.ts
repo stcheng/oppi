@@ -42,14 +42,10 @@ interface DictationSession {
   audioBuffer: Buffer;
   /** Valid byte count within audioBuffer. */
   totalBytes: number;
-  /** Monotonic version counter for dictation_result ordering. */
-  version: number;
   /** ISO timestamp when dictation started. */
   startedAt: string;
   /** High-res monotonic start time for latency measurement. */
   startHrMs: number;
-  /** Language hint from client. */
-  language?: string;
   /** Set to true once dictation_stop is received. */
   stopping: boolean;
 }
@@ -188,10 +184,8 @@ export class DictationManager {
           session = {
             audioBuffer: Buffer.alloc(INITIAL_AUDIO_BUFFER_SIZE),
             totalBytes: 0,
-            version: 0,
             startedAt: new Date().toISOString(),
             startHrMs: performance.now(),
-            language: msg.language,
             stopping: false,
           };
           this.startSession(ws, session);
@@ -267,13 +261,12 @@ export class DictationManager {
     }
 
     // Forward transcript updates to the client
-    this.sttProvider.onToken((text: string) => {
+    this.sttProvider.onToken((text: string, opts?: { snap?: boolean }) => {
       if (session.stopping) return;
-      session.version++;
       sendMessage(ws, {
         type: "dictation_result",
         text,
-        version: session.version,
+        ...(opts?.snap ? { snap: true } : {}),
       });
     });
   }
@@ -284,7 +277,7 @@ export class DictationManager {
 
   private async finalizeSession(ws: WebSocket, session: DictationSession): Promise<void> {
     const finalizeT0 = performance.now();
-    const langTag = session.language ?? "unknown";
+    const langTag = "auto";
 
     // Emit session-level metrics
     const sessionMs = Math.round(performance.now() - session.startHrMs);
@@ -462,16 +455,6 @@ export class DictationManager {
 
   private providerId(): string {
     switch (this.sttProvider.name) {
-      case "mlx-server":
-        return "oppi_mlx_server";
-      case "openai":
-        return "openai_stt";
-      case "deepgram":
-        return "deepgram_stt";
-      case "elevenlabs":
-        return "elevenlabs_stt";
-      case "qwen_asr":
-        return "qwen_asr";
       default:
         return `stt_${this.sttProvider.name.replace(/[^a-z0-9]+/gi, "_").toLowerCase()}`;
     }
@@ -624,7 +607,6 @@ export class DictationManager {
       durationMs,
       sampleRate: SAMPLE_RATE,
       transcript,
-      language: session.language,
       model: this.sttProvider.model,
       sttEndpoint,
       ...(timing ? { timing } : {}),

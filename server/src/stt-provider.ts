@@ -2,16 +2,13 @@
  * STT provider interface and implementations.
  *
  * Single interface: SttProvider (streaming).
- * All providers — native binary, HTTP batch — implement the same lifecycle:
- *   start() → feedAudio()* → onToken() → stop() → final text
+ * Lifecycle: start() → feedAudio()* → onToken() → stop() → final text
  *
- * HTTP providers wrap their batch transcribe() behind HttpSttAdapter,
- * which owns the retranscribe timer and WAV encoding internally.
- * DictationManager never branches on provider type.
+ * StreamingSttProvider talks to any server implementing the stateful
+ * session API (see docs/asr.md). The API was designed alongside
+ * squawk's transcribe.py and is not tied to any specific backend.
  */
 
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { homedir } from "node:os";
 import type { DictationConfig } from "./dictation-types.js";
 
 // ─── Interface ───
@@ -23,7 +20,7 @@ import type { DictationConfig } from "./dictation-types.js";
  * Lifecycle: start() → feedAudio()* → onToken() callbacks → stop() → final text
  */
 export interface SttProvider {
-  /** Provider identifier for logs/metrics (e.g. "mlx-server", "qwen_asr"). */
+  /** Provider identifier for logs/metrics. */
   readonly name: string;
   /** Model identifier. */
   readonly model: string;
@@ -32,143 +29,45 @@ export interface SttProvider {
   /** Write raw PCM audio (s16le, 16kHz, mono). */
   feedAudio(pcm: Buffer): void;
   /** Register callback for transcript updates (full replacement text each time). */
-  onToken(cb: (text: string) => void): void;
+  onToken(cb: (text: string, opts?: { snap?: boolean }) => void): void;
   /** Close audio input, wait for completion, return full final text. */
   stop(): Promise<string>;
   /** Clean up provider resources (e.g. remote sessions). Call on shutdown. */
   dispose?(): Promise<void>;
+  /** Update the ASR system prompt (e.g. domain term sheet). */
+  setSystemPrompt?(prompt: string | undefined): void;
 }
 
-// ─── Helpers ───
+// ─── Streaming Session Provider ───
 
-/** Resolve ~ to home directory in paths. */
-function expandTilde(p: string): string {
-  if (p.startsWith("~/")) return homedir() + p.slice(1);
-  return p;
-}
-
-// ─── Qwen ASR Provider (native binary) ───
-
-export interface QwenAsrOptions {
-  /** Path to the qwen_asr binary. */
-  binary: string;
-  /** Path to the model directory (with *.safetensors, vocab.json). */
-  modelDir: string;
+export interface StreamingSttOptions {
+  /** Base URL of the STT server. */
+  endpoint: string;
+  /** Model identifier sent to the backend. */
+  model: string;
+  /** ASR system prompt (domain term sheet). */
+  systemPrompt?: string;
 }
 
 /**
- * Streaming STT via antirez/qwen-asr (pure C binary, MIT license).
- * https://github.com/antirez/qwen-asr
+ * Streaming STT via stateful session endpoints.
  *
- * Spawns `qwen_asr -d <modelDir> --stdin --stream` per session.
- * Pipes raw s16le 16kHz mono PCM to stdin, reads decoded tokens from stdout.
- * The binary handles internal 2s chunking, prefix rollback, and sliding window.
+ * Talks to any server implementing the streaming session API:
+ *   POST   {endpoint}/v1/audio/transcriptions/stream       → create session
+ *   POST   {endpoint}/v1/audio/transcriptions/stream/:id   → feed audio chunk
+ *   DELETE  {endpoint}/v1/audio/transcriptions/stream/:id   → stop, get final text
+ *
+ * Uses encoder window caching + decoder KV reuse for O(1) per-chunk latency.
+ * Compatible with squawk's transcribe.py sidecar (the default ASR backend).
  */
-export class QwenAsrProvider implements SttProvider {
-  readonly name = "qwen_asr";
-  readonly model: string;
-  private opts: QwenAsrOptions;
-  private proc: ChildProcessWithoutNullStreams | null = null;
-  private tokenCb: ((text: string) => void) | null = null;
-  private accumulated = "";
-
-  constructor(opts: QwenAsrOptions) {
-    this.opts = opts;
-    const parts = opts.modelDir.replace(/\/+$/, "").split("/");
-    this.model = parts[parts.length - 1] || "qwen-asr";
-  }
-
-  start(): void {
-    if (this.proc) throw new Error("QwenAsrProvider already started");
-    this.accumulated = "";
-
-    this.proc = spawn(this.opts.binary, ["-d", this.opts.modelDir, "--stdin", "--stream"], {
-      stdio: ["pipe", "pipe", "pipe"],
-    });
-
-    // Tokens stream as individual pieces (subwords/words), flushed after each
-    // decode step. We accumulate into a running transcript and fire the callback
-    // with the full text so far (iOS expects replacement semantics).
-    this.proc.stdout.on("data", (chunk: Buffer) => {
-      const text = chunk.toString("utf8");
-      const cleaned = text.replace(/\n$/, "");
-      if (cleaned.length === 0) return;
-      this.accumulated += cleaned;
-      this.tokenCb?.(this.accumulated);
-    });
-
-    this.proc.stderr.on("data", (chunk: Buffer) => {
-      const msg = chunk.toString("utf8").trim();
-      if (msg) console.warn("[qwen-asr]", msg);
-    });
-  }
-
-  feedAudio(pcm: Buffer): void {
-    if (!this.proc || this.proc.stdin.destroyed) return;
-    this.proc.stdin.write(pcm);
-  }
-
-  onToken(cb: (text: string) => void): void {
-    this.tokenCb = cb;
-  }
-
-  stop(): Promise<string> {
-    return new Promise((resolve, reject) => {
-      const proc = this.proc;
-      if (!proc) {
-        resolve(this.accumulated);
-        return;
-      }
-
-      const timeout = setTimeout(() => {
-        proc.kill("SIGKILL");
-        reject(new Error("qwen_asr did not exit within 30s after stdin close"));
-      }, 30_000);
-
-      proc.on("close", (code) => {
-        clearTimeout(timeout);
-        this.proc = null;
-        if (code !== 0 && code !== null) {
-          reject(new Error(`qwen_asr exited with code ${code}`));
-          return;
-        }
-        resolve(this.accumulated);
-      });
-
-      proc.on("error", (err) => {
-        clearTimeout(timeout);
-        this.proc = null;
-        reject(new Error(`qwen_asr process error: ${err.message}`));
-      });
-
-      if (!proc.stdin.destroyed) {
-        proc.stdin.end();
-      }
-    });
-  }
-}
-
-// ─── MLX Streaming Provider ───
-
-/**
- * Streaming STT via MLX server's stateful session endpoint.
- *
- * Uses encoder window caching + decoder KV reuse + prefix rollback
- * for O(1) per-chunk latency instead of O(n) retranscribe.
- *
- * API:
- *   POST /v1/audio/transcriptions/stream      → create session
- *   POST /v1/audio/transcriptions/stream/:id   → feed chunk (raw PCM)
- *   DELETE /v1/audio/transcriptions/stream/:id  → stop, get final text
- */
-export class MlxStreamingSttProvider implements SttProvider {
-  readonly name = "mlx-streaming";
+export class StreamingSttProvider implements SttProvider {
+  readonly name: string;
   readonly model: string;
   readonly endpoint: string;
   private fetchFn: typeof globalThis.fetch;
   private sessionId: string | null = null;
   private warmSessionId: string | null = null;
-  private tokenCb: ((text: string) => void) | null = null;
+  private tokenCb: ((text: string, opts?: { snap?: boolean }) => void) | null = null;
   private lastText = "";
   private audioQueue: Buffer[] = [];
   private feeding = false;
@@ -180,7 +79,7 @@ export class MlxStreamingSttProvider implements SttProvider {
   private systemPrompt: string | undefined;
 
   constructor(
-    opts: { endpoint: string; model: string; systemPrompt?: string },
+    opts: StreamingSttOptions,
     fetchFn: typeof globalThis.fetch = globalThis.fetch,
     feedIntervalMs = 1000,
   ) {
@@ -189,6 +88,13 @@ export class MlxStreamingSttProvider implements SttProvider {
     this.systemPrompt = opts.systemPrompt;
     this.fetchFn = fetchFn;
     this.feedIntervalMs = feedIntervalMs;
+    // Derive name from endpoint hostname for metrics disambiguation
+    try {
+      const host = new URL(opts.endpoint).hostname;
+      this.name = `streaming-${host}`;
+    } catch {
+      this.name = "streaming";
+    }
     // Pre-warm a session at construction time
     void this.warmUpSession();
   }
@@ -230,7 +136,7 @@ export class MlxStreamingSttProvider implements SttProvider {
     this.audioQueue.push(pcm);
   }
 
-  onToken(cb: (text: string) => void): void {
+  onToken(cb: (text: string, opts?: { snap?: boolean }) => void): void {
     this.tokenCb = cb;
   }
 
@@ -296,17 +202,21 @@ export class MlxStreamingSttProvider implements SttProvider {
 
   // ─── Internal ───
 
-  /** DELETE a session on the MLX server. Best-effort, logs errors. */
+  /** Base path for streaming session endpoints. */
+  private get basePath(): string {
+    return `${this.endpoint}/v1/audio/transcriptions/stream`;
+  }
+
+  /** DELETE a session. Best-effort, logs errors. */
   private async deleteSession(id: string): Promise<void> {
     try {
-      const url = `${this.endpoint}/v1/audio/transcriptions/stream/${id}`;
-      await this.fetchFn(url, {
+      await this.fetchFn(`${this.basePath}/${id}`, {
         method: "DELETE",
         signal: AbortSignal.timeout(5_000),
       });
     } catch (err) {
       console.warn(
-        "[mlx-streaming] Failed to delete session:",
+        "[stt] Failed to delete session:",
         id,
         err instanceof Error ? err.message : String(err),
       );
@@ -330,8 +240,7 @@ export class MlxStreamingSttProvider implements SttProvider {
     }
 
     try {
-      const url = `${this.endpoint}/v1/audio/transcriptions/stream`;
-      const res = await this.fetchFn(url, {
+      const res = await this.fetchFn(this.basePath, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: this.sessionCreateBody(),
@@ -349,8 +258,7 @@ export class MlxStreamingSttProvider implements SttProvider {
   private async createSession(): Promise<void> {
     if (this.stopped) return;
     try {
-      const url = `${this.endpoint}/v1/audio/transcriptions/stream`;
-      const res = await this.fetchFn(url, {
+      const res = await this.fetchFn(this.basePath, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: this.sessionCreateBody(),
@@ -363,12 +271,11 @@ export class MlxStreamingSttProvider implements SttProvider {
       const data = (await res.json()) as { session_id?: string };
       this.sessionId = data.session_id ?? null;
       if (this.sessionId) {
-        // Start the feed timer
         this.feedTimer = setInterval(() => void this.flushAudio(), this.feedIntervalMs);
       }
     } catch (err) {
       console.error(
-        "[mlx-streaming] Failed to create session:",
+        "[stt] Failed to create session:",
         err instanceof Error ? err.message : String(err),
       );
     }
@@ -379,12 +286,10 @@ export class MlxStreamingSttProvider implements SttProvider {
     this.feeding = true;
 
     try {
-      // Concatenate queued chunks into one buffer
       const pcm = Buffer.concat(this.audioQueue);
       this.audioQueue = [];
 
-      const url = `${this.endpoint}/v1/audio/transcriptions/stream/${this.sessionId}`;
-      const res = await this.fetchFn(url, {
+      const res = await this.fetchFn(`${this.basePath}/${this.sessionId}`, {
         method: "POST",
         headers: { "Content-Type": "application/octet-stream" },
         body: new Uint8Array(pcm),
@@ -392,15 +297,15 @@ export class MlxStreamingSttProvider implements SttProvider {
       });
 
       if (res.ok) {
-        const data = (await res.json()) as { text?: string };
+        const data = (await res.json()) as { text?: string; batch_corrected?: boolean };
         const text = (data.text ?? "").trim();
         if (text && text !== this.lastText) {
           this.lastText = text;
-          this.tokenCb?.(text);
+          this.tokenCb?.(text, data.batch_corrected ? { snap: true } : undefined);
         }
       } else if (res.status === 404) {
-        // Stale session — MLX server likely restarted
-        console.warn("[mlx-streaming] Session", this.sessionId, "not found (404), recreating");
+        // Stale session — server likely restarted
+        console.warn("[stt] Session", this.sessionId, "not found (404), recreating");
         this.sessionId = null;
         if (this.feedTimer) {
           clearInterval(this.feedTimer);
@@ -409,7 +314,7 @@ export class MlxStreamingSttProvider implements SttProvider {
         await this.createSession();
       }
     } catch (err) {
-      console.warn("[mlx-streaming] Feed error:", err instanceof Error ? err.message : String(err));
+      console.warn("[stt] Feed error:", err instanceof Error ? err.message : String(err));
     } finally {
       this.feeding = false;
     }
@@ -418,46 +323,16 @@ export class MlxStreamingSttProvider implements SttProvider {
 
 // ─── Factory ───
 
-/**
- * Create an SttProvider from DictationConfig.
- * Supported providers: mlx-streaming (default), qwen_asr.
- */
+/** Create an SttProvider from DictationConfig. */
 export function createSttProvider(
   config: DictationConfig,
   fetchFn: typeof globalThis.fetch = globalThis.fetch,
 ): SttProvider {
-  const providerType = config.sttProvider ?? "mlx-streaming";
-
-  switch (providerType) {
-    case "qwen_asr": {
-      if (!config.sttBinary) {
-        throw new Error(
-          'qwen_asr provider requires "sttBinary" in asr config (path to qwen_asr binary)',
-        );
-      }
-      if (!config.sttModelDir) {
-        throw new Error(
-          'qwen_asr provider requires "sttModelDir" in asr config (path to model directory)',
-        );
-      }
-      return new QwenAsrProvider({
-        binary: expandTilde(config.sttBinary),
-        modelDir: expandTilde(config.sttModelDir),
-      });
-    }
-
-    case "mlx-streaming":
-      return new MlxStreamingSttProvider(
-        {
-          endpoint: config.sttEndpoint,
-          model: config.sttModel,
-        },
-        fetchFn,
-      );
-
-    default:
-      throw new Error(
-        `Unknown STT provider: "${providerType}". Supported: mlx-streaming, qwen_asr`,
-      );
-  }
+  return new StreamingSttProvider(
+    {
+      endpoint: config.sttEndpoint,
+      model: config.sttModel,
+    },
+    fetchFn,
+  );
 }

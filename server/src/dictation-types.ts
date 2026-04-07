@@ -7,26 +7,9 @@
 
 // ─── Config ───
 
-export type SttProviderType =
-  | "mlx-streaming"
-  | "mlx-server"
-  | "openai"
-  | "deepgram"
-  | "elevenlabs"
-  | "qwen_asr";
-
 export interface DictationConfig {
-  /** STT provider type. Default: "mlx-server". */
-  sttProvider?: SttProviderType;
-
-  /** STT backend endpoint (required for HTTP providers, ignored for native). */
+  /** STT backend endpoint (must implement the streaming session API). */
   sttEndpoint: string;
-
-  /** Path to qwen_asr binary. Only used when provider is "qwen_asr". */
-  sttBinary?: string;
-
-  /** Path to qwen_asr model directory. Only used when provider is "qwen_asr". */
-  sttModelDir?: string;
 
   /** Model to request from the STT backend. */
   sttModel: string;
@@ -75,7 +58,7 @@ export interface DictationConfig {
 }
 
 export const DEFAULT_DICTATION_CONFIG: DictationConfig = {
-  sttEndpoint: "http://localhost:9847",
+  sttEndpoint: "http://localhost:9748",
   sttModel: "mlx-community/Qwen3-ASR-1.7B-bf16",
   preserveAudio: true,
   maxDurationSec: 0,
@@ -90,7 +73,6 @@ export const DEFAULT_DICTATION_CONFIG: DictationConfig = {
 
 export interface DictationStartMessage {
   type: "dictation_start";
-  language?: string;
 }
 
 export interface DictationStopMessage {
@@ -110,7 +92,7 @@ export type DictationClientMessage =
 
 export interface DictationReadyMessage {
   type: "dictation_ready";
-  /** STT provider identifier (e.g. "mlx-server", "openai", "deepgram"). */
+  /** STT provider identifier reported by the backend (e.g. "streaming-localhost"). */
   sttProvider?: string;
   /** STT model identifier. */
   sttModel?: string;
@@ -121,7 +103,8 @@ export interface DictationReadyMessage {
 export interface DictationResultMessage {
   type: "dictation_result";
   text: string;
-  version: number;
+  /** When true, the text is a batch-corrected replacement. Client should snap (no animation). */
+  snap?: boolean;
 }
 
 export interface DictationFinalMessage {
