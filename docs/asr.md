@@ -27,17 +27,21 @@ the language label (EN/中), since the model detects language automatically.
 ## Architecture (Server Mode)
 
 ```
-iPhone (mic) → WebSocket /dictation → Oppi Server → STT endpoint → text
-                                                   ↓
+iPhone (mic) → WebSocket /stream → Oppi Server → STT endpoint → text
+                  (unified WS)                    ↓
                                                FLAC archive
 ```
 
-1. iOS streams raw PCM audio (16kHz, 16-bit, mono) over a `/dictation` WebSocket.
+Dictation shares the same `/stream` WebSocket used for session events.
+The server distinguishes dictation traffic by message type.
+
+1. iOS sends a `dictation_start` message, then streams raw PCM audio
+   (16kHz, 16-bit, mono) as binary frames over `/stream`.
 2. The server creates a stateful streaming session on the STT backend.
 3. Audio is fed in ~2s chunks; each returns an updated transcript.
 4. Interim results stream back to the phone (typewriter animation).
-5. On stop, the server gets final text, optionally runs LLM correction,
-   and saves the audio as FLAC.
+5. On `dictation_stop`, the server gets final text, optionally runs LLM
+   correction, and saves the audio as FLAC.
 
 ### STT Backend
 
@@ -112,11 +116,34 @@ model's system prompt. Improves accuracy at zero latency cost.
 }
 ```
 
+## Dual-Model ASR (Squawk)
+
+Squawk supports a hybrid streaming/batch strategy that balances latency and
+accuracy. This is configured entirely within Squawk and is transparent to
+Oppi — the server sees a single STT endpoint regardless of which models
+Squawk uses internally.
+
+- **Streaming model** (e.g. Qwen3-ASR 0.6B-4bit) — produces low-latency
+  partials as the user speaks. Optimized for speed over accuracy.
+- **Batch model** (e.g. Qwen3-ASR 1.7B-bf16) — on pause, Squawk
+  re-transcribes the full utterance with the larger model and sends a
+  corrected replacement. This fixes errors from the streaming pass.
+
+The result: fast typewriter feedback while speaking, accurate final text
+after each pause. Configure the model pair in Squawk's menu bar menu
+under Model Presets.
+
 ## Performance
 
-Measured with MLX-audio Qwen3-ASR-1.7B on M3 Ultra:
+Measured on M3 Ultra with MLX-audio Qwen3-ASR:
 
-- **Per-chunk latency**: ~138ms constant (O(1) via encoder cache + KV reuse)
-- **Real-time factor**: 0.07x (14x faster than real-time)
+| Model | Chunk latency | Memory | Notes |
+|-------|---------------|--------|-------|
+| 0.6B-4bit | ~79ms | ~750MB | Recommended for streaming partials |
+| 1.7B-bf16 | ~138ms | ~3.4GB | Recommended for batch retranscription |
+
+Both achieve O(1) per-chunk via encoder window caching and decoder KV
+cache reuse. Latency is constant regardless of recording length.
+
+- **Real-time factor**: 0.04x (0.6B) / 0.07x (1.7B) — well ahead of real-time
 - **Language support**: Bilingual EN/ZH with mid-sentence code-switching
-- **Total compute for 91s audio**: 6.3s
