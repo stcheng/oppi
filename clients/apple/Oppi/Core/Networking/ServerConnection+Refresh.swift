@@ -284,6 +284,12 @@ extension ServerConnection {
 
         if !streamAlive {
             activeExtensionDialog = nil
+            // Stash the pending ask so focusSession() can restore it after
+            // the reconnect. Without this, the ask card is permanently lost
+            // because the subscribe dedup on the server skips re-sending it.
+            if let activeSessionId, let ask = activeAskRequest {
+                pendingAskRequests[activeSessionId] = ask
+            }
             if let activeSessionId {
                 askRequestStore.remove(for: activeSessionId)
             }

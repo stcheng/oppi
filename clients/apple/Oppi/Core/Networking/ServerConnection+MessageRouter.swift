@@ -66,6 +66,11 @@ extension ServerConnection {
                 )
                 activeAskRequest = ask
                 askRequestStore.set(ask, for: sessionId)
+                // Stop the silence watchdog — the agent is blocked waiting
+                // for user input, so silence is expected. Without this, the
+                // watchdog triggers a reconnect after 45s which clears the
+                // ask card (subscribe dedup skips re-sending the pending ask).
+                silenceWatchdog.stop()
             } else {
                 // Existing generic dialog path
                 extensionTimeoutTask?.cancel()
