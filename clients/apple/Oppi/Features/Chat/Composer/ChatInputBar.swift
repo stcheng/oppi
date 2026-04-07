@@ -34,8 +34,7 @@ struct ChatInputBar<ActionRow: View>: View {
     var askRequest: AskRequest?
     var onAskSubmit: (([String: AskAnswer]) -> Void)?
     var onAskIgnoreAll: (() -> Void)?
-    var onAskEnterAnswerMode: (() -> Void)?
-    var onAskExitAnswerMode: (() -> Void)?
+
     let slashCommands: [SlashCommand]
     let fileSuggestions: [FileSuggestion]
     let onFileSuggestionQuery: ((String?) -> Void)?
@@ -255,8 +254,7 @@ struct ChatInputBar<ActionRow: View>: View {
                     request: askRequest,
                     onSubmit: { answers in onAskSubmit?(answers) },
                     onIgnoreAll: { onAskIgnoreAll?() },
-                    onEnterAnswerMode: { onAskEnterAnswerMode?() },
-                    onExitAnswerMode: { onAskExitAnswerMode?() }
+
                 )
                 .id(askRequest.id)
                 .padding(.horizontal, composerHorizontalPadding)

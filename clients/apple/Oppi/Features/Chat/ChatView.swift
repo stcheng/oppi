@@ -513,12 +513,7 @@ struct ChatView: View {
                             }
                         }
                     },
-                    onAskEnterAnswerMode: {
-                        connection.askAnswerMode = true
-                    },
-                    onAskExitAnswerMode: {
-                        connection.askAnswerMode = false
-                    },
+
                     slashCommands: chatState.slashCommands,
                     fileSuggestions: chatState.fileSuggestions,
                     onFileSuggestionQuery: { query in

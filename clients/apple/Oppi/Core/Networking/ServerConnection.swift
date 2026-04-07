@@ -105,7 +105,6 @@ final class ServerConnection {
 
     // Ask extension
     var activeAskRequest: AskRequest?
-    var askAnswerMode: Bool = false
     /// Pending ask requests for sessions the user isn't currently viewing.
     /// Restored to activeAskRequest when the user enters the session.
     var pendingAskRequests: [String: AskRequest] = [:]
@@ -651,7 +650,6 @@ final class ServerConnection {
         sender.activeSessionId = sessionId
         // Reset per-connection UI state for the new focused session
         activeExtensionDialog = nil
-        askAnswerMode = false
         extensionTimeoutTask?.cancel()
         extensionTimeoutTask = nil
         chatState.resetSessionState()
@@ -693,7 +691,6 @@ final class ServerConnection {
         }
         // Clear stale extension dialog — it's tied to the active session stream
         activeExtensionDialog = nil
-        askAnswerMode = false
         extensionTimeoutTask?.cancel()
         extensionTimeoutTask = nil
         silenceWatchdog.stop()
@@ -784,7 +781,6 @@ final class ServerConnection {
             askRequestStore.remove(for: activeSessionId)
         }
         activeAskRequest = nil
-        askAnswerMode = false
         extensionTimeoutTask?.cancel()
         extensionTimeoutTask = nil
     }

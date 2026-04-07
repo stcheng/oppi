@@ -68,8 +68,6 @@ struct AskCard: View {
     let request: AskRequest
     let onSubmit: ([String: AskAnswer]) -> Void
     let onIgnoreAll: () -> Void
-    let onEnterAnswerMode: () -> Void
-    let onExitAnswerMode: () -> Void
 
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 

@@ -294,7 +294,6 @@ extension ServerConnection {
                 askRequestStore.remove(for: activeSessionId)
             }
             activeAskRequest = nil
-            askAnswerMode = false
             extensionTimeoutTask?.cancel()
             extensionTimeoutTask = nil
 

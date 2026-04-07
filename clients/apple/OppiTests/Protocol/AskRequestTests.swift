@@ -265,12 +265,9 @@ struct AskRequestTests {
             allowCustom: true,
             timeout: nil
         )
-        conn.askAnswerMode = true
-
         conn.disconnectSession()
 
         #expect(conn.activeAskRequest == nil)
-        #expect(conn.askAnswerMode == false)
     }
 
     @Test @MainActor func secondAskReplacesFirst() {
