@@ -242,24 +242,34 @@ export class DictationManager {
   private startSession(): void {
     void this.ensureDictionary();
 
+    // Start the STT provider (async — validates backend is reachable).
+    // Only send dictation_ready after the session is confirmed.
+    void this.startSttAndSignalReady();
+  }
+
+  private async startSttAndSignalReady(): Promise<void> {
+    try {
+      await this.sttProvider.start();
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      console.error("[stt] Failed to start session:", errorMsg);
+      this.send({
+        type: "dictation_error",
+        error: `STT failed to start: ${errorMsg}`,
+        fatal: true,
+      });
+      // Clear the session so the manager knows dictation is not active
+      this.session = null;
+      return;
+    }
+
+    // STT session is confirmed — now tell the client
     this.send({
       type: "dictation_ready",
       sttProvider: this.sttProvider.name,
       sttModel: this.sttProvider.model,
       llmCorrectionEnabled: this.config.llmCorrectionEnabled,
     });
-
-    try {
-      this.sttProvider.start();
-    } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : String(err);
-      this.send({
-        type: "dictation_error",
-        error: `STT failed to start: ${errorMsg}`,
-        fatal: true,
-      });
-      return;
-    }
 
     // Forward transcript updates to the client
     this.sttProvider.onToken((text: string, opts?: { snap?: boolean }) => {

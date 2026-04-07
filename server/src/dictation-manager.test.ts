@@ -59,7 +59,7 @@ function mockSttProvider(tokens: string[]) {
   let tokenCb: ((text: string) => void) | null = null;
   const accumulated = tokens.join(" ");
 
-  const startFn = vi.fn<() => void>();
+  const startFn = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
   const feedAudioFn = vi.fn<(pcm: Buffer) => void>();
   const stopFn = vi.fn<() => Promise<string>>().mockResolvedValue(accumulated);
 
@@ -86,7 +86,7 @@ function mockSttProvider(tokens: string[]) {
 /** Create a mock SttProvider whose stop() rejects. */
 // eslint-disable-next-line @typescript-eslint/explicit-function-return-type
 function failingSttProvider(error: string) {
-  const startFn = vi.fn<() => void>();
+  const startFn = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
   const feedAudioFn = vi.fn<(pcm: Buffer) => void>();
   const stopFn = vi.fn<() => Promise<string>>().mockRejectedValue(new Error(error));
 
@@ -236,26 +236,30 @@ describe("DictationManager", () => {
   });
 
   describe("session lifecycle", () => {
-    it("sends dictation_ready on dictation_start", () => {
+    it("sends dictation_ready on dictation_start", async () => {
       manager.handleControlMessage({ type: "dictation_start" }, sendFn);
+      await drain();
       expect(messagesOfType(sent, "dictation_ready")).toHaveLength(1);
     });
 
-    it("dictation_ready includes provider metadata", () => {
+    it("dictation_ready includes provider metadata", async () => {
       manager.handleControlMessage({ type: "dictation_start" }, sendFn);
+      await drain();
       const ready = messagesOfType(sent, "dictation_ready")[0];
       expect(ready.sttProvider).toBe("mock");
       expect(ready.sttModel).toBe("mock-model");
       expect(ready.llmCorrectionEnabled).toBe(false);
     });
 
-    it("calls start() on dictation_start", () => {
+    it("calls start() on dictation_start", async () => {
       manager.handleControlMessage({ type: "dictation_start" }, sendFn);
+      await drain();
       expect(provider.start).toHaveBeenCalledTimes(1);
     });
 
-    it("pipes audio via feedAudio()", () => {
+    it("pipes audio via feedAudio()", async () => {
       manager.handleControlMessage({ type: "dictation_start" }, sendFn);
+      await drain();
       const pcm = silencePcm(500);
       manager.handleAudioData(pcm);
       expect(provider.feedAudio).toHaveBeenCalledWith(pcm);
@@ -306,46 +310,70 @@ describe("DictationManager", () => {
       expect(messagesOfType(sent, "dictation_error")).toHaveLength(1);
     });
 
-    it("allows new session after disconnect", () => {
+    it("allows new session after disconnect", async () => {
       manager.handleControlMessage({ type: "dictation_start" }, sendFn);
+      await drain();
       manager.handleDisconnect();
 
       // Reset sent messages and start a fresh session
       sent.length = 0;
       manager.handleControlMessage({ type: "dictation_start" }, sendFn);
+      await drain();
 
       const readyMsgs = messagesOfType(sent, "dictation_ready");
       expect(readyMsgs).toHaveLength(1);
       expect(provider.start).toHaveBeenCalledTimes(2);
     });
 
-    it("allows new session after cancel", () => {
+    it("allows new session after cancel", async () => {
       manager.handleControlMessage({ type: "dictation_start" }, sendFn);
+      await drain();
       manager.handleControlMessage({ type: "dictation_cancel" }, sendFn);
 
       sent.length = 0;
       manager.handleControlMessage({ type: "dictation_start" }, sendFn);
+      await drain();
 
       expect(messagesOfType(sent, "dictation_ready")).toHaveLength(1);
     });
 
-    it("persists send callback across multiple sessions", () => {
+    it("persists send callback across multiple sessions", async () => {
       // The send function is set per-call. Verify each session gets
       // its messages routed to the callback provided with that call.
       const sent1: DictationServerMessage[] = [];
       const sent2: DictationServerMessage[] = [];
       manager.handleControlMessage({ type: "dictation_start" }, (m) => sent1.push(m));
+      await drain();
       manager.handleDisconnect();
       manager.handleControlMessage({ type: "dictation_start" }, (m) => sent2.push(m));
+      await drain();
 
       expect(sent1).toHaveLength(1); // dictation_ready
       expect(sent2).toHaveLength(1); // dictation_ready
     });
+
+    it("sends fatal error when STT backend is unreachable", async () => {
+      const failStartProvider = mockSttProvider(["test"]);
+      failStartProvider.start.mockRejectedValue(new Error("STT backend unreachable"));
+      const mgr = new DictationManager(testConfig(), "/tmp/test", failStartProvider);
+      const mgrSent: DictationServerMessage[] = [];
+
+      mgr.handleControlMessage({ type: "dictation_start" }, (m) => mgrSent.push(m));
+      await drain();
+
+      const errors = messagesOfType(mgrSent, "dictation_error");
+      expect(errors).toHaveLength(1);
+      expect(errors[0].fatal).toBe(true);
+      expect(errors[0].error).toContain("STT failed to start");
+      // No dictation_ready should have been sent
+      expect(messagesOfType(mgrSent, "dictation_ready")).toHaveLength(0);
+    });
   });
 
   describe("token streaming", () => {
-    it("sends dictation_result with accumulated text", () => {
+    it("sends dictation_result with accumulated text", async () => {
       manager.handleControlMessage({ type: "dictation_start" }, sendFn);
+      await drain();
       manager.handleAudioData(silencePcm(500));
       provider._fireTokens();
 
@@ -364,6 +392,7 @@ describe("DictationManager", () => {
   describe("finalize", () => {
     it("calls stop() and returns accumulated text", async () => {
       manager.handleControlMessage({ type: "dictation_start" }, sendFn);
+      await drain();
       manager.handleAudioData(silencePcm(1000));
       manager.handleControlMessage({ type: "dictation_stop" }, sendFn);
       vi.advanceTimersByTime(10);
@@ -384,6 +413,7 @@ describe("DictationManager", () => {
       };
 
       mgr.handleControlMessage({ type: "dictation_start" }, mgrSendFn);
+      await drain();
       mgr.handleAudioData(silencePcm(500));
       mgr.handleControlMessage({ type: "dictation_stop" }, mgrSendFn);
       vi.advanceTimersByTime(10);
@@ -417,6 +447,7 @@ describe("DictationManager", () => {
       };
 
       mgr.handleControlMessage({ type: "dictation_start" }, mgrSendFn);
+      await drain();
       mgr.handleAudioData(silencePcm(1000));
       mgr.handleControlMessage({ type: "dictation_stop" }, mgrSendFn);
       vi.advanceTimersByTime(10);
@@ -446,6 +477,7 @@ describe("DictationManager", () => {
       };
 
       mgr.handleControlMessage({ type: "dictation_start" }, mgrSendFn);
+      await drain();
       mgr.handleAudioData(silencePcm(1000));
       mgr.handleControlMessage({ type: "dictation_stop" }, mgrSendFn);
       vi.advanceTimersByTime(10);
@@ -459,6 +491,7 @@ describe("DictationManager", () => {
 
     it("skips LLM when disabled", async () => {
       manager.handleControlMessage({ type: "dictation_start" }, sendFn);
+      await drain();
       manager.handleAudioData(silencePcm(1000));
       manager.handleControlMessage({ type: "dictation_stop" }, sendFn);
       vi.advanceTimersByTime(10);
@@ -492,6 +525,7 @@ describe("DictationManager", () => {
       };
 
       mgr.handleControlMessage({ type: "dictation_start" }, mgrSendFn);
+      await drain();
       mgr.handleAudioData(silencePcm(1000));
       mgr.handleControlMessage({ type: "dictation_stop" }, mgrSendFn);
       vi.advanceTimersByTime(10);

@@ -22,8 +22,8 @@ export interface SttProvider {
   readonly name: string;
   /** Model identifier. */
   readonly model: string;
-  /** Spawn the STT process / prepare for audio input. */
-  start(): void;
+  /** Spawn the STT process / prepare for audio input. Throws if the backend is unreachable. */
+  start(): Promise<void>;
   /** Write raw PCM audio (s16le, 16kHz, mono). */
   feedAudio(pcm: Buffer): void;
   /** Register callback for transcript updates (full replacement text each time). */
@@ -102,7 +102,7 @@ export class StreamingSttProvider implements SttProvider {
     this.systemPrompt = prompt;
   }
 
-  start(): void {
+  async start(): Promise<void> {
     // Cleanup existing active session if start() called again without stop()
     if (this.sessionId) {
       void this.deleteSession(this.sessionId);
@@ -118,15 +118,30 @@ export class StreamingSttProvider implements SttProvider {
     this.feeding = false;
     this.stopped = false;
 
-    // Use warm session if available, otherwise create fresh
+    // Use warm session if available, otherwise create fresh.
+    // Both paths validate the session is reachable before returning.
     if (this.warmSessionId) {
-      this.sessionId = this.warmSessionId;
-      this.warmSessionId = null;
-      this.feedTimer = setInterval(() => void this.flushAudio(), this.feedIntervalMs);
+      // Verify the warm session is still valid with a no-op health check.
+      // If it's stale (sidecar restarted), create a fresh one instead.
+      const valid = await this.verifySession(this.warmSessionId);
+      if (valid) {
+        this.sessionId = this.warmSessionId;
+        this.warmSessionId = null;
+      } else {
+        // Warm session is stale — delete it and create fresh
+        void this.deleteSession(this.warmSessionId);
+        this.warmSessionId = null;
+        await this.createSession();
+      }
     } else {
-      this.sessionId = null;
-      void this.createSession();
+      await this.createSession();
     }
+
+    if (!this.sessionId) {
+      throw new Error("STT backend unreachable");
+    }
+
+    this.feedTimer = setInterval(() => void this.flushAudio(), this.feedIntervalMs);
   }
 
   feedAudio(pcm: Buffer): void {
@@ -253,30 +268,35 @@ export class StreamingSttProvider implements SttProvider {
     }
   }
 
+  /** Verify a session is still valid by sending an empty audio chunk. */
+  private async verifySession(id: string): Promise<boolean> {
+    try {
+      const res = await this.fetchFn(`${this.basePath}/${id}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/octet-stream" },
+        body: new Uint8Array(0),
+        signal: AbortSignal.timeout(5_000),
+      });
+      return res.ok;
+    } catch {
+      return false;
+    }
+  }
+
   private async createSession(): Promise<void> {
     if (this.stopped) return;
-    try {
-      const res = await this.fetchFn(this.basePath, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: this.sessionCreateBody(),
-        signal: AbortSignal.timeout(10_000),
-      });
-      if (!res.ok) {
-        const body = await res.text().catch(() => "");
-        throw new Error(`Create session HTTP ${res.status}: ${body}`);
-      }
-      const data = (await res.json()) as { session_id?: string };
-      this.sessionId = data.session_id ?? null;
-      if (this.sessionId) {
-        this.feedTimer = setInterval(() => void this.flushAudio(), this.feedIntervalMs);
-      }
-    } catch (err) {
-      console.error(
-        "[stt] Failed to create session:",
-        err instanceof Error ? err.message : String(err),
-      );
+    const res = await this.fetchFn(this.basePath, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: this.sessionCreateBody(),
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      throw new Error(`Create session HTTP ${res.status}: ${body}`);
     }
+    const data = (await res.json()) as { session_id?: string };
+    this.sessionId = data.session_id ?? null;
   }
 
   private async flushAudio(): Promise<void> {
@@ -305,11 +325,14 @@ export class StreamingSttProvider implements SttProvider {
         // Stale session — server likely restarted
         console.warn("[stt] Session", this.sessionId, "not found (404), recreating");
         this.sessionId = null;
-        if (this.feedTimer) {
-          clearInterval(this.feedTimer);
-          this.feedTimer = null;
+        try {
+          await this.createSession();
+        } catch (err) {
+          console.warn(
+            "[stt] Failed to recreate session:",
+            err instanceof Error ? err.message : String(err),
+          );
         }
-        await this.createSession();
       }
     } catch (err) {
       console.warn("[stt] Feed error:", err instanceof Error ? err.message : String(err));
