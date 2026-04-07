@@ -563,6 +563,9 @@ struct VoiceInputManagerTests {
             systemAccess: systemAccess
         )
         manager.setEngineMode(.remote)
+        let conn = ServerConnection()
+        conn.setAsrAvailableForTesting(true)
+        manager.setServerConnection(conn)
 
         try? await manager.startRecording(source: "test")
 
@@ -669,39 +672,41 @@ struct VoiceInputManagerTests {
         }())
     }
 
-    @Test func remoteModeWithoutCredentialsSurfacesConfigurationError() async {
+    /// Remote mode without ASR available falls back to on-device engine.
+    @Test func remoteModeWithoutAsrFallsBackToOnDevice() async {
         resetVoicePreferences()
         defer { resetVoicePreferences() }
 
         let systemAccess = MockVoiceInputSystemAccess()
+        let onDeviceProvider = MockVoiceProvider(id: .appleClassicDictation, engine: .classicDictation)
+        let serverProvider = MockVoiceProvider(id: .oppiServer, engine: .serverDictation)
         let manager = VoiceInputManager(
-            providerRegistry: VoiceProviderRegistry(providers: [OppiDictationProvider()]),
+            providerRegistry: VoiceProviderRegistry(providers: [onDeviceProvider, serverProvider]),
             systemAccess: systemAccess
         )
         manager.setEngineMode(.remote)
+        // No connection / no asrAvailable — should fall back
 
-        await #expect(throws: VoiceInputError.self) {
-            try await manager.startRecording(source: "test")
-        }
+        try? await manager.startRecording(source: "test")
 
-        #expect({
-            if case .error(let message) = manager.state {
-                return message.contains("not connected")
-            }
-            return false
-        }())
+        // Fell back to on-device — server provider was NOT used
+        #expect(serverProvider.prepareSessionCallCount == 0)
+        #expect(onDeviceProvider.prepareSessionCallCount == 1)
     }
 
     /// Has credentials but no ServerConnection — prepareSession should throw
     /// VoiceInputError.serverNotConnected because the provider needs a live
     /// connection to send dictation messages over the /stream WebSocket.
-    @Test func remoteModeWithCredentialsButNoConnectionSurfacesError() async {
+    /// Credentials exist but ASR not available — falls back to on-device.
+    @Test func remoteModeWithCredentialsButNoAsrFallsBackToOnDevice() async {
         resetVoicePreferences()
         defer { resetVoicePreferences() }
 
         let systemAccess = MockVoiceInputSystemAccess()
+        let onDeviceProvider = MockVoiceProvider(id: .appleClassicDictation, engine: .classicDictation)
+        let serverProvider = MockVoiceProvider(id: .oppiServer, engine: .serverDictation)
         let manager = VoiceInputManager(
-            providerRegistry: VoiceProviderRegistry(providers: [OppiDictationProvider()]),
+            providerRegistry: VoiceProviderRegistry(providers: [onDeviceProvider, serverProvider]),
             systemAccess: systemAccess
         )
         manager.setEngineMode(.remote)
@@ -711,18 +716,15 @@ struct VoiceInputManagerTests {
             name: "test-server",
             scheme: .http
         ))
-        // Note: setServerConnection is NOT called — connection is nil
+        // Connection exists but asrAvailable is false (server has no STT backend)
+        let conn = ServerConnection()
+        manager.setServerConnection(conn)
 
-        await #expect(throws: VoiceInputError.self) {
-            try await manager.startRecording(source: "test")
-        }
+        try? await manager.startRecording(source: "test")
 
-        #expect({
-            if case .error(let message) = manager.state {
-                return message.contains("not connected")
-            }
-            return false
-        }())
+        // Fell back to on-device — server provider was NOT called
+        #expect(serverProvider.prepareSessionCallCount == 0)
+        #expect(onDeviceProvider.prepareSessionCallCount == 1)
     }
 
     // MARK: - Send-while-recording: stop awaits final transcript

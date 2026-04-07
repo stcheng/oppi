@@ -41,7 +41,7 @@ struct ServerConnectionReconnectTests {
         // Fire stream_connected → handleStreamReconnected()
         conn.routeStreamMessage(StreamMessage(
             sessionId: nil, streamSeq: nil, seq: nil, currentSeq: nil,
-            message: .streamConnected(userName: "test")
+            message: .streamConnected(userName: "test", asrAvailable: false)
         ))
 
         // The ORIGINAL stale task should be cancelled
@@ -90,7 +90,7 @@ struct ServerConnectionReconnectTests {
         // Fire stream_connected → resubscribe → scheduleQueueSync
         conn.routeStreamMessage(StreamMessage(
             sessionId: nil, streamSeq: nil, seq: nil, currentSeq: nil,
-            message: .streamConnected(userName: "test")
+            message: .streamConnected(userName: "test", asrAvailable: false)
         ))
 
         // get_queue should be sent after successful resubscription
@@ -124,7 +124,7 @@ struct ServerConnectionReconnectTests {
         // First reconnect
         conn.routeStreamMessage(StreamMessage(
             sessionId: nil, streamSeq: nil, seq: nil, currentSeq: nil,
-            message: .streamConnected(userName: "test")
+            message: .streamConnected(userName: "test", asrAvailable: false)
         ))
 
         // Wait for first resubscribe to complete
@@ -136,7 +136,7 @@ struct ServerConnectionReconnectTests {
         // Second reconnect (WS dropped again immediately)
         conn.routeStreamMessage(StreamMessage(
             sessionId: nil, streamSeq: nil, seq: nil, currentSeq: nil,
-            message: .streamConnected(userName: "test")
+            message: .streamConnected(userName: "test", asrAvailable: false)
         ))
 
         // Second resubscribe should also succeed
@@ -208,7 +208,7 @@ struct ServerConnectionReconnectTests {
         // Reconnect — should cancel stale task before resubscribing
         conn.routeStreamMessage(StreamMessage(
             sessionId: nil, streamSeq: nil, seq: nil, currentSeq: nil,
-            message: .streamConnected(userName: "test")
+            message: .streamConnected(userName: "test", asrAvailable: false)
         ))
 
         // Wait for both subscribe and get_queue to complete

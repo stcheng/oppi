@@ -14,7 +14,7 @@ struct DictationProviderInfo: Sendable, Equatable {
 
 enum ServerMessage: Sendable, Equatable {
     // Connection lifecycle
-    case streamConnected(userName: String)
+    case streamConnected(userName: String, asrAvailable: Bool)
     case connected(session: Session)
     case state(session: Session)
     case sessionEnded(reason: String)
@@ -129,7 +129,7 @@ extension ServerMessage: Decodable {
     enum CodingKeys: String, CodingKey {
         case type
         // stream_connected
-        case userName
+        case userName, asrAvailable
         // connected / state
         case session
         // session_ended / stop lifecycle
@@ -174,7 +174,8 @@ extension ServerMessage: Decodable {
         switch type {
         case "stream_connected":
             let userName = try c.decodeIfPresent(String.self, forKey: .userName) ?? ""
-            self = .streamConnected(userName: userName)
+            let asrAvailable = try c.decodeIfPresent(Bool.self, forKey: .asrAvailable) ?? false
+            self = .streamConnected(userName: userName, asrAvailable: asrAvailable)
 
         case "connected":
             let session = try c.decode(Session.self, forKey: .session)

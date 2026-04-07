@@ -501,7 +501,11 @@ export class UserStreamMux {
       return false;
     };
 
-    send({ type: "stream_connected", userName: this.ctx.storage.getOwnerName() });
+    send({
+      type: "stream_connected",
+      userName: this.ctx.storage.getOwnerName(),
+      ...(this.dictationManager ? { asrAvailable: true } : {}),
+    });
 
     ws.on("message", (data, isBinary) => {
       queue = queue

@@ -1447,7 +1447,7 @@ struct StreamLifecycleTests {
             streamSeq: nil,
             seq: nil,
             currentSeq: nil,
-            message: .streamConnected(userName: "test")
+            message: .streamConnected(userName: "test", asrAvailable: false)
         )
         conn.routeStreamMessage(streamMsg)
 

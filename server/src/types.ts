@@ -1119,7 +1119,7 @@ export interface AskQuestion {
 export type ServerMessage = // ── Connection ──
   (
     | { type: "connected"; session: Session; currentSeq?: number }
-    | { type: "stream_connected"; userName: string }
+    | { type: "stream_connected"; userName: string; asrAvailable?: boolean }
     | { type: "state"; session: Session }
     | { type: "session_ended"; reason: string }
     | { type: "session_deleted"; sessionId: string }

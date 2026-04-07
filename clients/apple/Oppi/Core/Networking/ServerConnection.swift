@@ -27,6 +27,10 @@ final class ServerConnection {
         wsClient?.status == .connected
     }
 
+    /// Whether the server has ASR configured (Squawk or another STT backend).
+    /// Updated on each `/stream` connection from the `stream_connected` message.
+    private(set) var asrAvailable = false
+
     // Stores
     let sessionStore = SessionStore()
     let permissionStore = PermissionStore()
@@ -446,7 +450,8 @@ final class ServerConnection {
         let message = streamMessage.message
 
         // Handle stream-level events (no sessionId)
-        if case .streamConnected = message {
+        if case .streamConnected(_, let asr) = message {
+            asrAvailable = asr
             handleStreamReconnected()
             return
         }
@@ -849,6 +854,12 @@ final class ServerConnection {
     func setPreviewServerId(_ id: String) {
         currentServerId = id
         workspaceStore.setActiveServer(id)
+    }
+
+    // periphery:ignore - used by VoiceInputManagerTests via @testable import
+    /// Override ASR availability for testing.
+    func setAsrAvailableForTesting(_ available: Bool) {
+        asrAvailable = available
     }
 #endif
 }

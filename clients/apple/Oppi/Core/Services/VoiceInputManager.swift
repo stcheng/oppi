@@ -257,7 +257,8 @@ final class VoiceInputManager {
         return await routeResolver.resolveEngine(
             mode: engineMode,
             fallback: fallback,
-            serverCredentials: serverCredentials
+            serverCredentials: serverCredentials,
+            asrAvailable: serverConnection?.asrAvailable ?? false
         )
     }
 
