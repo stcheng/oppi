@@ -296,13 +296,6 @@ export class DictationManager {
       this.metricTags({ language: langTag }),
     );
 
-    const retranscribeCount = 0;
-    this.metrics?.record(
-      "server.dictation_retranscribe_count",
-      retranscribeCount,
-      this.metricTags({ language: langTag }),
-    );
-
     if (session.totalBytes === 0) {
       await this.sttProvider.stop().catch(() => {});
       this.send({ type: "dictation_final", text: "" });
@@ -399,7 +392,6 @@ export class DictationManager {
         llmCorrectionMs,
         audioSaveMs: 0,
         finalizeMs: 0,
-        retranscribeCount,
       };
       try {
         audioId = await this.saveAudio(session, text, timing);
@@ -438,27 +430,11 @@ export class DictationManager {
 
   private metricTags(extra: Record<string, string>): Record<string, string> {
     return {
-      provider_id: this.providerId(),
-      provider_kind: this.providerKind(),
+      provider_id: `stt_${this.sttProvider.name.replace(/[^a-z0-9]+/gi, "_").toLowerCase()}`,
       stt_backend: this.sttProvider.name,
       model: this.sttProvider.model,
       ...extra,
     };
-  }
-
-  private providerKind(): string {
-    if ("endpoint" in this.sttProvider) {
-      const name = this.sttProvider.name;
-      return name === "mlx-server" ? "local_server" : "cloud";
-    }
-    return "local_binary";
-  }
-
-  private providerId(): string {
-    switch (this.sttProvider.name) {
-      default:
-        return `stt_${this.sttProvider.name.replace(/[^a-z0-9]+/gi, "_").toLowerCase()}`;
-    }
   }
 
   // ─── LLM correction ───

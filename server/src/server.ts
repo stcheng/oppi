@@ -63,7 +63,7 @@ import { SessionTitleGenerator } from "./session-title-generator.js";
 import { DictationManager } from "./dictation-manager.js";
 import { DEFAULT_DICTATION_CONFIG, type DictationConfig } from "./dictation-types.js";
 import { buildTermSheet, defaultSources, discoverWorkspaceDirs } from "./termsheet-builder.js";
-import { createSttProvider, type SttProvider } from "./stt-provider.js";
+import { StreamingSttProvider, type SttProvider } from "./stt-provider.js";
 
 function hasAuthHeader(header: string | string[] | undefined): boolean {
   if (typeof header === "string") {
@@ -422,7 +422,10 @@ export class Server {
     const asrEnabled = !!config.asr?.sttEndpoint;
     if (asrEnabled) {
       const asrConfig = { ...DEFAULT_DICTATION_CONFIG, ...config.asr } as DictationConfig;
-      const sttProvider = createSttProvider(asrConfig, globalThis.fetch);
+      const sttProvider = new StreamingSttProvider(
+        { endpoint: asrConfig.sttEndpoint, model: asrConfig.sttModel },
+        globalThis.fetch,
+      );
       this.dictationManager = new DictationManager(
         asrConfig,
         dataDir,

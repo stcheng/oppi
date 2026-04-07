@@ -719,6 +719,7 @@ export async function curateTermsWithLlm(
   rawTerms: string[],
   endpoint: string,
   model: string,
+  fetchFn: typeof globalThis.fetch = globalThis.fetch,
 ): Promise<string[]> {
   const hash = createHash("sha256").update(rawTerms.join("\n")).digest("hex");
   if (curationCache?.hash === hash) {
@@ -751,7 +752,7 @@ export async function curateTermsWithLlm(
   ].join("\n");
 
   const url = `${endpoint}/v1/chat/completions`;
-  const response = await fetch(url, {
+  const response = await fetchFn(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({

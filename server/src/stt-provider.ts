@@ -9,8 +9,6 @@
  * squawk's transcribe.py and is not tied to any specific backend.
  */
 
-import type { DictationConfig } from "./dictation-types.js";
-
 // ─── Interface ───
 
 /**
@@ -319,20 +317,4 @@ export class StreamingSttProvider implements SttProvider {
       this.feeding = false;
     }
   }
-}
-
-// ─── Factory ───
-
-/** Create an SttProvider from DictationConfig. */
-export function createSttProvider(
-  config: DictationConfig,
-  fetchFn: typeof globalThis.fetch = globalThis.fetch,
-): SttProvider {
-  return new StreamingSttProvider(
-    {
-      endpoint: config.sttEndpoint,
-      model: config.sttModel,
-    },
-    fetchFn,
-  );
 }

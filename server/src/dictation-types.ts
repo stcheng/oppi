@@ -158,7 +158,5 @@ export interface DictationAudioMetadata {
     audioSaveMs: number;
     /** Total finalize latency in ms (final STT + LLM + save). */
     finalizeMs: number;
-    /** Number of retranscribe ticks during the session. */
-    retranscribeCount: number;
   };
 }
