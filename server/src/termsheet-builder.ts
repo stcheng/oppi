@@ -722,7 +722,7 @@ export async function curateTermsWithLlm(
 ): Promise<string[]> {
   const hash = createHash("sha256").update(rawTerms.join("\n")).digest("hex");
   if (curationCache?.hash === hash) {
-    console.log(`[termsheet] LLM curation cache hit (${curationCache.terms.length} terms)`);
+    console.log("[termsheet] LLM curation cache hit", { terms: curationCache.terms.length });
     return curationCache.terms;
   }
 
@@ -796,7 +796,7 @@ export async function curateTermsWithLlm(
   );
 
   curationCache = { hash, terms: curated };
-  console.log(`[termsheet] LLM curation: ${rawTerms.length} candidates -> ${curated.length} kept`);
+  console.log("[termsheet] LLM curation", { candidates: rawTerms.length, kept: curated.length });
   return curated;
 }
 

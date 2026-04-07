@@ -4,41 +4,33 @@ import OSLog
 
 private let logger = Logger(subsystem: AppIdentifiers.subsystem, category: "DictationProvider")
 
-/// Voice transcription provider that streams audio to the Oppi server's `/dictation` WebSocket.
+/// Voice transcription provider that streams audio to the Oppi server via the main `/stream` WebSocket.
 ///
-/// Opens a dedicated WebSocket to the connected Oppi server. The server accumulates
-/// audio and retranscribes at intervals, returning full transcript replacements.
-/// STT backend selection (Whisper, Qwen-ASR, etc.) is handled server-side via `SttProvider`.
+/// Audio travels as binary WebSocket frames on the same `/stream` connection used for
+/// session events. Dictation control messages (`dictation_start/stop/cancel`) and results
+/// (`dictation_ready/result/final/error`) are regular `ServerMessage`/`ClientMessage` text frames.
 ///
 /// Availability depends on having active `ServerCredentials` in the `VoiceProviderContext`.
-/// No separate endpoint configuration needed — the server address is derived from the
-/// same credentials used for the main `/stream` connection.
-///
-/// **Connection lifecycle:** The WebSocket is opened once during `prewarm` and kept alive
-/// for the duration of the chat session. Individual mic taps map to `dictation_start` /
-/// `dictation_stop` cycles on the same connection — no TCP or WS handshake cost per tap.
-/// `invalidateCache()` closes the connection (called on credentials change or session end).
+/// No separate connection needed — everything multiplexes over the existing `/stream` WS.
 @MainActor
 final class OppiDictationProvider: VoiceTranscriptionProvider {
     nonisolated let id: VoiceProviderID = .oppiServer
     nonisolated let engine: VoiceInputManager.TranscriptionEngine = .serverDictation
 
-    /// WebSocket kept alive for the duration of the chat session.
-    /// One connection per server credential set; multiple recordings per connection.
-    private var sessionWS: DictationWebSocket?
     /// Per-recording message stream. Created in `prepareSession`, consumed by the session.
-    private var activeRecordingMessages: AsyncThrowingStream<DictationServerMessage, Error>?
+    private var activeRecordingMessages: AsyncStream<ServerMessage>?
+    /// Continuation for feeding dictation messages from the /stream WS into the recording stream.
+    private var activeRecordingContinuation: AsyncStream<ServerMessage>.Continuation?
     /// Background task that sends `dictation_start` and awaits `dictation_ready`.
-    /// Passed to `OppiDictationSession` so audio draining can block on readiness.
     private var activeReadinessTask: Task<DictationProviderInfo?, Error>?
     private var preparationTask: Task<Void, Never>?
+    /// Task consuming the dictation subscription from ServerConnection.
+    private var dictationRouteTask: Task<Void, Never>?
 
     func invalidateCache() {
         activeReadinessTask?.cancel()
         activeReadinessTask = nil
-        activeRecordingMessages = nil
-        sessionWS?.disconnect()
-        sessionWS = nil
+        stopDictationRouting()
     }
 
     func cancelPreparation() {
@@ -46,59 +38,42 @@ final class OppiDictationProvider: VoiceTranscriptionProvider {
         preparationTask = nil
         activeReadinessTask?.cancel()
         activeReadinessTask = nil
-        activeRecordingMessages = nil
-        // Don't disconnect sessionWS — it persists for the session lifetime
+        stopDictationRouting()
     }
 
     func prewarm(context: VoiceProviderContext) async throws {
-        guard let credentials = context.serverCredentials else { return }
-        // Connect the WS eagerly at session-open time so the first mic tap
-        // pays no TCP or WS handshake cost.
-        guard sessionWS == nil || sessionWS?.state == .disconnected else { return }
-        let ws = DictationWebSocket()
-        sessionWS = ws
-        try ws.connect(credentials: credentials)
-        logger.info("Dictation WS pre-connected (host=\(credentials.host, privacy: .public))")
+        // No separate connection to pre-warm — the /stream WS is already open.
+        // This is a no-op for the server dictation provider.
     }
 
     func prepareSession(context: VoiceProviderContext) async throws -> VoiceProviderPreparation {
         guard let credentials = context.serverCredentials else {
             throw VoiceInputError.serverNotConnected
         }
-
-        // Reuse the session WS if open; reconnect if dropped (e.g. network hiccup).
-        let ws: DictationWebSocket
-        if let existing = sessionWS,
-           existing.state == .connected || existing.state == .connecting
-        {
-            // Re-arm the ready mechanism for a new recording on the existing connection.
-            // Resets state to .connecting so waitForReady blocks until the server
-            // responds with dictation_ready for this recording cycle.
-            existing.resetForNewRecording()
-            ws = existing
-            logger.info("Reusing persistent dictation WS for new recording")
-        } else {
-            // Not connected — connect now (first tap if prewarm missed, or after network drop).
-            let newWS = DictationWebSocket()
-            sessionWS = newWS
-            try newWS.connect(credentials: credentials)
-            ws = newWS
-            logger.info("Reconnecting dictation WS (host=\(credentials.host, privacy: .public))")
+        guard let connection = context.serverConnection else {
+            throw VoiceInputError.serverNotConnected
         }
 
-        // Fresh per-recording message stream for this tap.
-        let recordingMessages = ws.startRecordingMessages()
-        self.activeRecordingMessages = recordingMessages
+        // Subscribe to dictation messages from the /stream WS.
+        // Must happen BEFORE creating the recording stream, because
+        // startDictationRouting calls stopDictationRouting which clears
+        // any existing recording stream.
+        startDictationRouting(connection: connection)
+
+        // Create a fresh per-recording message stream.
+        let (recordingStream, recordingContinuation) = AsyncStream.makeStream(of: ServerMessage.self)
+        self.activeRecordingMessages = recordingStream
+        self.activeRecordingContinuation = recordingContinuation
 
         // Fire readiness in the background. The session awaits this task before
         // flushing buffered audio, so the UI transitions to .recording immediately
-        // while the server-side ASR setup completes (~one RTT on existing connection).
-        //
-        // No language hint — Qwen3-ASR handles multilingual natively.
+        // while the server-side ASR setup completes (~one RTT).
         let readinessTask: Task<DictationProviderInfo?, Error> = Task {
-            try await ws.send(.start)
-            try await ws.waitForReady(timeout: .seconds(10))
-            let info = ws.lastProviderInfo
+            try await connection.sendDictation(.dictationStart)
+
+            // Wait for dictation_ready to arrive in the recording stream.
+            // The message routing task yields it; we consume a copy here.
+            let info = try await waitForReady(in: connection, timeout: .seconds(10))
             logger.info(
                 "Dictation recording ready (stt=\(info?.sttProvider ?? "unknown", privacy: .public), model=\(info?.sttModel ?? "unknown", privacy: .public))"
             )
@@ -111,6 +86,86 @@ final class OppiDictationProvider: VoiceTranscriptionProvider {
             pathTag: "dictation_ws",
             setupMetricTags: Self.metricTags(host: credentials.host, serverInfo: nil)
         )
+    }
+
+    /// Wait for `dictation_ready` from the server by monitoring the dictation subscription.
+    /// Uses a continuation that the routing task resolves when it sees `.dictationReady`.
+    private var readyContinuation: CheckedContinuation<DictationProviderInfo?, Error>?
+    private var readyTimeoutTask: Task<Void, Never>?
+
+    private func waitForReady(
+        in connection: ServerConnection,
+        timeout: Duration
+    ) async throws -> DictationProviderInfo? {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<DictationProviderInfo?, Error>) in
+            readyContinuation = continuation
+
+            readyTimeoutTask = Task { [weak self] in
+                try? await Task.sleep(for: timeout)
+                guard let self, let cont = self.readyContinuation else { return }
+                self.readyContinuation = nil
+                cont.resume(throwing: VoiceInputError.remoteRequestTimedOut)
+            }
+        }
+    }
+
+    /// Start a task that consumes dictation messages from the /stream WS
+    /// and forwards them to the per-recording stream + resolves readiness.
+    private func startDictationRouting(connection: ServerConnection) {
+        stopDictationRouting()
+
+        let dictationStream = connection.subscribeDictation()
+        dictationRouteTask = Task { [weak self] in
+            for await message in dictationStream {
+                guard let self else { break }
+
+                // Resolve readiness if waiting
+                if case .dictationReady(let provider) = message {
+                    readyTimeoutTask?.cancel()
+                    readyTimeoutTask = nil
+                    if let cont = readyContinuation {
+                        readyContinuation = nil
+                        cont.resume(returning: provider)
+                    }
+                }
+
+                // Resolve readiness on fatal error too
+                if case .dictationError(_, let fatal) = message, fatal {
+                    readyTimeoutTask?.cancel()
+                    readyTimeoutTask = nil
+                    if let cont = readyContinuation {
+                        readyContinuation = nil
+                        let errorMsg: String
+                        if case .dictationError(let e, _) = message { errorMsg = e } else { errorMsg = "Unknown" }
+                        cont.resume(throwing: VoiceInputError.internalError("Server: \(errorMsg)"))
+                    }
+                }
+
+                // Forward to recording stream
+                activeRecordingContinuation?.yield(message)
+
+                // dictation_final ends this recording's stream
+                if case .dictationFinal = message {
+                    activeRecordingContinuation?.finish()
+                    activeRecordingContinuation = nil
+                    activeRecordingMessages = nil
+                }
+            }
+        }
+    }
+
+    private func stopDictationRouting() {
+        dictationRouteTask?.cancel()
+        dictationRouteTask = nil
+        activeRecordingContinuation?.finish()
+        activeRecordingContinuation = nil
+        activeRecordingMessages = nil
+        readyTimeoutTask?.cancel()
+        readyTimeoutTask = nil
+        if let cont = readyContinuation {
+            readyContinuation = nil
+            cont.resume(throwing: VoiceInputError.internalError("Dictation routing stopped"))
+        }
     }
 
     // MARK: - Metric Tags
@@ -136,8 +191,8 @@ final class OppiDictationProvider: VoiceTranscriptionProvider {
         context: VoiceProviderContext,
         preparation: VoiceProviderPreparation
     ) throws -> any VoiceTranscriptionSession {
-        guard let ws = sessionWS else {
-            throw VoiceInputError.internalError("Dictation WebSocket not connected")
+        guard let connection = context.serverConnection else {
+            throw VoiceInputError.serverNotConnected
         }
         guard let readinessTask = activeReadinessTask else {
             throw VoiceInputError.internalError("Dictation readiness task not prepared")
@@ -146,9 +201,12 @@ final class OppiDictationProvider: VoiceTranscriptionProvider {
             throw VoiceInputError.internalError("Dictation recording messages not prepared")
         }
         // Clear per-recording state — session now owns these.
-        // sessionWS is NOT cleared — it persists for the session lifetime.
         activeReadinessTask = nil
         activeRecordingMessages = nil
-        return OppiDictationSession(ws: ws, readinessTask: readinessTask, messages: recordingMessages)
+        return OppiDictationSession(
+            connection: connection,
+            readinessTask: readinessTask,
+            messages: recordingMessages
+        )
     }
 }

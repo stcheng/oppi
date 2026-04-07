@@ -343,6 +343,10 @@ final class ServerConnection {
     /// Per-session continuations for routing multiplexed messages.
     internal var sessionContinuations: [String: AsyncStream<ServerMessage>.Continuation] = [:]
 
+    /// Continuation for routing dictation messages from the multiplexed /stream.
+    /// Set by `subscribeDictation()`, cleared by `unsubscribeDictation()`.
+    private var dictationContinuation: AsyncStream<ServerMessage>.Continuation?
+
     /// Connect the persistent `/stream` WebSocket.
     ///
     /// Opens the WS and starts a consumption task that routes messages
@@ -402,6 +406,8 @@ final class ServerConnection {
             cont.finish()
         }
         sessionContinuations.removeAll()
+        dictationContinuation?.finish()
+        dictationContinuation = nil
         for (_, task) in pendingUnsubscribeTasks {
             task.cancel()
         }
@@ -436,6 +442,16 @@ final class ServerConnection {
         if case .streamConnected = message {
             handleStreamReconnected()
             return
+        }
+
+        // Route dictation messages to the dictation subscriber (no sessionId).
+        // These are user-level, not session-scoped.
+        switch message {
+        case .dictationReady, .dictationResult, .dictationFinal, .dictationError:
+            dictationContinuation?.yield(message)
+            return
+        default:
+            break
         }
 
         // Silently recover from not-subscribed errors instead of surfacing
@@ -772,6 +788,36 @@ final class ServerConnection {
 
     func telemetryErrorKind(from error: Error) -> String {
         MessageSender.telemetryErrorKind(from: error)
+    }
+
+    // MARK: - Dictation (multiplexed over /stream)
+
+    /// Create a stream for dictation messages routed from the /stream WS.
+    /// Only one subscription can be active at a time.
+    func subscribeDictation() -> AsyncStream<ServerMessage> {
+        // Finish any existing subscription
+        dictationContinuation?.finish()
+        let (stream, continuation) = AsyncStream.makeStream(of: ServerMessage.self)
+        dictationContinuation = continuation
+        return stream
+    }
+
+    /// Stop receiving dictation messages.
+    func unsubscribeDictation() {
+        dictationContinuation?.finish()
+        dictationContinuation = nil
+    }
+
+    /// Send a dictation control message (text frame).
+    func sendDictation(_ message: ClientMessage) async throws {
+        guard let wsClient else { throw WebSocketError.notConnected }
+        try await wsClient.send(message)
+    }
+
+    /// Send raw PCM audio as a binary WebSocket frame.
+    func sendDictationAudio(_ data: Data) async throws {
+        guard let wsClient else { throw WebSocketError.notConnected }
+        try await wsClient.sendBinary(data)
     }
 
     // MARK: - Reconnect State (used by ServerConnection+Refresh)

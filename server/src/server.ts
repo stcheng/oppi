@@ -417,21 +417,8 @@ export class Server {
       resolveWorkspaceForSession: (session) => this.resolveWorkspaceForSession(session),
     });
 
-    // Create the user stream mux (handles /stream WS, event rings, replay)
-    this.streamMux = new UserStreamMux({
-      storage: this.storage,
-      sessions: this.sessions,
-      gate: this.gate,
-      metrics: this.opsMetrics,
-      ensureSessionContextWindow: (session) => this.models.ensureSessionContextWindow(session),
-      resolveWorkspaceForSession: (session) => this.resolveWorkspaceForSession(session),
-      handleClientMessage: (session, msg, send) =>
-        this.wsMessageHandler.handleClientMessage(session, msg, send),
-      trackConnection: (ws) => this.trackConnection(ws),
-      untrackConnection: (ws) => this.untrackConnection(ws),
-    });
-
     // Dictation pipeline (streaming native or HTTP retranscribe)
+    // Must be created BEFORE the stream mux so it's available for /stream routing.
     const asrEnabled = !!config.asr?.sttEndpoint;
     if (asrEnabled) {
       const asrConfig = { ...DEFAULT_DICTATION_CONFIG, ...config.asr } as DictationConfig;
@@ -449,6 +436,21 @@ export class Server {
         void this.refreshTermSheet(dataDir, asrConfig, sttProvider);
       }
     }
+
+    // Create the user stream mux (handles /stream WS, event rings, replay)
+    this.streamMux = new UserStreamMux({
+      storage: this.storage,
+      sessions: this.sessions,
+      gate: this.gate,
+      metrics: this.opsMetrics,
+      ensureSessionContextWindow: (session) => this.models.ensureSessionContextWindow(session),
+      resolveWorkspaceForSession: (session) => this.resolveWorkspaceForSession(session),
+      handleClientMessage: (session, msg, send) =>
+        this.wsMessageHandler.handleClientMessage(session, msg, send),
+      trackConnection: (ws) => this.trackConnection(ws),
+      untrackConnection: (ws) => this.untrackConnection(ws),
+      dictationManager: this.dictationManager,
+    });
 
     // Server resource utilization sampler
     this.resourceSampler = new ServerResourceSampler({
@@ -810,9 +812,10 @@ export class Server {
             .mkdir(termSheetDir, { recursive: true })
             .then(() => fs.writeFile(join(termSheetDir, "termsheet.txt"), termSheet)),
         );
-        console.log(
-          `[dictation] Term sheet loaded (${termSheet.split(",").length} terms, ${termSheet.length} chars)`,
-        );
+        console.log("[dictation] Term sheet loaded", {
+          terms: termSheet.split(",").length,
+          chars: termSheet.length,
+        });
       }
     } catch (err) {
       console.warn(
@@ -1221,35 +1224,6 @@ export class Server {
         "WWW-Authenticate": 'Bearer realm="oppi"',
         Connection: "close",
         "Content-Length": "0",
-      });
-      return;
-    }
-
-    if (url.pathname === "/dictation") {
-      if (!this.dictationManager) {
-        writeUpgradeErrorResponse(socket, "HTTP/1.1 404 Not Found", {
-          Connection: "close",
-          "Content-Length": "0",
-        });
-        return;
-      }
-      if (!isAllowedWebSocketOrigin(req, this.transportScheme)) {
-        writeUpgradeErrorResponse(socket, "HTTP/1.1 403 Forbidden", {
-          Connection: "close",
-          "Content-Length": "0",
-        });
-        return;
-      }
-      this.wss.handleUpgrade(req, socket, head, (ws) => {
-        this.trackConnection(ws);
-        ws.on("close", () => {
-          this.untrackConnection(ws);
-          console.log("[ws] Disconnected /dictation", { owner: this.storage.getOwnerName() });
-        });
-        console.log("[ws] Connected: /dictation", { owner: this.storage.getOwnerName() });
-        // Safe: guarded by `!this.dictationManager` check above
-        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-        this.dictationManager!.handleConnection(ws);
       });
       return;
     }

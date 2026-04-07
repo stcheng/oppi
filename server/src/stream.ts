@@ -13,6 +13,7 @@ import { buildPermissionMessage, type GateServer, type PendingDecision } from ".
 import type { Storage } from "./storage.js";
 import type { ClientMessage, ServerMessage, Session, Workspace } from "./types.js";
 import type { ServerMetricCollector } from "./server-metric-collector.js";
+import type { DictationManager } from "./dictation-manager.js";
 
 // ─── Types ───
 
@@ -38,6 +39,7 @@ export interface StreamContext {
   ) => Promise<void>;
   trackConnection: (ws: WebSocket) => void;
   untrackConnection: (ws: WebSocket) => void;
+  dictationManager?: DictationManager;
 }
 
 // ─── Keepalive ───
@@ -69,6 +71,12 @@ function rawDataToText(data: RawData): string {
   }
 
   return Buffer.from(data).toString("utf8");
+}
+
+function toBuffer(data: RawData): Buffer {
+  if (Buffer.isBuffer(data)) return data;
+  if (Array.isArray(data)) return Buffer.concat(data);
+  return Buffer.from(data);
 }
 
 function parseIncomingClientMessage(
@@ -150,12 +158,14 @@ export class UserStreamMux {
   private streamSeq = 0;
   private streamRing: EventRing | null = null;
   private readonly ringCapacity: number;
+  private dictationManager?: DictationManager;
 
   constructor(
     private ctx: StreamContext,
     options?: { ringCapacity?: number },
   ) {
     this.ringCapacity = options?.ringCapacity ?? 2000;
+    this.dictationManager = ctx.dictationManager;
   }
 
   // ─── Message Classification ───
@@ -499,10 +509,9 @@ export class UserStreamMux {
           msgRecv++;
 
           if (isBinary) {
-            console.warn("[ws] Rejecting binary frame on /stream", {
-              owner: this.ctx.storage.getOwnerName(),
-            });
-            ws.close(1003, "Binary frames not supported");
+            if (this.dictationManager) {
+              this.dictationManager.handleAudioData(toBuffer(data));
+            }
             return;
           }
 
@@ -595,6 +604,16 @@ export class UserStreamMux {
               break;
             }
 
+            case "dictation_start":
+            case "dictation_stop":
+            case "dictation_cancel":
+              if (this.dictationManager) {
+                this.dictationManager.handleControlMessage(msg, (dictMsg) => {
+                  send(dictMsg as unknown as ServerMessage);
+                });
+              }
+              return;
+
             default: {
               const targetSessionId = msg.sessionId;
               if (!targetSessionId) {
@@ -665,6 +684,7 @@ export class UserStreamMux {
         metrics.record("server.ws_close_code", 1, { code: String(code) });
       }
 
+      this.dictationManager?.handleDisconnect();
       clearAllSubscriptions();
       this.ctx.untrackConnection(ws);
     });

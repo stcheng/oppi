@@ -8,19 +8,23 @@ enum VoiceProviderID: String, Sendable {
     case oppiServer
 }
 
-struct VoiceProviderContext: Sendable {
+@MainActor
+struct VoiceProviderContext {
     let locale: Locale
     let source: String
     let serverCredentials: ServerCredentials?
+    let serverConnection: ServerConnection?
 
     init(
         locale: Locale,
         source: String,
-        serverCredentials: ServerCredentials? = nil
+        serverCredentials: ServerCredentials? = nil,
+        serverConnection: ServerConnection? = nil
     ) {
         self.locale = locale
         self.source = source
         self.serverCredentials = serverCredentials
+        self.serverConnection = serverConnection
     }
 }
 

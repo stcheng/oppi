@@ -1089,6 +1089,10 @@ export type ClientMessage = // ── Stream subscriptions (multiplexed user str
         cancelled?: boolean;
         requestId?: string;
       }
+    // ── Dictation (multiplexed over /stream) ──
+    | { type: "dictation_start" }
+    | { type: "dictation_stop" }
+    | { type: "dictation_cancel" }
   ) & {
     /**
      * Optional target session for multiplexed user streams.
@@ -1246,6 +1250,16 @@ export type ServerMessage = // ── Connection ──
         workspaceId: string;
         status: GitStatus;
       }
+    // ── Dictation ──
+    | {
+        type: "dictation_ready";
+        sttProvider?: string;
+        sttModel?: string;
+        llmCorrectionEnabled?: boolean;
+      }
+    | { type: "dictation_result"; text: string; snap?: boolean }
+    | { type: "dictation_final"; text: string; uncorrected?: string; audioId?: string }
+    | { type: "dictation_error"; error: string; fatal: boolean }
   ) & {
     seq?: number;
     /**

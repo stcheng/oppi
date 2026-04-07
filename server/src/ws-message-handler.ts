@@ -222,6 +222,14 @@ export class WsMessageHandler {
         return;
       }
 
+      // Dictation messages are handled at the stream level (UserStreamMux),
+      // before reaching the per-session WsMessageHandler. List them here
+      // to satisfy the exhaustive switch check.
+      case "dictation_start":
+      case "dictation_stop":
+      case "dictation_cancel":
+        return;
+
       default: {
         // Compile-time: ensures all ClientMessage cases are handled above.
         // Runtime: unknown types (e.g. future protocol additions) get an error reply.

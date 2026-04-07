@@ -30,7 +30,7 @@ function errorResponse(status: number): ResponseFactory {
  */
 function createMockFetch(
   handlers: Array<{ match: (url: string, method: string) => boolean; response: ResponseFactory }>,
-) {
+): { fetchFn: typeof globalThis.fetch; calls: FetchCall[] } {
   const calls: FetchCall[] = [];
 
   const fetchFn = async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
@@ -49,10 +49,10 @@ function createMockFetch(
 }
 
 // Matchers
-const isCreate = (url: string, method: string) => method === "POST" && url === STREAM_URL;
-const isFeed = (url: string, method: string) =>
+const isCreate = (url: string, method: string): boolean => method === "POST" && url === STREAM_URL;
+const isFeed = (url: string, method: string): boolean =>
   method === "POST" && url.startsWith(STREAM_URL + "/");
-const isDelete = (url: string, method: string) =>
+const isDelete = (url: string, method: string): boolean =>
   method === "DELETE" && url.startsWith(STREAM_URL + "/");
 
 /** Drain async microtasks (constructor warmUpSession, createSession, etc.). */

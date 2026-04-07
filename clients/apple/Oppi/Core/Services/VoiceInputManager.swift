@@ -170,6 +170,7 @@ final class VoiceInputManager {
     /// Server credentials for the Oppi dictation endpoint.
     /// Set by ChatView when server connection is active.
     private(set) var serverCredentials: ServerCredentials?
+    private(set) var serverConnection: ServerConnection?
 
     /// User-selected engine routing mode.
     private(set) var engineMode: EngineMode = .auto
@@ -198,7 +199,7 @@ final class VoiceInputManager {
         applyEngineMode(from: VoiceInputPreferences.engineMode)
     }
 
-    /// Update server credentials for the dictation WebSocket endpoint.
+    /// Update server credentials for the dictation provider.
     /// Called by ChatView when the server connection state changes.
     func setServerCredentials(_ credentials: ServerCredentials?) {
         serverCredentials = credentials
@@ -207,6 +208,12 @@ final class VoiceInputManager {
         }
         let host = credentials?.host ?? "none"
         logger.info("Server credentials: \(credentials != nil ? "set" : "cleared") host=\(host)")
+    }
+
+    /// Update the server connection reference for the dictation provider.
+    /// Called by ChatView alongside setServerCredentials.
+    func setServerConnection(_ connection: ServerConnection?) {
+        serverConnection = connection
     }
 
     /// Set engine mode directly.
@@ -302,7 +309,8 @@ final class VoiceInputManager {
                 context: VoiceProviderContext(
                     locale: locale,
                     source: source,
-                    serverCredentials: serverCredentials
+                    serverCredentials: serverCredentials,
+                    serverConnection: serverConnection
                 )
             )
 
@@ -428,7 +436,8 @@ final class VoiceInputManager {
         let context = VoiceProviderContext(
             locale: locale,
             source: source,
-            serverCredentials: serverCredentials
+            serverCredentials: serverCredentials,
+            serverConnection: serverConnection
         )
         let provider = try provider(for: engine)
         var modelPathTag = "warm_cache"

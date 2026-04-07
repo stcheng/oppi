@@ -482,16 +482,17 @@ describe("malformed message handling", () => {
     }
   });
 
-  it("rejects binary frames with close code 1003", async () => {
+  it("accepts binary frames without closing (routed to dictation)", async () => {
     const ws = connectStream();
 
     try {
       await waitForMessage(ws);
       ws.send(Buffer.from([0xde, 0xad, 0xbe, 0xef]), { binary: true });
 
-      const closed = await waitForClose(ws, 3_000);
-      expect(closed.code).toBe(1003);
-      expect(closed.reason.toString()).toBe("Binary frames not supported");
+      // Binary frames are now routed to DictationManager (if present).
+      // The connection should stay open.
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      expect(ws.readyState).toBe(WebSocket.OPEN);
     } finally {
       if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CLOSING) {
         ws.close();

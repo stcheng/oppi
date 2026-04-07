@@ -73,6 +73,11 @@ enum ClientMessage: Sendable {
     // ── Extension UI ──
     case extensionUIResponse(id: String, value: String? = nil, confirmed: Bool? = nil, cancelled: Bool? = nil, requestId: String? = nil)
 
+    // ── Dictation (multiplexed over /stream) ──
+    case dictationStart
+    case dictationStop
+    case dictationCancel
+
     // ── Stream multiplexing (/stream protocol) ──
     case subscribe(sessionId: String, level: StreamSubscriptionLevel = .full, sinceSeq: Int? = nil, requestId: String? = nil)
     case unsubscribe(sessionId: String, requestId: String? = nil)
@@ -309,6 +314,14 @@ extension ClientMessage: Encodable {
             try c.encodeIfPresent(cancelled, forKey: .cancelled)
             try c.encodeIfPresent(reqId, forKey: .requestId)
 
+        // ── Dictation ──
+        case .dictationStart:
+            try c.encode("dictation_start", forKey: .type)
+        case .dictationStop:
+            try c.encode("dictation_stop", forKey: .type)
+        case .dictationCancel:
+            try c.encode("dictation_cancel", forKey: .type)
+
         // ── Stream multiplexing ──
         case .subscribe(let sessionId, let level, let sinceSeq, let reqId):
             try c.encode("subscribe", forKey: .type)
@@ -407,6 +420,9 @@ extension ClientMessage {
         case .getFileSuggestions: return "get_file_suggestions"
         case .permissionResponse: return "permission_response"
         case .extensionUIResponse: return "extension_ui_response"
+        case .dictationStart: return "dictation_start"
+        case .dictationStop: return "dictation_stop"
+        case .dictationCancel: return "dictation_cancel"
         case .subscribe: return "subscribe"
         case .unsubscribe: return "unsubscribe"
         }

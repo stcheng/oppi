@@ -3,15 +3,14 @@ import Testing
 
 @testable import Oppi
 
-// MARK: - DictationServerMessage Decoding
+// MARK: - Dictation ServerMessage Decoding
 
-@Suite("DictationServerMessage decoding")
+@Suite("Dictation ServerMessage decoding")
 struct DictationServerMessageDecodingTests {
 
     @Test func decodesReadyMinimal() throws {
-        let json = #"{"type":"dictation_ready"}"#
-        let message = try decode(json)
-        #expect(message == .ready(provider: nil))
+        let message = try decode(#"{"type":"dictation_ready"}"#)
+        #expect(message == .dictationReady(provider: nil))
     }
 
     @Test func decodesReadyWithProviderInfo() throws {
@@ -22,83 +21,76 @@ struct DictationServerMessageDecodingTests {
             sttModel: "Qwen3-ASR-1.7B",
             llmCorrectionEnabled: true
         )
-        #expect(message == .ready(provider: expected))
+        #expect(message == .dictationReady(provider: expected))
     }
 
     @Test func decodesReadyWithPartialProviderInfo() throws {
         // If only sttProvider is present but not sttModel, provider should be nil
         let json = #"{"type":"dictation_ready","sttProvider":"openai"}"#
         let message = try decode(json)
-        #expect(message == .ready(provider: nil))
+        #expect(message == .dictationReady(provider: nil))
     }
 
     @Test func decodesResult() throws {
-        let json = #"{"type":"dictation_result","text":"Hello world","version":3}"#
+        let json = #"{"type":"dictation_result","text":"Hello world"}"#
         let message = try decode(json)
-        #expect(message == .result(text: "Hello world", snap: false))
+        #expect(message == .dictationResult(text: "Hello world", snap: false))
     }
 
     @Test func decodesFinal() throws {
         let json = #"{"type":"dictation_final","text":"Hello world how are you","uncorrected":"hello world how are you","audioId":"dict_abc123"}"#
         let message = try decode(json)
-        #expect(message == .final_(text: "Hello world how are you", uncorrected: "hello world how are you", audioId: "dict_abc123"))
+        #expect(message == .dictationFinal(text: "Hello world how are you", uncorrected: "hello world how are you", audioId: "dict_abc123"))
     }
 
     @Test func decodesFinalMinimal() throws {
         let json = #"{"type":"dictation_final","text":"Hello"}"#
         let message = try decode(json)
-        #expect(message == .final_(text: "Hello", uncorrected: nil, audioId: nil))
+        #expect(message == .dictationFinal(text: "Hello", uncorrected: nil, audioId: nil))
     }
 
     @Test func decodesError() throws {
         let json = #"{"type":"dictation_error","error":"STT backend unreachable","fatal":true}"#
         let message = try decode(json)
-        #expect(message == .error(error: "STT backend unreachable", fatal: true))
+        #expect(message == .dictationError(error: "STT backend unreachable", fatal: true))
     }
 
     @Test func decodesErrorDefaultsFatalToFalse() throws {
         let json = #"{"type":"dictation_error","error":"transient failure"}"#
         let message = try decode(json)
-        #expect(message == .error(error: "transient failure", fatal: false))
+        #expect(message == .dictationError(error: "transient failure", fatal: false))
     }
 
-    @Test func unknownTypeThrows() {
-        let json = #"{"type":"dictation_unknown"}"#
-        #expect(throws: DecodingError.self) {
-            try decode(json)
-        }
-    }
-
-    private func decode(_ json: String) throws -> DictationServerMessage {
+    private func decode(_ json: String) throws -> ServerMessage {
         let data = try #require(json.data(using: .utf8))
-        return try JSONDecoder().decode(DictationServerMessage.self, from: data)
+        return try JSONDecoder().decode(ServerMessage.self, from: data)
     }
 }
 
-// MARK: - DictationClientMessage Encoding
+// MARK: - Dictation ClientMessage Encoding
 
-@Suite("DictationClientMessage encoding")
+@Suite("Dictation ClientMessage encoding")
 struct DictationClientMessageEncodingTests {
 
     @Test func encodesStart() throws {
-        let message = DictationClientMessage.start
+        let message = ClientMessage.dictationStart
         let json = try encode(message)
         #expect(json.contains("\"type\":\"dictation_start\""))
     }
 
     @Test func encodesStop() throws {
-        let message = DictationClientMessage.stop
+        let message = ClientMessage.dictationStop
         let json = try encode(message)
         #expect(json.contains("\"type\":\"dictation_stop\""))
     }
 
     @Test func encodesCancel() throws {
-        let message = DictationClientMessage.cancel
+        let message = ClientMessage.dictationCancel
         let json = try encode(message)
         #expect(json.contains("\"type\":\"dictation_cancel\""))
     }
 
-    private func encode(_ message: DictationClientMessage) throws -> String {
+    private func encode(_ message: ClientMessage) throws -> String {
         let data = try JSONEncoder().encode(message)
         return try #require(String(data: data, encoding: .utf8))
     }
@@ -110,7 +102,6 @@ struct DictationClientMessageEncodingTests {
 struct PCMConversionTests {
 
     @Test func convertsFloat32ToInt16PCM() throws {
-        // Create a small float32 buffer with known values
         let format = try #require(AVAudioFormat(
             commonFormat: .pcmFormatFloat32,
             sampleRate: 16000,
@@ -137,7 +128,7 @@ struct PCMConversionTests {
             let int16Ptr = raw.bindMemory(to: Int16.self)
             #expect(int16Ptr[0] == 0)           // silence
             #expect(int16Ptr[1] == Int16.max)   // max positive
-            #expect(int16Ptr[2] == -Int16.max)  // max negative (note: Int16(-1.0 * max) = -32767, not -32768)
+            #expect(int16Ptr[2] == -Int16.max)  // max negative
             #expect(int16Ptr[3] == Int16(0.5 * Float(Int16.max)))  // mid positive
         }
     }
@@ -188,37 +179,39 @@ struct PCMConversionTests {
 struct DictationEventMappingTests {
 
     @Test func resultMapsToReplaceFinalTranscript() {
-        let event = mapServerMessage(.result(text: "Hello world", snap: false))
+        let event = mapServerMessage(.dictationResult(text: "Hello world", snap: false))
         #expect(event == .replaceFinalTranscript("Hello world"))
     }
 
     @Test func finalMapsToReplaceFinalTranscript() {
-        let event = mapServerMessage(.final_(text: "Complete transcript", uncorrected: nil, audioId: nil))
+        let event = mapServerMessage(.dictationFinal(text: "Complete transcript", uncorrected: nil, audioId: nil))
         #expect(event == .replaceFinalTranscript("Complete transcript"))
     }
 
     @Test func readyMapsToNil() {
-        let event = mapServerMessage(.ready(provider: nil))
+        let event = mapServerMessage(.dictationReady(provider: nil))
         #expect(event == nil)
     }
 
     @Test func nonFatalErrorMapsToNil() {
-        let event = mapServerMessage(.error(error: "transient", fatal: false))
+        let event = mapServerMessage(.dictationError(error: "transient", fatal: false))
         #expect(event == nil)
     }
 
     /// Map a server message to the VoiceSessionEvent it would produce,
     /// following the same logic as OppiDictationSession's message listener.
-    private func mapServerMessage(_ message: DictationServerMessage) -> VoiceSessionEvent? {
+    private func mapServerMessage(_ message: ServerMessage) -> VoiceSessionEvent? {
         switch message {
-        case .ready:
-            return nil  // ready is handled at connection level, not as a session event
-        case .result(let text, let snap):
+        case .dictationReady:
+            return nil
+        case .dictationResult(let text, let snap):
             return .replaceFinalTranscript(text, snap: snap)
-        case .final_(let text, _, _):
+        case .dictationFinal(let text, _, _):
             return text.isEmpty ? nil : .replaceFinalTranscript(text)
-        case .error(_, let fatal):
-            return fatal ? nil : nil  // fatal errors throw, non-fatal are logged
+        case .dictationError(_, let fatal):
+            return fatal ? nil : nil
+        default:
+            return nil
         }
     }
 }
@@ -241,6 +234,25 @@ struct OppiDictationProviderTests {
             locale: Locale(identifier: "en-US"),
             source: "test",
             serverCredentials: nil
+        )
+
+        await #expect(throws: VoiceInputError.self) {
+            try await provider.prepareSession(context: context)
+        }
+    }
+
+    @Test func prepareSessionThrowsWithoutConnection() async {
+        let provider = OppiDictationProvider()
+        // Has credentials but no connection
+        let context = VoiceProviderContext(
+            locale: Locale(identifier: "en-US"),
+            source: "test",
+            serverCredentials: ServerCredentials(
+                host: "localhost", port: 7749,
+                token: "test-token",
+                name: "test-server",
+                scheme: .http
+            )
         )
 
         await #expect(throws: VoiceInputError.self) {
@@ -282,7 +294,6 @@ struct DictationCrashRegressionTests {
     /// crashing the app when server returned 404 for /dictation.
     /// Now throws VoiceInputError instead.
     @Test func providerLookupDoesNotCrashOnMissingEngine() {
-        // Registry with NO providers at all
         let registry = VoiceProviderRegistry(providers: [])
         let provider = registry.provider(for: .serverDictation)
         #expect(provider == nil, "Missing provider should return nil, not crash")
@@ -291,7 +302,6 @@ struct DictationCrashRegressionTests {
     /// Regression: VoiceInputManager.provider(for:) used fatalError.
     /// Verify it throws a recoverable error instead.
     @Test func managerHandlesMissingProviderGracefully() async throws {
-        // Create manager with empty registry — no providers registered
         let emptyRegistry = VoiceProviderRegistry(providers: [])
         let manager = VoiceInputManager(
             providerRegistry: emptyRegistry,
@@ -299,42 +309,11 @@ struct DictationCrashRegressionTests {
         )
         manager.setEngineMode(.remote)
 
-        // Should throw, not crash
         do {
             try await manager.startRecording(source: "test")
             Issue.record("Expected startRecording to throw for missing provider")
         } catch {
-            // Error is expected — app stays alive
             #expect(manager.state != .recording)
-        }
-    }
-
-    /// Verify DictationWebSocket deinit doesn't leak CheckedContinuation.
-    @Test func webSocketDeinitDoesNotLeakContinuation() async {
-        // Just verify we can create and immediately deallocate without crash
-        var ws: DictationWebSocket? = DictationWebSocket()
-        _ = ws?.messages  // Initialize the stream
-        ws = nil  // Should not crash from leaked continuation
-        // If we get here, no crash occurred
-    }
-
-    /// Regression: audio tap closure used `Task { @MainActor in ... }` to send
-    /// audio over the WS. The tap runs on the audio thread; creating a
-    /// @MainActor Task from there triggers:
-    ///   EXC_BREAKPOINT: Block was expected to execute on queue [com.apple.main-thread]
-    /// Fix: use `Task.detached` (no actor inheritance) for the WS send.
-    @Test func audioSendDoesNotRequireMainActor() throws {
-        // Verify sendAudio is nonisolated (callable from any context).
-        // DictationWebSocket.sendAudio must NOT be @MainActor-isolated
-        // so the audio tap can call it without dispatching to main thread.
-        let ws = DictationWebSocket()
-        // sendAudio should be callable from a detached (non-MainActor) task
-        // without crashing. We can't actually send (no connection), but
-        // the method signature must be `nonisolated` or accept calls
-        // from non-main-actor contexts.
-        Task.detached {
-            // This would fail to compile if sendAudio required @MainActor
-            try? await ws.sendAudio(Data([0, 1, 2, 3]))
         }
     }
 }
@@ -362,7 +341,7 @@ extension VoiceSessionEvent: @retroactive Equatable {
         case (.replaceFinalTranscript(let a, let snapA), .replaceFinalTranscript(let b, let snapB)):
             return a == b && snapA == snapB
         case (.remoteChunkTelemetry, .remoteChunkTelemetry):
-            return true  // approximate for testing
+            return true
         case (.providerMetricTags(let a), .providerMetricTags(let b)):
             return a == b
         default:

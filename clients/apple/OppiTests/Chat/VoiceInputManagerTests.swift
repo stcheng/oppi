@@ -688,6 +688,39 @@ struct VoiceInputManagerTests {
         }())
     }
 
+    /// Has credentials but no ServerConnection — prepareSession should throw
+    /// VoiceInputError.serverNotConnected because the provider needs a live
+    /// connection to send dictation messages over the /stream WebSocket.
+    @Test func remoteModeWithCredentialsButNoConnectionSurfacesError() async {
+        resetVoicePreferences()
+        defer { resetVoicePreferences() }
+
+        let systemAccess = MockVoiceInputSystemAccess()
+        let manager = VoiceInputManager(
+            providerRegistry: VoiceProviderRegistry(providers: [OppiDictationProvider()]),
+            systemAccess: systemAccess
+        )
+        manager.setEngineMode(.remote)
+        manager.setServerCredentials(ServerCredentials(
+            host: "localhost", port: 7749,
+            token: "test-token",
+            name: "test-server",
+            scheme: .http
+        ))
+        // Note: setServerConnection is NOT called — connection is nil
+
+        await #expect(throws: VoiceInputError.self) {
+            try await manager.startRecording(source: "test")
+        }
+
+        #expect({
+            if case .error(let message) = manager.state {
+                return message.contains("not connected")
+            }
+            return false
+        }())
+    }
+
     // MARK: - Send-while-recording: stop awaits final transcript
 
     /// Verifies that stopRecording() waits for the final transcript event

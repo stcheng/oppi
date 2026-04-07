@@ -342,6 +342,15 @@ final class WebSocketClient {
         }
     }
 
+    /// Send raw binary data as a WebSocket binary frame.
+    /// Used for streaming PCM audio to the server's dictation pipeline.
+    func sendBinary(_ data: Data) async throws {
+        guard let ws = webSocket, status == .connected else {
+            throw WebSocketError.notConnected
+        }
+        try await ws.send(.data(data))
+    }
+
     /// Wait for the connection to reach `.connected` state.
     ///
     /// Uses continuation-based waiting instead of polling. Resolves

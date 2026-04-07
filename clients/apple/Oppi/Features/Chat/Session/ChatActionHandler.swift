@@ -124,6 +124,10 @@ final class ChatActionHandler {
         guard !trimmed.isEmpty || !attachments.isEmpty else { return text }
         guard !isSending else { return text }
 
+        // Set synchronously before the async task to prevent double-send
+        // from rapid taps or voice-dictation submit races.
+        isSending = true
+
         if isBusy {
             UIImpactFeedbackGenerator(style: .soft).impactOccurred()
 

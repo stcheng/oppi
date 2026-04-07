@@ -5,13 +5,12 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { EventEmitter } from "events";
-import { WebSocket } from "ws";
 import {
   DictationManager,
   encodeFlac,
   encodeWav,
   extractJsonFromResponse,
+  type DictationSendFn,
 } from "./dictation-manager.js";
 
 import type { DictationConfig, DictationServerMessage } from "./dictation-types.js";
@@ -32,20 +31,6 @@ function testConfig(overrides: Partial<DictationConfig> = {}): DictationConfig {
   };
 }
 
-/** Fake WebSocket that captures sent messages and simulates events. */
-class FakeWebSocket extends EventEmitter {
-  readyState: number = WebSocket.OPEN;
-  sent: DictationServerMessage[] = [];
-
-  send(data: string): void {
-    this.sent.push(JSON.parse(data) as DictationServerMessage);
-  }
-
-  close(): void {
-    this.readyState = WebSocket.CLOSED;
-  }
-}
-
 /** Drain pending microtasks (multiple levels for chained async). */
 async function drain(): Promise<void> {
   for (let i = 0; i < 10; i++) await Promise.resolve();
@@ -57,29 +42,19 @@ function silencePcm(durationMs: number): Buffer {
   return Buffer.alloc(samples * 2);
 }
 
-/** Send a JSON control message to the fake WS. */
-function sendControl(ws: FakeWebSocket, msg: Record<string, unknown>): void {
-  const buf = Buffer.from(JSON.stringify(msg), "utf8");
-  ws.emit("message", buf, false);
-}
-
-/** Send a binary PCM frame to the fake WS. */
-function sendAudio(ws: FakeWebSocket, pcm: Buffer): void {
-  ws.emit("message", pcm, true);
-}
-
-/** Collect messages of a given type. */
+/** Collect messages of a given type from a sent message array. */
 function messagesOfType<T extends DictationServerMessage["type"]>(
-  ws: FakeWebSocket,
+  sent: DictationServerMessage[],
   type: T,
 ): Extract<DictationServerMessage, { type: T }>[] {
-  return ws.sent.filter((m) => m.type === type) as Extract<DictationServerMessage, { type: T }>[];
+  return sent.filter((m) => m.type === type) as Extract<DictationServerMessage, { type: T }>[];
 }
 
 /**
  * Create a mock SttProvider (streaming interface).
  * Simulates progressive token accumulation on _fireTokens().
  */
+// eslint-disable-next-line @typescript-eslint/explicit-function-return-type
 function mockSttProvider(tokens: string[]) {
   let tokenCb: ((text: string) => void) | null = null;
   const accumulated = tokens.join(" ");
@@ -109,6 +84,7 @@ function mockSttProvider(tokens: string[]) {
 }
 
 /** Create a mock SttProvider whose stop() rejects. */
+// eslint-disable-next-line @typescript-eslint/explicit-function-return-type
 function failingSttProvider(error: string) {
   const startFn = vi.fn<() => void>();
   const feedAudioFn = vi.fn<(pcm: Buffer) => void>();
@@ -243,15 +219,16 @@ describe("extractJsonFromResponse", () => {
 
 describe("DictationManager", () => {
   let manager: DictationManager;
-  let ws: FakeWebSocket;
+  let sent: DictationServerMessage[];
+  let sendFn: (msg: DictationServerMessage) => void;
   let provider: ReturnType<typeof mockSttProvider>;
 
   beforeEach(() => {
     vi.useFakeTimers();
     provider = mockSttProvider(["hello", "world"]);
     manager = new DictationManager(testConfig(), "/tmp/test-dictation", provider);
-    ws = new FakeWebSocket();
-    manager.handleConnection(ws as unknown as WebSocket);
+    sent = [];
+    sendFn = (msg: DictationServerMessage) => sent.push(msg);
   });
 
   afterEach(() => {
@@ -260,106 +237,140 @@ describe("DictationManager", () => {
 
   describe("session lifecycle", () => {
     it("sends dictation_ready on dictation_start", () => {
-      sendControl(ws, { type: "dictation_start" });
-      expect(messagesOfType(ws, "dictation_ready")).toHaveLength(1);
+      manager.handleControlMessage({ type: "dictation_start" }, sendFn);
+      expect(messagesOfType(sent, "dictation_ready")).toHaveLength(1);
     });
 
     it("dictation_ready includes provider metadata", () => {
-      sendControl(ws, { type: "dictation_start" });
-      const ready = messagesOfType(ws, "dictation_ready")[0];
+      manager.handleControlMessage({ type: "dictation_start" }, sendFn);
+      const ready = messagesOfType(sent, "dictation_ready")[0];
       expect(ready.sttProvider).toBe("mock");
       expect(ready.sttModel).toBe("mock-model");
       expect(ready.llmCorrectionEnabled).toBe(false);
     });
 
     it("calls start() on dictation_start", () => {
-      sendControl(ws, { type: "dictation_start" });
+      manager.handleControlMessage({ type: "dictation_start" }, sendFn);
       expect(provider.start).toHaveBeenCalledTimes(1);
     });
 
     it("pipes audio via feedAudio()", () => {
-      sendControl(ws, { type: "dictation_start" });
+      manager.handleControlMessage({ type: "dictation_start" }, sendFn);
       const pcm = silencePcm(500);
-      sendAudio(ws, pcm);
+      manager.handleAudioData(pcm);
       expect(provider.feedAudio).toHaveBeenCalledWith(pcm);
     });
 
     it("rejects duplicate dictation_start", () => {
-      sendControl(ws, { type: "dictation_start" });
-      sendControl(ws, { type: "dictation_start" });
-      const errors = messagesOfType(ws, "dictation_error");
+      manager.handleControlMessage({ type: "dictation_start" }, sendFn);
+      manager.handleControlMessage({ type: "dictation_start" }, sendFn);
+      const errors = messagesOfType(sent, "dictation_error");
       expect(errors).toHaveLength(1);
       expect(errors[0].error).toContain("already active");
     });
 
     it("rejects dictation_stop without active session", () => {
-      sendControl(ws, { type: "dictation_stop" });
-      expect(messagesOfType(ws, "dictation_error")).toHaveLength(1);
+      manager.handleControlMessage({ type: "dictation_stop" }, sendFn);
+      expect(messagesOfType(sent, "dictation_error")).toHaveLength(1);
     });
 
     it("sends empty dictation_final for stop with no audio", async () => {
-      sendControl(ws, { type: "dictation_start" });
-      sendControl(ws, { type: "dictation_stop" });
+      manager.handleControlMessage({ type: "dictation_start" }, sendFn);
+      manager.handleControlMessage({ type: "dictation_stop" }, sendFn);
       vi.advanceTimersByTime(10);
       await drain();
-      const finals = messagesOfType(ws, "dictation_final");
+      const finals = messagesOfType(sent, "dictation_final");
       expect(finals).toHaveLength(1);
       expect(finals[0].text).toBe("");
     });
 
     it("handles dictation_cancel silently", () => {
-      sendControl(ws, { type: "dictation_start" });
-      sendControl(ws, { type: "dictation_cancel" });
-      expect(messagesOfType(ws, "dictation_final")).toHaveLength(0);
+      manager.handleControlMessage({ type: "dictation_start" }, sendFn);
+      manager.handleControlMessage({ type: "dictation_cancel" }, sendFn);
+      expect(messagesOfType(sent, "dictation_final")).toHaveLength(0);
       expect(provider.stop).toHaveBeenCalledTimes(1);
     });
 
-    it("cleans up on WS close", () => {
-      sendControl(ws, { type: "dictation_start" });
-      ws.emit("close");
+    it("cleans up on disconnect", () => {
+      manager.handleControlMessage({ type: "dictation_start" }, sendFn);
+      manager.handleDisconnect();
       expect(provider.stop).toHaveBeenCalledTimes(1);
     });
 
     it("reports unknown message types", () => {
-      sendControl(ws, { type: "dictation_start" });
-      sendControl(ws, { type: "bogus_type" });
-      expect(messagesOfType(ws, "dictation_error")).toHaveLength(1);
+      manager.handleControlMessage({ type: "dictation_start" }, sendFn);
+      manager.handleControlMessage(
+        { type: "bogus_type" } as unknown as Parameters<typeof manager.handleControlMessage>[0],
+        sendFn,
+      );
+      expect(messagesOfType(sent, "dictation_error")).toHaveLength(1);
     });
 
-    it("ignores invalid JSON gracefully", () => {
-      ws.emit("message", Buffer.from("not json{{{"), false);
-      expect(messagesOfType(ws, "dictation_error")).toHaveLength(1);
+    it("allows new session after disconnect", () => {
+      manager.handleControlMessage({ type: "dictation_start" }, sendFn);
+      manager.handleDisconnect();
+
+      // Reset sent messages and start a fresh session
+      sent.length = 0;
+      manager.handleControlMessage({ type: "dictation_start" }, sendFn);
+
+      const readyMsgs = messagesOfType(sent, "dictation_ready");
+      expect(readyMsgs).toHaveLength(1);
+      expect(provider.start).toHaveBeenCalledTimes(2);
+    });
+
+    it("allows new session after cancel", () => {
+      manager.handleControlMessage({ type: "dictation_start" }, sendFn);
+      manager.handleControlMessage({ type: "dictation_cancel" }, sendFn);
+
+      sent.length = 0;
+      manager.handleControlMessage({ type: "dictation_start" }, sendFn);
+
+      expect(messagesOfType(sent, "dictation_ready")).toHaveLength(1);
+    });
+
+    it("persists send callback across multiple sessions", () => {
+      // The send function is set per-call. Verify each session gets
+      // its messages routed to the callback provided with that call.
+      const sent1: DictationServerMessage[] = [];
+      const sent2: DictationServerMessage[] = [];
+      manager.handleControlMessage({ type: "dictation_start" }, (m) => sent1.push(m));
+      manager.handleDisconnect();
+      manager.handleControlMessage({ type: "dictation_start" }, (m) => sent2.push(m));
+
+      expect(sent1).toHaveLength(1); // dictation_ready
+      expect(sent2).toHaveLength(1); // dictation_ready
     });
   });
 
   describe("token streaming", () => {
     it("sends dictation_result with accumulated text", () => {
-      sendControl(ws, { type: "dictation_start" });
-      sendAudio(ws, silencePcm(500));
+      manager.handleControlMessage({ type: "dictation_start" }, sendFn);
+      manager.handleAudioData(silencePcm(500));
       provider._fireTokens();
 
-      const results = messagesOfType(ws, "dictation_result");
+      const results = messagesOfType(sent, "dictation_result");
       expect(results).toHaveLength(2);
       expect(results[0].text).toBe("hello");
       expect(results[1].text).toBe("hello world");
     });
 
-    it("ignores binary frames before dictation_start", () => {
-      sendAudio(ws, silencePcm(500));
-      expect(messagesOfType(ws, "dictation_error")).toHaveLength(0);
+    it("ignores audio data before dictation_start", () => {
+      manager.handleAudioData(silencePcm(500));
+      expect(messagesOfType(sent, "dictation_error")).toHaveLength(0);
     });
   });
 
   describe("finalize", () => {
     it("calls stop() and returns accumulated text", async () => {
-      sendControl(ws, { type: "dictation_start" });
-      sendAudio(ws, silencePcm(1000));
-      sendControl(ws, { type: "dictation_stop" });
+      manager.handleControlMessage({ type: "dictation_start" }, sendFn);
+      manager.handleAudioData(silencePcm(1000));
+      manager.handleControlMessage({ type: "dictation_stop" }, sendFn);
       vi.advanceTimersByTime(10);
       await drain();
 
       expect(provider.stop).toHaveBeenCalledTimes(1);
-      const finals = messagesOfType(ws, "dictation_final");
+      const finals = messagesOfType(sent, "dictation_final");
       expect(finals).toHaveLength(1);
       expect(finals[0].text).toBe("hello world");
     });
@@ -367,16 +378,18 @@ describe("DictationManager", () => {
     it("handles stop() failure with fatal error", async () => {
       const failProvider = failingSttProvider("process crashed");
       const mgr = new DictationManager(testConfig(), "/tmp/test", failProvider);
-      const fakeWs = new FakeWebSocket();
-      mgr.handleConnection(fakeWs as unknown as WebSocket);
+      const mgrSent: DictationServerMessage[] = [];
+      const mgrSendFn: DictationSendFn = (msg) => {
+        mgrSent.push(msg);
+      };
 
-      sendControl(fakeWs, { type: "dictation_start" });
-      sendAudio(fakeWs, silencePcm(500));
-      sendControl(fakeWs, { type: "dictation_stop" });
+      mgr.handleControlMessage({ type: "dictation_start" }, mgrSendFn);
+      mgr.handleAudioData(silencePcm(500));
+      mgr.handleControlMessage({ type: "dictation_stop" }, mgrSendFn);
       vi.advanceTimersByTime(10);
       await drain();
 
-      const errors = messagesOfType(fakeWs, "dictation_error");
+      const errors = messagesOfType(mgrSent, "dictation_error");
       expect(errors).toHaveLength(1);
       expect(errors[0].error).toContain("STT failed");
       expect(errors[0].fatal).toBe(true);
@@ -398,16 +411,18 @@ describe("DictationManager", () => {
         sp,
         llmFetch,
       );
-      const fakeWs = new FakeWebSocket();
-      mgr.handleConnection(fakeWs as unknown as WebSocket);
+      const mgrSent: DictationServerMessage[] = [];
+      const mgrSendFn: DictationSendFn = (msg) => {
+        mgrSent.push(msg);
+      };
 
-      sendControl(fakeWs, { type: "dictation_start" });
-      sendAudio(fakeWs, silencePcm(1000));
-      sendControl(fakeWs, { type: "dictation_stop" });
+      mgr.handleControlMessage({ type: "dictation_start" }, mgrSendFn);
+      mgr.handleAudioData(silencePcm(1000));
+      mgr.handleControlMessage({ type: "dictation_stop" }, mgrSendFn);
       vi.advanceTimersByTime(10);
       await drain();
 
-      const finals = messagesOfType(fakeWs, "dictation_final");
+      const finals = messagesOfType(mgrSent, "dictation_final");
       expect(finals).toHaveLength(1);
       expect(finals[0].text).toBe("Hello World");
       expect(finals[0].uncorrected).toBe("hello world");
@@ -425,29 +440,31 @@ describe("DictationManager", () => {
         sp,
         failLlmFetch,
       );
-      const fakeWs = new FakeWebSocket();
-      mgr.handleConnection(fakeWs as unknown as WebSocket);
+      const mgrSent: DictationServerMessage[] = [];
+      const mgrSendFn: DictationSendFn = (msg) => {
+        mgrSent.push(msg);
+      };
 
-      sendControl(fakeWs, { type: "dictation_start" });
-      sendAudio(fakeWs, silencePcm(1000));
-      sendControl(fakeWs, { type: "dictation_stop" });
+      mgr.handleControlMessage({ type: "dictation_start" }, mgrSendFn);
+      mgr.handleAudioData(silencePcm(1000));
+      mgr.handleControlMessage({ type: "dictation_stop" }, mgrSendFn);
       vi.advanceTimersByTime(10);
       await drain();
 
-      const finals = messagesOfType(fakeWs, "dictation_final");
+      const finals = messagesOfType(mgrSent, "dictation_final");
       expect(finals).toHaveLength(1);
       expect(finals[0].text).toBe("raw asr text");
       expect(finals[0].uncorrected).toBeUndefined();
     });
 
     it("skips LLM when disabled", async () => {
-      sendControl(ws, { type: "dictation_start" });
-      sendAudio(ws, silencePcm(1000));
-      sendControl(ws, { type: "dictation_stop" });
+      manager.handleControlMessage({ type: "dictation_start" }, sendFn);
+      manager.handleAudioData(silencePcm(1000));
+      manager.handleControlMessage({ type: "dictation_stop" }, sendFn);
       vi.advanceTimersByTime(10);
       await drain();
 
-      const finals = messagesOfType(ws, "dictation_final");
+      const finals = messagesOfType(sent, "dictation_final");
       expect(finals).toHaveLength(1);
       expect(finals[0].text).toBe("hello world");
       expect(finals[0].uncorrected).toBeUndefined();
@@ -469,16 +486,18 @@ describe("DictationManager", () => {
         sp,
         badLlmFetch,
       );
-      const fakeWs = new FakeWebSocket();
-      mgr.handleConnection(fakeWs as unknown as WebSocket);
+      const mgrSent: DictationServerMessage[] = [];
+      const mgrSendFn: DictationSendFn = (msg) => {
+        mgrSent.push(msg);
+      };
 
-      sendControl(fakeWs, { type: "dictation_start" });
-      sendAudio(fakeWs, silencePcm(1000));
-      sendControl(fakeWs, { type: "dictation_stop" });
+      mgr.handleControlMessage({ type: "dictation_start" }, mgrSendFn);
+      mgr.handleAudioData(silencePcm(1000));
+      mgr.handleControlMessage({ type: "dictation_stop" }, mgrSendFn);
       vi.advanceTimersByTime(10);
       await drain();
 
-      const finals = messagesOfType(fakeWs, "dictation_final");
+      const finals = messagesOfType(mgrSent, "dictation_final");
       expect(finals).toHaveLength(1);
       expect(finals[0].text).toBe("raw text");
     });

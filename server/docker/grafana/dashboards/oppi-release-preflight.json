@@ -1282,6 +1282,547 @@
             "showPoints": "always"
           }
         },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 60
+      },
+      "id": 74,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "frser-sqlite-datasource",
+            "uid": "oppi-telemetry-sqlite"
+          },
+          "queryType": "time series",
+          "rawQueryText": "SELECT CAST(ts_ms / 1000 AS INTEGER) AS time, value\nFROM chat_metric_samples\nWHERE metric = 'chat.dictation_setup_ms'\n  AND ts_ms BETWEEN $__from AND $__to\nORDER BY ts_ms",
+          "queryText": "SELECT CAST(ts_ms / 1000 AS INTEGER) AS time, value\nFROM chat_metric_samples\nWHERE metric = 'chat.dictation_setup_ms'\n  AND ts_ms BETWEEN $__from AND $__to\nORDER BY ts_ms",
+          "timeColumns": [
+            "time"
+          ],
+          "refId": "A"
+        }
+      ],
+      "title": "Dictation Setup (chat.dictation_setup_ms)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "oppi-telemetry-sqlite"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "ms",
+          "custom": {
+            "drawStyle": "points",
+            "lineWidth": 0,
+            "pointSize": 4,
+            "showPoints": "always"
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 60
+      },
+      "id": 75,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "frser-sqlite-datasource",
+            "uid": "oppi-telemetry-sqlite"
+          },
+          "queryType": "time series",
+          "rawQueryText": "SELECT CAST(ts_ms / 1000 AS INTEGER) AS time, value\nFROM chat_metric_samples\nWHERE metric = 'chat.dictation_first_result_ms'\n  AND ts_ms BETWEEN $__from AND $__to\nORDER BY ts_ms",
+          "queryText": "SELECT CAST(ts_ms / 1000 AS INTEGER) AS time, value\nFROM chat_metric_samples\nWHERE metric = 'chat.dictation_first_result_ms'\n  AND ts_ms BETWEEN $__from AND $__to\nORDER BY ts_ms",
+          "timeColumns": [
+            "time"
+          ],
+          "refId": "A"
+        }
+      ],
+      "title": "Dictation First Result (chat.dictation_first_result_ms)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "oppi-telemetry-sqlite"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "ms",
+          "custom": {
+            "drawStyle": "points",
+            "lineWidth": 0,
+            "pointSize": 4,
+            "showPoints": "always"
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 60
+      },
+      "id": 76,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "frser-sqlite-datasource",
+            "uid": "oppi-telemetry-sqlite"
+          },
+          "queryType": "time series",
+          "rawQueryText": "SELECT CAST(ts_ms / 1000 AS INTEGER) AS time, value\nFROM chat_metric_samples\nWHERE metric = 'chat.dictation_finalize_ms'\n  AND ts_ms BETWEEN $__from AND $__to\nORDER BY ts_ms",
+          "queryText": "SELECT CAST(ts_ms / 1000 AS INTEGER) AS time, value\nFROM chat_metric_samples\nWHERE metric = 'chat.dictation_finalize_ms'\n  AND ts_ms BETWEEN $__from AND $__to\nORDER BY ts_ms",
+          "timeColumns": [
+            "time"
+          ],
+          "refId": "A"
+        }
+      ],
+      "title": "Dictation Finalize (chat.dictation_finalize_ms)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "oppi-telemetry-sqlite"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "ms",
+          "custom": {
+            "drawStyle": "points",
+            "lineWidth": 0,
+            "pointSize": 4,
+            "showPoints": "always"
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 68
+      },
+      "id": 77,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "frser-sqlite-datasource",
+            "uid": "oppi-telemetry-sqlite"
+          },
+          "queryType": "time series",
+          "rawQueryText": "SELECT CAST(ts_ms / 1000 AS INTEGER) AS time, value\nFROM chat_metric_samples\nWHERE metric = 'chat.dictation_session_ms'\n  AND ts_ms BETWEEN $__from AND $__to\nORDER BY ts_ms",
+          "queryText": "SELECT CAST(ts_ms / 1000 AS INTEGER) AS time, value\nFROM chat_metric_samples\nWHERE metric = 'chat.dictation_session_ms'\n  AND ts_ms BETWEEN $__from AND $__to\nORDER BY ts_ms",
+          "timeColumns": [
+            "time"
+          ],
+          "refId": "A"
+        }
+      ],
+      "title": "Dictation Session Duration (chat.dictation_session_ms)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "oppi-telemetry-sqlite"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "ms",
+          "custom": {
+            "drawStyle": "points",
+            "lineWidth": 0,
+            "pointSize": 4,
+            "showPoints": "always"
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 68
+      },
+      "id": 78,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "frser-sqlite-datasource",
+            "uid": "oppi-telemetry-sqlite"
+          },
+          "queryType": "time series",
+          "rawQueryText": "SELECT CAST(ts_ms / 1000 AS INTEGER) AS time, value\nFROM chat_metric_samples\nWHERE metric = 'chat.dictation_audio_duration_ms'\n  AND ts_ms BETWEEN $__from AND $__to\nORDER BY ts_ms",
+          "queryText": "SELECT CAST(ts_ms / 1000 AS INTEGER) AS time, value\nFROM chat_metric_samples\nWHERE metric = 'chat.dictation_audio_duration_ms'\n  AND ts_ms BETWEEN $__from AND $__to\nORDER BY ts_ms",
+          "timeColumns": [
+            "time"
+          ],
+          "refId": "A"
+        }
+      ],
+      "title": "Audio Duration (chat.dictation_audio_duration_ms)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "oppi-telemetry-sqlite"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "none",
+          "custom": {
+            "drawStyle": "points",
+            "lineWidth": 0,
+            "pointSize": 4,
+            "showPoints": "always"
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 68
+      },
+      "id": 79,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "frser-sqlite-datasource",
+            "uid": "oppi-telemetry-sqlite"
+          },
+          "queryType": "time series",
+          "rawQueryText": "SELECT CAST(ts_ms / 1000 AS INTEGER) AS time, value\nFROM chat_metric_samples\nWHERE metric = 'chat.dictation_result_updates'\n  AND ts_ms BETWEEN $__from AND $__to\nORDER BY ts_ms",
+          "queryText": "SELECT CAST(ts_ms / 1000 AS INTEGER) AS time, value\nFROM chat_metric_samples\nWHERE metric = 'chat.dictation_result_updates'\n  AND ts_ms BETWEEN $__from AND $__to\nORDER BY ts_ms",
+          "timeColumns": [
+            "time"
+          ],
+          "refId": "A"
+        }
+      ],
+      "title": "Result Updates (chat.dictation_result_updates)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "oppi-telemetry-sqlite"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "percentunit",
+          "custom": {
+            "drawStyle": "points",
+            "lineWidth": 0,
+            "pointSize": 4,
+            "showPoints": "always"
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 76
+      },
+      "id": 80,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "frser-sqlite-datasource",
+            "uid": "oppi-telemetry-sqlite"
+          },
+          "queryType": "time series",
+          "rawQueryText": "SELECT CAST(ts_ms / 1000 AS INTEGER) AS time, value\nFROM chat_metric_samples\nWHERE metric = 'chat.dictation_preview_final_delta'\n  AND ts_ms BETWEEN $__from AND $__to\nORDER BY ts_ms",
+          "queryText": "SELECT CAST(ts_ms / 1000 AS INTEGER) AS time, value\nFROM chat_metric_samples\nWHERE metric = 'chat.dictation_preview_final_delta'\n  AND ts_ms BETWEEN $__from AND $__to\nORDER BY ts_ms",
+          "timeColumns": [
+            "time"
+          ],
+          "refId": "A"
+        }
+      ],
+      "title": "Preview vs Final Delta (chat.dictation_preview_final_delta)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "oppi-telemetry-sqlite"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "none",
+          "custom": {
+            "drawStyle": "points",
+            "lineWidth": 0,
+            "pointSize": 4,
+            "showPoints": "always"
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 76
+      },
+      "id": 81,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "frser-sqlite-datasource",
+            "uid": "oppi-telemetry-sqlite"
+          },
+          "queryType": "time series",
+          "rawQueryText": "SELECT CAST(ts_ms / 1000 AS INTEGER) AS time, value AS errors\nFROM chat_metric_samples\nWHERE metric = 'chat.dictation_error'\n  AND ts_ms BETWEEN $__from AND $__to\nORDER BY ts_ms",
+          "queryText": "SELECT CAST(ts_ms / 1000 AS INTEGER) AS time, value AS errors\nFROM chat_metric_samples\nWHERE metric = 'chat.dictation_error'\n  AND ts_ms BETWEEN $__from AND $__to\nORDER BY ts_ms",
+          "timeColumns": [
+            "time"
+          ],
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "frser-sqlite-datasource",
+            "uid": "oppi-telemetry-sqlite"
+          },
+          "queryType": "time series",
+          "rawQueryText": "SELECT CAST(ts_ms / 1000 AS INTEGER) AS time, value AS cancels\nFROM chat_metric_samples\nWHERE metric = 'chat.dictation_cancel'\n  AND ts_ms BETWEEN $__from AND $__to\nORDER BY ts_ms",
+          "queryText": "SELECT CAST(ts_ms / 1000 AS INTEGER) AS time, value AS cancels\nFROM chat_metric_samples\nWHERE metric = 'chat.dictation_cancel'\n  AND ts_ms BETWEEN $__from AND $__to\nORDER BY ts_ms",
+          "timeColumns": [
+            "time"
+          ],
+          "refId": "B"
+        }
+      ],
+      "title": "Errors + Cancels",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "oppi-telemetry-sqlite"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 84
+      },
+      "id": 82,
+      "options": {
+        "cellHeight": "sm",
+        "showHeader": true
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "frser-sqlite-datasource",
+            "uid": "oppi-telemetry-sqlite"
+          },
+          "queryType": "table",
+          "rawQueryText": "SELECT\n  COALESCE(json_extract(tags_json, '$.stt_backend'), '<none>') AS stt_backend,\n  COALESCE(json_extract(tags_json, '$.model'), '<none>') AS model,\n  COUNT(*) AS sessions,\n  ROUND(AVG(value), 0) AS avg_ms,\n  ROUND(MIN(value), 0) AS min_ms,\n  ROUND(MAX(value), 0) AS max_ms\nFROM chat_metric_samples\nWHERE metric = 'chat.dictation_session_ms'\n  AND ts_ms BETWEEN $__from AND $__to\nGROUP BY stt_backend, model\nORDER BY sessions DESC",
+          "queryText": "SELECT\n  COALESCE(json_extract(tags_json, '$.stt_backend'), '<none>') AS stt_backend,\n  COALESCE(json_extract(tags_json, '$.model'), '<none>') AS model,\n  COUNT(*) AS sessions,\n  ROUND(AVG(value), 0) AS avg_ms,\n  ROUND(MIN(value), 0) AS min_ms,\n  ROUND(MAX(value), 0) AS max_ms\nFROM chat_metric_samples\nWHERE metric = 'chat.dictation_session_ms'\n  AND ts_ms BETWEEN $__from AND $__to\nGROUP BY stt_backend, model\nORDER BY sessions DESC",
+          "timeColumns": [],
+          "refId": "A"
+        }
+      ],
+      "title": "Dictation by STT Backend/Model",
+      "type": "table"
+    },
+    {
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "oppi-telemetry-sqlite"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "ms",
+          "custom": {
+            "drawStyle": "points",
+            "lineWidth": 0,
+            "pointSize": 4,
+            "showPoints": "always"
+          }
+        },
         "overrides": [
           {
             "matcher": {
@@ -1365,7 +1906,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 60
+        "y": 92
       },
       "id": 29,
       "options": {
@@ -1472,7 +2013,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 68
+        "y": 100
       },
       "id": 16,
       "options": {
@@ -1528,7 +2069,7 @@
         "h": 9,
         "w": 24,
         "x": 0,
-        "y": 76
+        "y": 108
       },
       "id": 17,
       "options": {
@@ -1575,7 +2116,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 85
+        "y": 117
       },
       "id": 18,
       "options": {
@@ -1643,7 +2184,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 85
+        "y": 117
       },
       "id": 19,
       "options": {
@@ -1690,7 +2231,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 93
+        "y": 125
       },
       "id": 20,
       "options": {
@@ -1758,7 +2299,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 93
+        "y": 125
       },
       "id": 21,
       "options": {
@@ -1822,7 +2363,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 101
+        "y": 133
       },
       "id": 32,
       "options": {
@@ -1921,7 +2462,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 101
+        "y": 133
       },
       "id": 33,
       "options": {
@@ -1993,7 +2534,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 109
+        "y": 141
       },
       "id": 34,
       "options": {
@@ -2052,7 +2593,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 109
+        "y": 141
       },
       "id": 35,
       "options": {
@@ -2111,7 +2652,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 117
+        "y": 149
       },
       "id": 36,
       "options": {
@@ -2171,7 +2712,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 125
+        "y": 157
       },
       "id": 37,
       "options": {
@@ -2232,7 +2773,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 133
+        "y": 165
       },
       "id": 38,
       "options": {
@@ -2293,7 +2834,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 133
+        "y": 165
       },
       "id": 39,
       "options": {
@@ -2354,7 +2895,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 141
+        "y": 173
       },
       "id": 40,
       "options": {
@@ -2453,7 +2994,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 141
+        "y": 173
       },
       "id": 41,
       "options": {
@@ -2565,7 +3106,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 149
+        "y": 181
       },
       "id": 42,
       "options": {
@@ -2715,7 +3256,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 149
+        "y": 181
       },
       "id": 43,
       "options": {
@@ -2872,7 +3413,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 157
+        "y": 189
       },
       "id": 44,
       "options": {
@@ -3016,7 +3557,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 157
+        "y": 189
       },
       "id": 45,
       "options": {
@@ -3087,7 +3628,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 165
+        "y": 197
       },
       "datasource": {
         "type": "frser-sqlite-datasource",
@@ -3162,7 +3703,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 165
+        "y": 197
       },
       "datasource": {
         "type": "frser-sqlite-datasource",
@@ -3242,7 +3783,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 173
+        "y": 205
       },
       "panels": []
     },
@@ -3255,7 +3796,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 174
+        "y": 206
       },
       "datasource": {
         "type": "frser-sqlite-datasource",
@@ -3354,7 +3895,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 174
+        "y": 206
       },
       "datasource": {
         "type": "frser-sqlite-datasource",
@@ -3415,7 +3956,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 182
+        "y": 214
       },
       "datasource": {
         "type": "frser-sqlite-datasource",
@@ -3526,7 +4067,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 182
+        "y": 214
       },
       "datasource": {
         "type": "frser-sqlite-datasource",
@@ -3587,7 +4128,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 190
+        "y": 222
       },
       "datasource": {
         "type": "frser-sqlite-datasource",
@@ -3760,7 +4301,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 190
+        "y": 222
       },
       "datasource": {
         "type": "frser-sqlite-datasource",
@@ -3871,7 +4412,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 198
+        "y": 230
       },
       "datasource": {
         "type": "frser-sqlite-datasource",
@@ -3982,7 +4523,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 206
+        "y": 238
       },
       "datasource": {
         "type": "frser-sqlite-datasource",
@@ -4035,7 +4576,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 214
+        "y": 246
       },
       "collapsed": false,
       "panels": []
@@ -4048,7 +4589,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 215
+        "y": 247
       },
       "datasource": {
         "type": "frser-sqlite-datasource",
@@ -4108,7 +4649,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 215
+        "y": 247
       },
       "datasource": {
         "type": "frser-sqlite-datasource",
@@ -4168,7 +4709,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 223
+        "y": 255
       },
       "datasource": {
         "type": "frser-sqlite-datasource",
@@ -4228,7 +4769,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 223
+        "y": 255
       },
       "datasource": {
         "type": "frser-sqlite-datasource",

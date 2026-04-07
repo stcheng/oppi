@@ -5,11 +5,11 @@ import OSLog
 
 private let logger = Logger(subsystem: AppIdentifiers.subsystem, category: "DictationSession")
 
-/// Voice transcription session that streams raw PCM audio over a `/dictation` WebSocket
+/// Voice transcription session that streams raw PCM audio over the main `/stream` WebSocket
 /// and receives full transcript replacements from the server.
 ///
 /// Streams raw PCM continuously — no client-side chunk timing.
-/// The server returns full text each time:
+/// Binary frames carry audio; dictation results arrive as `ServerMessage` text frames.
 /// - `dictation_result` maps to `.replaceFinalTranscript`
 /// - `dictation_final` maps to `.replaceFinalTranscript` + stream completion
 ///
@@ -21,12 +21,11 @@ final class OppiDictationSession: VoiceTranscriptionSession {
     let events: AsyncThrowingStream<VoiceSessionEvent, Error>
     let audioLevels: AsyncStream<Float>
 
-    private let ws: DictationWebSocket
+    private let connection: ServerConnection
     /// Resolves once the server sends `dictation_ready`. Audio is buffered until then.
     private let readinessTask: Task<DictationProviderInfo?, Error>
-    /// Recording-scoped message stream, created by the provider before each tap.
-    /// Scoped to this recording only — the WS connection outlives it.
-    private let recordingMessages: AsyncThrowingStream<DictationServerMessage, Error>
+    /// Recording-scoped message stream, routed from the /stream WS.
+    private let recordingMessages: AsyncStream<ServerMessage>
     private let eventContinuation: AsyncThrowingStream<VoiceSessionEvent, Error>.Continuation
     private let audioLevelContinuation: AsyncStream<Float>.Continuation
     private var messageListenTask: Task<Void, Never>?
@@ -42,11 +41,11 @@ final class OppiDictationSession: VoiceTranscriptionSession {
     private var stopped = false
 
     init(
-        ws: DictationWebSocket,
+        connection: ServerConnection,
         readinessTask: Task<DictationProviderInfo?, Error>,
-        messages: AsyncThrowingStream<DictationServerMessage, Error>
+        messages: AsyncStream<ServerMessage>
     ) {
-        self.ws = ws
+        self.connection = connection
         self.readinessTask = readinessTask
         self.recordingMessages = messages
 
@@ -96,7 +95,7 @@ final class OppiDictationSession: VoiceTranscriptionSession {
 
         // Send stop, wait for final transcript
         do {
-            try await ws.send(.stop)
+            try await connection.sendDictation(.dictationStop)
             logger.info("Sent dictation_stop, waiting for final")
         } catch {
             logger.error("Failed to send dictation_stop: \(error.localizedDescription, privacy: .public)")
@@ -121,14 +120,13 @@ final class OppiDictationSession: VoiceTranscriptionSession {
         audioDrainTask = nil
 
         do {
-            try await ws.send(.cancel)
+            try await connection.sendDictation(.dictationCancel)
         } catch {
             logger.debug("Failed to send dictation_cancel: \(error.localizedDescription, privacy: .public)")
         }
 
         messageListenTask?.cancel()
         messageListenTask = nil
-        // Do NOT disconnect ws — owned by OppiDictationProvider, persists for session lifetime.
         cleanup()
     }
 
@@ -174,7 +172,7 @@ final class OppiDictationSession: VoiceTranscriptionSession {
         guard let audioStream = pendingAudioStream else { return }
         pendingAudioStream = nil
 
-        let ws = self.ws
+        let connection = self.connection
         let readinessTask = self.readinessTask
         let eventContinuation = self.eventContinuation
 
@@ -195,15 +193,15 @@ final class OppiDictationSession: VoiceTranscriptionSession {
                 // Cancelled by cancel() — clean exit, no error to surface
                 return
             } catch {
-                logger.error("Dictation WS setup failed: \(error.localizedDescription, privacy: .public)")
+                logger.error("Dictation setup failed: \(error.localizedDescription, privacy: .public)")
                 eventContinuation.finish(throwing: error)
                 return
             }
 
-            // WS is ready — pipe all audio (buffered + live) to the server
+            // Server is ready — pipe all audio (buffered + live) as binary frames
             for await chunk in audioStream {
                 guard !Task.isCancelled else { break }
-                try? await ws.sendAudio(chunk)
+                try? await connection.sendDictationAudio(chunk)
             }
         }
     }
@@ -238,47 +236,42 @@ final class OppiDictationSession: VoiceTranscriptionSession {
     // MARK: - Server Message Handling
 
     private func startMessageListener() {
-        // Use the recording-scoped stream from OppiDictationProvider.
-        // Ends on dictation_final or WS drop. The WS itself is NOT disconnected here.
+        // Use the recording-scoped stream from OppiDictationProvider,
+        // routed from the /stream WS. Ends when the provider finishes it
+        // (on dictation_final or WS disconnect).
         let stream = recordingMessages
         messageListenTask = Task { [weak self] in
-            do {
-                for try await message in stream {
-                    guard !Task.isCancelled else { break }
-                    guard let self else { break }
+            for await message in stream {
+                guard !Task.isCancelled else { break }
+                guard let self else { break }
 
-                    switch message {
-                    case .ready:
-                        logger.debug("dictation_ready received (recording started)")
+                switch message {
+                case .dictationReady:
+                    logger.debug("dictation_ready received (recording started)")
 
-                    case .result(let text, let snap):
-                        logger.debug("Dictation result: \(text.count) chars\(snap ? " (snap)" : "")")
-                        eventContinuation.yield(.replaceFinalTranscript(text, snap: snap))
+                case .dictationResult(let text, let snap):
+                    logger.debug("Dictation result: \(text.count) chars\(snap ? " (snap)" : "")")
+                    eventContinuation.yield(.replaceFinalTranscript(text, snap: snap))
 
-                    case .final_(let text, _, _):
-                        logger.info("Dictation final: \(text.count) chars")
-                        if !text.isEmpty {
-                            eventContinuation.yield(.replaceFinalTranscript(text))
-                        }
-                        // Recording complete. The WS receive loop already finished
-                        // this stream; the for-await exits naturally after this return.
-                        eventContinuation.finish()
-                        return
-
-                    case .error(let error, let fatal):
-                        logger.error("Dictation error (fatal=\(fatal)): \(error, privacy: .public)")
-                        if fatal {
-                            eventContinuation.finish(
-                                throwing: VoiceInputError.internalError("Server error: \(error)")
-                            )
-                            return
-                        }
+                case .dictationFinal(let text, _, _):
+                    logger.info("Dictation final: \(text.count) chars")
+                    if !text.isEmpty {
+                        eventContinuation.yield(.replaceFinalTranscript(text))
                     }
-                }
-            } catch {
-                if !Task.isCancelled {
-                    logger.error("Message stream error: \(error.localizedDescription, privacy: .public)")
-                    self?.eventContinuation.finish(throwing: error)
+                    eventContinuation.finish()
+                    return
+
+                case .dictationError(let error, let fatal):
+                    logger.error("Dictation error (fatal=\(fatal)): \(error, privacy: .public)")
+                    if fatal {
+                        eventContinuation.finish(
+                            throwing: VoiceInputError.internalError("Server error: \(error)")
+                        )
+                        return
+                    }
+
+                default:
+                    break // Ignore non-dictation messages
                 }
             }
 

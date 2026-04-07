@@ -653,7 +653,7 @@ export class SessionManager extends EventEmitter {
         const cwd = workspace.hostMount || process.cwd();
         const forkedSm = PiSessionManager.forkFrom(parentSession.piSessionFile, cwd);
         session.piSessionFile = forkedSm.getSessionFile();
-        console.log(`[sessions] Forked parent session file for child ${session.id}`);
+        console.log("[sessions] Forked parent session file for child", { sessionId: session.id });
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         console.warn(`[sessions] Fork failed, falling back to fresh session: ${msg}`);

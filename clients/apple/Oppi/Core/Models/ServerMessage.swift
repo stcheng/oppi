@@ -4,6 +4,14 @@ import Foundation
 ///
 /// Manual Decodable with `type` discriminator. Unknown types decode to
 /// `.unknown` instead of throwing — future server additions remain non-fatal.
+/// Server-provided STT backend metadata, sent with `dictation_ready`.
+/// Used to tag client metrics with the actual provider/model the server is using.
+struct DictationProviderInfo: Sendable, Equatable {
+    let sttProvider: String
+    let sttModel: String
+    let llmCorrectionEnabled: Bool
+}
+
 enum ServerMessage: Sendable, Equatable {
     // Connection lifecycle
     case streamConnected(userName: String)
@@ -56,6 +64,12 @@ enum ServerMessage: Sendable, Equatable {
 
     // Git status (workspace-level, pushed after file-mutating tool calls)
     case gitStatus(workspaceId: String, status: GitStatus)
+
+    // Dictation (multiplexed over /stream)
+    case dictationReady(provider: DictationProviderInfo?)
+    case dictationResult(text: String, snap: Bool)
+    case dictationFinal(text: String, uncorrected: String?, audioId: String?)
+    case dictationError(error: String, fatal: Bool)
 
     // Errors
     case error(message: String, code: String?, fatal: Bool)
@@ -148,6 +162,9 @@ extension ServerMessage: Decodable {
         case attempt, maxAttempts, delayMs, errorMessage, finalError
         // git_status
         case workspaceId, status
+        // dictation
+        case sttProvider, sttModel, llmCorrectionEnabled
+        case text, snap, uncorrected, audioId
     }
 
     init(from decoder: Decoder) throws {
@@ -348,6 +365,39 @@ extension ServerMessage: Decodable {
             let status = try c.decode(GitStatus.self, forKey: .status)
             self = .gitStatus(workspaceId: workspaceId, status: status)
 
+        // ── Dictation ──
+        case "dictation_ready":
+            let providerName = try c.decodeIfPresent(String.self, forKey: .sttProvider)
+            let model = try c.decodeIfPresent(String.self, forKey: .sttModel)
+            let llmEnabled = try c.decodeIfPresent(Bool.self, forKey: .llmCorrectionEnabled)
+            let info: DictationProviderInfo?
+            if let providerName, let model {
+                info = DictationProviderInfo(
+                    sttProvider: providerName,
+                    sttModel: model,
+                    llmCorrectionEnabled: llmEnabled ?? false
+                )
+            } else {
+                info = nil
+            }
+            self = .dictationReady(provider: info)
+
+        case "dictation_result":
+            let text = try c.decode(String.self, forKey: .text)
+            let snap = try c.decodeIfPresent(Bool.self, forKey: .snap) ?? false
+            self = .dictationResult(text: text, snap: snap)
+
+        case "dictation_final":
+            let text = try c.decode(String.self, forKey: .text)
+            let uncorrected = try c.decodeIfPresent(String.self, forKey: .uncorrected)
+            let audioId = try c.decodeIfPresent(String.self, forKey: .audioId)
+            self = .dictationFinal(text: text, uncorrected: uncorrected, audioId: audioId)
+
+        case "dictation_error":
+            let errorMsg = try c.decode(String.self, forKey: .error)
+            let fatal = try c.decodeIfPresent(Bool.self, forKey: .fatal) ?? false
+            self = .dictationError(error: errorMsg, fatal: fatal)
+
         default:
             self = .unknown(type: type)
         }
@@ -427,6 +477,10 @@ extension ServerMessage {
         case .extensionUIRequest: "extensionUIRequest"
         case .extensionUINotification: "extensionUINotification"
         case .gitStatus: "gitStatus"
+        case .dictationReady: "dictationReady"
+        case .dictationResult: "dictationResult"
+        case .dictationFinal: "dictationFinal"
+        case .dictationError: "dictationError"
         case .error: "error"
         case .unknown(let type): "unknown(\(type))"
         }

@@ -1,7 +1,7 @@
 /**
  * Dictation pipeline manager.
  *
- * Handles per-WS-connection lifecycle: audio accumulation for FLAC
+ * Handles per-connection lifecycle: audio accumulation for FLAC
  * preservation, forwarding audio to the SttProvider, relaying transcript
  * updates to the client, optional LLM post-correction, and audio archival.
  *
@@ -13,7 +13,6 @@ import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import type { WebSocket, RawData } from "ws";
 import type {
   DictationConfig,
   DictationClientMessage,
@@ -105,6 +104,9 @@ function makeWavHeader(dataLength: number): Buffer {
 
 // ─── DictationManager ───
 
+/** Callback for sending dictation responses through the transport layer. */
+export type DictationSendFn = (msg: DictationServerMessage) => void;
+
 export class DictationManager {
   private config: DictationConfig;
   private dataDir: string;
@@ -119,6 +121,12 @@ export class DictationManager {
 
   /** Optional metrics collector for pipeline telemetry. */
   private metrics: ServerMetricCollector | null;
+
+  /** Active dictation session state. */
+  private session: DictationSession | null = null;
+
+  /** Callback for sending messages to the client. Set by handleControlMessage. */
+  private sendFn: DictationSendFn | null = null;
 
   constructor(
     config: DictationConfig,
@@ -137,111 +145,104 @@ export class DictationManager {
 
   // ─── Public API ───
 
-  /** Wire up message/binary/close handlers on a newly upgraded /dictation WS. */
-  handleConnection(ws: WebSocket): void {
-    let session: DictationSession | null = null;
+  /** Handle a parsed dictation control message from the transport layer. */
+  handleControlMessage(msg: DictationClientMessage, send: DictationSendFn): void {
+    this.sendFn = send;
 
-    ws.on("message", (data: RawData, isBinary: boolean) => {
-      if (isBinary) {
-        if (!session) return;
-        const buf = toBuffer(data);
-
-        // Accumulate for FLAC preservation
-        const needed = session.totalBytes + buf.length;
-        if (needed > session.audioBuffer.length) {
-          const newCap = Math.max(session.audioBuffer.length * 2, needed);
-          const newBuf = Buffer.alloc(newCap);
-          session.audioBuffer.copy(newBuf, 0, 0, session.totalBytes);
-          session.audioBuffer = newBuf;
-        }
-        buf.copy(session.audioBuffer, session.totalBytes);
-        session.totalBytes += buf.length;
-
-        // Feed to STT provider
-        this.sttProvider.feedAudio(buf);
-        return;
-      }
-
-      // Text frame = JSON control message
-      let msg: DictationClientMessage;
-      try {
-        msg = JSON.parse(toBuffer(data).toString("utf8")) as DictationClientMessage;
-      } catch {
-        sendMessage(ws, { type: "dictation_error", error: "Invalid JSON", fatal: false });
-        return;
-      }
-
-      switch (msg.type) {
-        case "dictation_start":
-          if (session) {
-            sendMessage(ws, {
-              type: "dictation_error",
-              error: "Dictation already active",
-              fatal: false,
-            });
-            return;
-          }
-          session = {
-            audioBuffer: Buffer.alloc(INITIAL_AUDIO_BUFFER_SIZE),
-            totalBytes: 0,
-            startedAt: new Date().toISOString(),
-            startHrMs: performance.now(),
-            stopping: false,
-          };
-          this.startSession(ws, session);
-          break;
-
-        case "dictation_stop":
-          if (!session) {
-            sendMessage(ws, {
-              type: "dictation_error",
-              error: "No active dictation session",
-              fatal: false,
-            });
-            return;
-          }
-          session.stopping = true;
-          this.finalizeSession(ws, session);
-          session = null;
-          break;
-
-        case "dictation_cancel":
-          if (session) {
-            this.cancelSession();
-            session = null;
-          }
-          break;
-
-        default:
-          sendMessage(ws, {
+    switch (msg.type) {
+      case "dictation_start":
+        if (this.session) {
+          this.send({
             type: "dictation_error",
-            error: `Unknown message type: ${(msg as { type: string }).type}`,
+            error: "Dictation already active",
             fatal: false,
           });
-      }
-    });
+          return;
+        }
+        this.session = {
+          audioBuffer: Buffer.alloc(INITIAL_AUDIO_BUFFER_SIZE),
+          totalBytes: 0,
+          startedAt: new Date().toISOString(),
+          startHrMs: performance.now(),
+          stopping: false,
+        };
+        this.startSession();
+        break;
 
-    ws.on("close", () => {
-      if (session) {
-        this.cancelSession();
-        session = null;
-      }
-    });
+      case "dictation_stop":
+        if (!this.session) {
+          this.send({
+            type: "dictation_error",
+            error: "No active dictation session",
+            fatal: false,
+          });
+          return;
+        }
+        this.session.stopping = true;
+        {
+          const sessionToFinalize = this.session;
+          this.session = null;
+          this.finalizeSession(sessionToFinalize);
+        }
+        break;
 
-    ws.on("error", () => {
-      if (session) {
-        this.cancelSession();
-        session = null;
-      }
-    });
+      case "dictation_cancel":
+        if (this.session) {
+          this.cancelSession();
+          this.session = null;
+        }
+        break;
+
+      default:
+        this.send({
+          type: "dictation_error",
+          error: `Unknown message type: ${(msg as { type: string }).type}`,
+          fatal: false,
+        });
+    }
+  }
+
+  /** Handle an incoming binary audio frame. */
+  handleAudioData(buf: Buffer): void {
+    if (!this.session) return;
+
+    // Accumulate for FLAC preservation
+    const needed = this.session.totalBytes + buf.length;
+    if (needed > this.session.audioBuffer.length) {
+      const newCap = Math.max(this.session.audioBuffer.length * 2, needed);
+      const newBuf = Buffer.alloc(newCap);
+      this.session.audioBuffer.copy(newBuf, 0, 0, this.session.totalBytes);
+      this.session.audioBuffer = newBuf;
+    }
+    buf.copy(this.session.audioBuffer, this.session.totalBytes);
+    this.session.totalBytes += buf.length;
+
+    // Feed to STT provider
+    this.sttProvider.feedAudio(buf);
+  }
+
+  /** Clean up on transport disconnect. */
+  handleDisconnect(): void {
+    if (this.session) {
+      this.cancelSession();
+      this.session = null;
+    }
+    this.sendFn = null;
+  }
+
+  // ─── Private send ───
+
+  /** Send a dictation message through the stored transport callback. */
+  private send(msg: DictationServerMessage): void {
+    this.sendFn?.(msg);
   }
 
   // ─── Session lifecycle ───
 
-  private startSession(ws: WebSocket, session: DictationSession): void {
+  private startSession(): void {
     void this.ensureDictionary();
 
-    sendMessage(ws, {
+    this.send({
       type: "dictation_ready",
       sttProvider: this.sttProvider.name,
       sttModel: this.sttProvider.model,
@@ -252,7 +253,7 @@ export class DictationManager {
       this.sttProvider.start();
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err);
-      sendMessage(ws, {
+      this.send({
         type: "dictation_error",
         error: `STT failed to start: ${errorMsg}`,
         fatal: true,
@@ -262,8 +263,8 @@ export class DictationManager {
 
     // Forward transcript updates to the client
     this.sttProvider.onToken((text: string, opts?: { snap?: boolean }) => {
-      if (session.stopping) return;
-      sendMessage(ws, {
+      if (!this.session || this.session.stopping) return;
+      this.send({
         type: "dictation_result",
         text,
         ...(opts?.snap ? { snap: true } : {}),
@@ -275,7 +276,7 @@ export class DictationManager {
     void this.sttProvider.stop().catch(() => {});
   }
 
-  private async finalizeSession(ws: WebSocket, session: DictationSession): Promise<void> {
+  private async finalizeSession(session: DictationSession): Promise<void> {
     const finalizeT0 = performance.now();
     const langTag = "auto";
 
@@ -304,7 +305,7 @@ export class DictationManager {
 
     if (session.totalBytes === 0) {
       await this.sttProvider.stop().catch(() => {});
-      sendMessage(ws, { type: "dictation_final", text: "" });
+      this.send({ type: "dictation_final", text: "" });
       return;
     }
 
@@ -339,7 +340,7 @@ export class DictationManager {
         1,
         this.metricTags({ phase: "stt", fatal: "true", error_kind: "stt", language: langTag }),
       );
-      sendMessage(ws, { type: "dictation_error", error: `STT failed: ${errorMsg}`, fatal: true });
+      this.send({ type: "dictation_error", error: `STT failed: ${errorMsg}`, fatal: true });
       return;
     }
 
@@ -425,7 +426,7 @@ export class DictationManager {
       this.metricTags({ language: langTag }),
     );
 
-    sendMessage(ws, {
+    this.send({
       type: "dictation_final",
       text,
       ...(uncorrected !== undefined ? { uncorrected } : {}),
@@ -618,18 +619,6 @@ export class DictationManager {
 }
 
 // ─── Helpers ───
-
-function sendMessage(ws: WebSocket, msg: DictationServerMessage): void {
-  if (ws.readyState === 1 /* WebSocket.OPEN */) {
-    ws.send(JSON.stringify(msg));
-  }
-}
-
-function toBuffer(data: RawData): Buffer {
-  if (Buffer.isBuffer(data)) return data;
-  if (Array.isArray(data)) return Buffer.concat(data);
-  return Buffer.from(data);
-}
 
 /**
  * Extract JSON from an LLM response that may be wrapped in markdown code fences.
