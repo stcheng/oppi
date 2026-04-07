@@ -356,8 +356,12 @@ struct ExpandedComposerView: View {
             Task {
                 switch manager.state {
                 case .recording:
-                    await manager.stopRecording()
+                    let prefix = textBeforeRecording ?? ""
+                    let transcript = await manager.stopRecording()
                     textBeforeRecording = nil
+                    if !transcript.isEmpty {
+                        text = prefix + transcript
+                    }
                 case .preparingModel:
                     await manager.cancelRecording()
                     textBeforeRecording = nil

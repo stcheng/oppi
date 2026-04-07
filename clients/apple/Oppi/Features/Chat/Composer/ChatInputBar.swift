@@ -535,8 +535,15 @@ struct ChatInputBar<ActionRow: View>: View {
             Task {
                 switch manager.state {
                 case .recording:
-                    await manager.stopRecording()
+                    let prefix = textBeforeRecording ?? ""
+                    let transcript = await manager.stopRecording()
                     textBeforeRecording = nil
+                    // Explicitly sync the batch-corrected transcript.
+                    // Cannot rely on onChange — teardown clears
+                    // currentTranscript, so the observation path is dead.
+                    if !transcript.isEmpty {
+                        text = prefix + transcript
+                    }
                     // Keep keyboard suppressed — user tapping the text field
                     // will restore it via handleKeyboardRestore()
                 case .preparingModel:

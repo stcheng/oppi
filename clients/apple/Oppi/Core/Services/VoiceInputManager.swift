@@ -502,14 +502,16 @@ final class VoiceInputManager {
     }
 
     /// Stop recording. Finalizes transcription and waits for last results.
-    func stopRecording() async {
+    /// Returns the final transcript captured before session teardown.
+    @discardableResult
+    func stopRecording() async -> String {
         guard state == .recording else {
             logger.warning("Cannot stop: state is \(String(describing: self.state))")
-            return
+            return ""
         }
         guard !operationInFlight else {
             logger.warning("Cannot stop: operation already in flight")
-            return
+            return ""
         }
         operationInFlight = true
         defer { operationInFlight = false }
@@ -534,10 +536,13 @@ final class VoiceInputManager {
             finalTranscript: currentTranscript
         )
 
+        let result = currentTranscript
+
         deactivateAudioSession()
         teardownSession()
         state = .idle
-        logger.info("Stopped. Transcript length: \(self.currentTranscript.count) chars")
+        logger.info("Stopped. Transcript length: \(result.count) chars")
+        return result
     }
 
     /// Cancel recording without finalizing. Discards all text.
@@ -757,6 +762,8 @@ final class VoiceInputManager {
     private func teardownSession() {
         typewriterAnimator.reset()
         sessionMonitor.teardown()
+        finalizedTranscript = ""
+        volatileTranscript = ""
         audioLevel = 0
         activeLanguageLabel = nil
         activeEngine = nil

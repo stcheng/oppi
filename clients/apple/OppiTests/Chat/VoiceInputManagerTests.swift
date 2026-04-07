@@ -721,13 +721,14 @@ struct VoiceInputManagerTests {
             session.finishEvents()
         }
 
-        // stopRecording must wait for the event stream to finish
-        await manager.stopRecording()
+        // stopRecording returns the corrected transcript captured before teardown
+        let finalTranscript = await manager.stopRecording()
 
-        // After stop returns, the corrected transcript should be visible.
-        // finalizedTranscript is set directly by replaceFinalTranscript.
-        #expect(manager.finalizedTranscript == "Hello, world!",
+        #expect(finalTranscript == "Hello, world!",
                 "stopRecording must wait for final transcript before returning")
+        // After teardown, transcript state is cleared to prevent stale observations
+        #expect(manager.currentTranscript.isEmpty,
+                "currentTranscript must be empty after stop to prevent onChange leaks")
         #expect(manager.state == .idle)
     }
 
@@ -764,10 +765,12 @@ struct VoiceInputManagerTests {
             session.finishEvents()
         }
 
-        await manager.stopRecording()
+        let finalTranscript = await manager.stopRecording()
 
-        #expect(manager.finalizedTranscript == "switching back to English, and we'll see",
+        #expect(finalTranscript == "switching back to English, and we'll see",
                 "Final transcript must replace streaming text")
+        #expect(manager.currentTranscript.isEmpty,
+                "currentTranscript must be empty after stop")
     }
 
     /// Verifies that typewriter animation is committed during stop so
@@ -802,13 +805,120 @@ struct VoiceInputManagerTests {
             session.finishEvents()
         }
 
-        await manager.stopRecording()
+        let finalTranscript = await manager.stopRecording()
 
-        // After stop: no animation, full text available
+        // After stop: no animation, return value has full corrected text
         #expect(!manager.typewriterAnimator.isAnimating,
                 "Animation must be finished after stop")
-        #expect(manager.finalizedTranscript == "Hello world, this is a longer sentence.",
-                "Final corrected text must be available after stop")
+        #expect(finalTranscript == "Hello world, this is a longer sentence.",
+                "Final corrected text must be returned by stopRecording")
+        #expect(manager.currentTranscript.isEmpty,
+                "currentTranscript must be empty after stop")
+    }
+
+    // MARK: - Send-while-recording: transcript clearing prevents stale observation
+
+    /// Regression test for the send-while-dictating bug.
+    ///
+    /// When the user taps send during voice recording, handleSend() sets
+    /// textBeforeRecording = nil (disabling onChange sync), then awaits
+    /// stopRecording(), then calls onSend() which asynchronously clears text.
+    ///
+    /// Without the fix, currentTranscript retained the final value after stop,
+    /// and a late SwiftUI onChange could re-populate the text field after clearing.
+    ///
+    /// The fix: teardownSession() clears finalizedTranscript and volatileTranscript,
+    /// so currentTranscript is empty after stop. No late observation can leak.
+    @Test func sendWhileRecordingClearsTranscriptToPreventStaleObservation() async throws {
+        resetVoicePreferences()
+        defer { resetVoicePreferences() }
+
+        let systemAccess = MockVoiceInputSystemAccess()
+        let session = MockVoiceSession()
+        let classicProvider = MockVoiceProvider(id: .appleClassicDictation, engine: .classicDictation)
+        classicProvider.makeSessionHandler = { _, _ in session }
+
+        let manager = VoiceInputManager(
+            providerRegistry: VoiceProviderRegistry(providers: [classicProvider]),
+            systemAccess: systemAccess
+        )
+
+        try await manager.startRecording(keyboardLanguage: "en-US", source: "test")
+
+        // Simulate streaming dictation updates
+        session.yieldEvent(.replaceFinalTranscript("hello world"))
+        #expect(await waitForMainActorCondition { manager.finalizedTranscript.contains("hello") })
+
+        // Stop yields batch-corrected final transcript (like dictation_final)
+        session.stopHandler = { @MainActor [weak session] in
+            guard let session else { return }
+            session.yieldEvent(.replaceFinalTranscript("Hello, world!"))
+            session.finishEvents()
+        }
+
+        // Simulate the handleSend() flow: stop then check state
+        let finalTranscript = await manager.stopRecording()
+
+        // The return value has the corrected transcript
+        #expect(finalTranscript == "Hello, world!")
+
+        // Critical assertion: currentTranscript must be empty after stop.
+        // This prevents any late SwiftUI onChange(of: currentTranscript) from
+        // re-populating a text field that was cleared by onSend().
+        #expect(manager.currentTranscript.isEmpty,
+                "currentTranscript must be empty after stop to prevent text field re-population")
+        #expect(manager.finalizedTranscript.isEmpty,
+                "finalizedTranscript must be cleared by teardown")
+        #expect(manager.volatileTranscript.isEmpty,
+                "volatileTranscript must be cleared by teardown")
+
+        // Simulate what onSend does: clear a text binding
+        var textBinding = "Hello, world!"
+        textBinding = ""  // onSend clears
+
+        // Wait to verify no late transcript update re-populates
+        #expect(await waitForMainActorConditionToStayTrue(for: .milliseconds(100)) {
+            manager.currentTranscript.isEmpty
+        }, "currentTranscript must stay empty after stop — no late updates")
+
+        // The text binding stays cleared
+        #expect(textBinding.isEmpty, "Text must stay cleared after send")
+    }
+
+    /// Verifies that stopRecording returns the correct transcript even when
+    /// the typewriter animator was mid-animation at the time of stop.
+    @Test func stopRecordingReturnValueIncludesAnimatedText() async throws {
+        resetVoicePreferences()
+        defer { resetVoicePreferences() }
+
+        let systemAccess = MockVoiceInputSystemAccess()
+        let session = MockVoiceSession()
+        let classicProvider = MockVoiceProvider(id: .appleClassicDictation, engine: .classicDictation)
+        classicProvider.makeSessionHandler = { _, _ in session }
+
+        let manager = VoiceInputManager(
+            providerRegistry: VoiceProviderRegistry(providers: [classicProvider]),
+            systemAccess: systemAccess
+        )
+
+        try await manager.startRecording(keyboardLanguage: "en-US", source: "test")
+
+        // Trigger typewriter animation (replace during recording starts animation)
+        session.yieldEvent(.replaceFinalTranscript("a]longer sentence that takes time to animate"))
+        #expect(await waitForMainActorCondition { manager.finalizedTranscript.contains("longer") })
+
+        // Stop without a corrective final — just finish the stream.
+        // The committed animation text should be returned.
+        session.stopHandler = { @MainActor [weak session] in
+            guard let session else { return }
+            session.finishEvents()
+        }
+
+        let result = await manager.stopRecording()
+
+        #expect(result == "a]longer sentence that takes time to animate",
+                "Return value must contain committed animation text")
+        #expect(manager.currentTranscript.isEmpty)
     }
 
     private func resetVoicePreferences() {
