@@ -12,7 +12,10 @@
 
 import { EventEmitter } from "node:events";
 
-import type { ExtensionFactory } from "@mariozechner/pi-coding-agent";
+import {
+  type ExtensionFactory,
+  SessionManager as PiSessionManager,
+} from "@mariozechner/pi-coding-agent";
 
 import type {
   MessageQueueDraftItem,
@@ -623,6 +626,7 @@ export class SessionManager extends EventEmitter {
       model?: string;
       thinking?: string;
       prompt: string;
+      fork?: boolean;
     },
   ): Promise<Session> {
     const parentSession = this.storage.getSession(parentSessionId);
@@ -640,6 +644,23 @@ export class SessionManager extends EventEmitter {
     session.workspaceId = workspace.id;
     session.workspaceName = workspace.name;
     session.parentSessionId = parentSessionId;
+
+    // Fork mode: copy the parent's pi session file so the child inherits
+    // the full conversation history. The child's first API call shares the
+    // same message prefix → Anthropic prompt cache hit (~90% cheaper).
+    if (params.fork && parentSession.piSessionFile) {
+      try {
+        const cwd = workspace.hostMount || process.cwd();
+        const forkedSm = PiSessionManager.forkFrom(parentSession.piSessionFile, cwd);
+        session.piSessionFile = forkedSm.getSessionFile();
+        console.log(`[sessions] Forked parent session file for child ${session.id}`);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.warn(`[sessions] Fork failed, falling back to fresh session: ${msg}`);
+        // Fall through to fresh session behavior
+      }
+    }
+
     this.storage.saveSession(session);
 
     try {

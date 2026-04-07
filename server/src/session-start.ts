@@ -57,7 +57,7 @@ export interface SessionStartCoordinatorDeps {
   // spawn_agent support
   spawnChildSession: (
     parentSessionId: string,
-    params: { name?: string; model?: string; thinking?: string; prompt: string },
+    params: { name?: string; model?: string; thinking?: string; prompt: string; fork?: boolean },
   ) => Promise<Session>;
   spawnDetachedSession: (
     originSessionId: string,
@@ -115,6 +115,7 @@ export class SessionStartCoordinator {
               model?: string;
               thinking?: string;
               prompt: string;
+              fork?: boolean;
             }) => this.deps.spawnChildSession(session.id, params),
             spawnDetached: (params: {
               name?: string;

@@ -87,7 +87,7 @@ export interface SessionCoordinatorBundleDeps {
   // spawn_agent support
   spawnChildSession: (
     parentSessionId: string,
-    params: { name?: string; model?: string; thinking?: string; prompt: string },
+    params: { name?: string; model?: string; thinking?: string; prompt: string; fork?: boolean },
   ) => Promise<Session>;
   spawnDetachedSession: (
     originSessionId: string,

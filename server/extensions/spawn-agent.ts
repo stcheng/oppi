@@ -31,6 +31,7 @@ export interface SpawnAgentContext {
     model?: string;
     thinking?: string;
     prompt: string;
+    fork?: boolean;
   }): Promise<Session>;
   /** Create an independent session in the same workspace — no parent-child relationship. */
   spawnDetached(params: {
@@ -159,6 +160,16 @@ const spawnAgentParams = Type.Object({
   message: Type.String({
     description: "The task prompt for the child agent.",
   }),
+  fork: Type.Optional(
+    Type.Boolean({
+      description:
+        "If true, fork the parent's conversation history into the child. " +
+        "The child inherits all context (files read, analysis done) and gets " +
+        "Anthropic prompt cache hits on the shared prefix (~90% cheaper). " +
+        "Use for side tasks where the child needs context you already have. " +
+        "Default: false (fresh context).",
+    }),
+  ),
   name: Type.Optional(
     Type.String({
       description:
@@ -882,8 +893,10 @@ export function createSpawnAgentFactory(
           "that benefits from a fresh context. Set wait=true to block until the child " +
           "finishes and get its result inline.",
         promptSnippet:
-          "spawn_agent(message, name?, model?, thinking?, detached?, wait?, timeout_seconds?) — spawn a child agent session",
+          "spawn_agent(message, fork?, name?, model?, thinking?, detached?, wait?, timeout_seconds?) — spawn a child agent session",
         promptGuidelines: [
+          "Spawning starts a fresh context by default — the child must rediscover files and context you already have. Don't spawn when you already know the exact changes and could do them faster inline.",
+          "Use fork=true when the child needs context you already have (files read, code analyzed, decisions made). The child inherits your full conversation and gets prompt cache hits (~90% cheaper input tokens). Ideal for side tasks, small edits, and parallel work that branches from your current understanding.",
           "Use spawn_agent for tasks that can run independently without blocking the current conversation.",
           "Give each spawned agent a clear, self-contained task description with all needed context.",
           "The child agent cannot see the parent's conversation history — include relevant context in the message.",
@@ -959,6 +972,7 @@ export function createSpawnAgentFactory(
               model: params.model,
               thinking: params.thinking,
               prompt: params.message,
+              fork: params.fork,
             };
             const session = params.detached
               ? await ctx.spawnDetached(spawnParams)
