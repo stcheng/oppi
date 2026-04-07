@@ -73,6 +73,72 @@ struct TypewriterAnimatorTests {
         #expect(animator.displayText == "Hello")
     }
 
+    // MARK: - Correction Handling
+
+    @Test func correctionSnapsToOldLength() {
+        let animator = TypewriterAnimator()
+
+        animator.update(fullText: "hello im testing")
+        animator.commitCurrentAnimation()
+
+        // Batch correction changes capitalization + adds text
+        animator.update(fullText: "Hello, I'm testing this.")
+        // Should snap corrected portion (up to old length), animate only new chars
+        let display = animator.displayText
+        #expect(display.count >= "hello im testing".count,
+                "Correction should snap to at least old text length, got: \(display)")
+    }
+
+    @Test func correctionWithSameLengthSnaps() {
+        let animator = TypewriterAnimator()
+
+        animator.update(fullText: "hello world")
+        animator.commitCurrentAnimation()
+
+        animator.update(fullText: "Hello World")
+        #expect(animator.displayText == "Hello World")
+    }
+
+    // MARK: - Period Merge
+
+    @Test func periodRemovalPlusAppendIsNotCorrection() {
+        let animator = TypewriterAnimator()
+
+        animator.update(fullText: "Hello.")
+        animator.commitCurrentAnimation()
+        #expect(animator.displayText == "Hello.")
+
+        // Period removed, new text appended — should animate, NOT snap
+        animator.update(fullText: "Hello world.")
+        #expect(animator.isAnimating, "Period-merge should animate, not snap")
+        animator.commitCurrentAnimation()
+        #expect(animator.displayText == "Hello world.")
+    }
+
+    @Test func chinesePeriodMerge() {
+        let animator = TypewriterAnimator()
+
+        animator.update(fullText: "\u{8BED}\u{97F3}\u{3002}")
+        animator.commitCurrentAnimation()
+
+        animator.update(fullText: "\u{8BED}\u{97F3}\u{662F}\u{53EF}\u{4EE5}\u{3002}")
+        #expect(animator.isAnimating, "Chinese period merge should animate")
+        animator.commitCurrentAnimation()
+        #expect(animator.displayText == "\u{8BED}\u{97F3}\u{662F}\u{53EF}\u{4EE5}\u{3002}")
+    }
+
+    @Test func periodOnlyRemovalWithShorterTextIsCorrection() {
+        let animator = TypewriterAnimator()
+
+        animator.update(fullText: "Hello world.")
+        animator.commitCurrentAnimation()
+
+        // Just removing the period with no new text — this IS a correction
+        animator.update(fullText: "Hello world")
+        #expect(animator.displayText == "Hello world", "Shorter text should snap")
+        #expect(!animator.isAnimating)
+    }
+
     @Test func identicalTextIsNoOp() {
         let animator = TypewriterAnimator()
 
@@ -100,6 +166,8 @@ struct TypewriterAnimatorTests {
         animator.commitCurrentAnimation()
         #expect(animator.displayText == "Hello world")
     }
+
+    // MARK: - Common Prefix
 
     // MARK: - Common Prefix
 

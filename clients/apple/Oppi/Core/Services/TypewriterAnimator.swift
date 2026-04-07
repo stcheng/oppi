@@ -48,9 +48,13 @@ final class TypewriterAnimator {
 
     /// Feed a new full replacement transcript from the server.
     ///
-    /// Computes the delta from the previous target and animates the new
-    /// characters appearing one by one. If an animation is in progress,
-    /// it snaps to completion before starting the new one.
+    /// Computes the delta from the previous target and animates new characters.
+    /// Corrections (batch retranscription, punctuation changes) snap instantly.
+    /// Only genuinely new characters appended to the end get animated.
+    ///
+    /// Period-merge: if the only removed characters are trailing punctuation
+    /// (.!?。！？) and there’s new text after, treat it as a pure append.
+    /// The ASR commonly outputs "word." then corrects to "word more text."
     func update(fullText: String) {
         // Snap any in-progress animation to its target
         commitCurrentAnimation()
@@ -61,17 +65,38 @@ final class TypewriterAnimator {
         // Find how many leading characters are shared
         let commonCount = Self.commonPrefixCount(previousTarget, fullText)
 
-        // If the new text is shorter or unchanged past the prefix (correction/deletion), snap
-        guard fullText.count > commonCount else {
+        // Detect if the removal is just trailing punctuation (period-merge).
+        // The ASR frequently outputs speculative periods that get removed
+        // when more speech arrives — this is not a real correction.
+        let removedCount = previousTarget.count - commonCount
+        let isTrailingPunctOnly = removedCount > 0
+            && fullText.count > previousTarget.count
+            && Self.isOnlyTrailingPunctuation(previousTarget, from: commonCount)
+        let isCorrection = removedCount > 0 && !isTrailingPunctOnly
+
+        if isCorrection {
+            // Real correction: snap the corrected portion immediately,
+            // only animate chars beyond the old target length.
+            let snapTo = min(previousTarget.count, fullText.count)
+            let snapEnd = fullText.index(fullText.startIndex, offsetBy: snapTo)
+            displayText = String(fullText[..<snapEnd])
+
+            // If no new chars beyond old length, we're done
+            guard fullText.count > previousTarget.count else { return }
+        } else {
+            // Pure append (or period-merge) — show common prefix, animate the delta
+            let prefixEnd = fullText.index(fullText.startIndex, offsetBy: commonCount)
+            displayText = String(fullText[..<prefixEnd])
+        }
+
+        // Nothing new to animate?
+        guard fullText.count > displayText.count else {
             displayText = fullText
             return
         }
 
-        // Show the common prefix immediately; animate the delta
-        let prefixEnd = fullText.index(fullText.startIndex, offsetBy: commonCount)
-        displayText = String(fullText[..<prefixEnd])
-
-        let deltaCount = fullText.count - commonCount
+        let animateFrom = fullText.index(fullText.startIndex, offsetBy: displayText.count)
+        let deltaCount = fullText.count - displayText.count
         let intervalNs = max(
             Self.minimumIntervalNs,
             Self.animationDurationNs / UInt64(max(1, deltaCount))
@@ -80,7 +105,7 @@ final class TypewriterAnimator {
         isAnimating = true
 
         animationTask = Task { [weak self] in
-            var currentIndex = prefixEnd
+            var currentIndex = animateFrom
             let target = fullText
 
             while currentIndex < target.endIndex {
@@ -124,6 +149,21 @@ final class TypewriterAnimator {
     }
 
     // MARK: - Helpers
+
+    private static let trailingPunctuation: Set<Character> = [".", "!", "?", "\u{3002}", "\u{FF01}", "\u{FF1F}"]
+
+    /// Check if all characters from `fromIndex` to the end are trailing punctuation.
+    private static func isOnlyTrailingPunctuation(_ text: String, from offset: Int) -> Bool {
+        var idx = text.index(text.startIndex, offsetBy: offset)
+        while idx < text.endIndex {
+            let ch = text[idx]
+            if !ch.isWhitespace && !trailingPunctuation.contains(ch) {
+                return false
+            }
+            idx = text.index(after: idx)
+        }
+        return true
+    }
 
     /// Count of shared leading characters between two strings.
     static func commonPrefixCount(_ a: String, _ b: String) -> Int {
