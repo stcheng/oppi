@@ -5,7 +5,9 @@ import Speech
 @MainActor
 protocol VoiceInputSystemAccessing {
     var hasPermissions: Bool { get }
+    var hasMicPermission: Bool { get }
     func requestPermissions() async -> Bool
+    func requestMicPermission() async -> Bool
     func activateAudioSession() throws
     func deactivateAudioSession()
 }
@@ -20,12 +22,20 @@ struct VoiceInputSystemAccess: VoiceInputSystemAccessing {
         return mic && speech
     }
 
+    var hasMicPermission: Bool {
+        AVAudioApplication.shared.recordPermission == .granted
+    }
+
     func requestPermissions() async -> Bool {
         let mic = await Self.requestMicPermission()
         guard mic else { return false }
 
         let speech = await Self.requestSpeechPermission()
         return speech
+    }
+
+    func requestMicPermission() async -> Bool {
+        await Self.requestMicPermission()
     }
 
     func activateAudioSession() throws {

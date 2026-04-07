@@ -6,6 +6,9 @@ final class MockVoiceInputSystemAccess: VoiceInputSystemAccessing {
     var hasPermissions = true
     var requestPermissionsResult = true
     var requestPermissionsCallCount = 0
+    var hasMicPermission = true
+    var requestMicPermissionResult = true
+    var requestMicPermissionCallCount = 0
     var activateAudioSessionCallCount = 0
     var deactivateAudioSessionCallCount = 0
     var activateAudioSessionError: Error?
@@ -13,6 +16,11 @@ final class MockVoiceInputSystemAccess: VoiceInputSystemAccessing {
     func requestPermissions() async -> Bool {
         requestPermissionsCallCount += 1
         return requestPermissionsResult
+    }
+
+    func requestMicPermission() async -> Bool {
+        requestMicPermissionCallCount += 1
+        return requestMicPermissionResult
     }
 
     func activateAudioSession() throws {

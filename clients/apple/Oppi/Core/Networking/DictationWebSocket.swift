@@ -6,21 +6,19 @@ private let logger = Logger(subsystem: AppIdentifiers.subsystem, category: "Dict
 // MARK: - Message Types
 
 enum DictationClientMessage: Encodable, Sendable {
-    case start(language: String?)
+    case start
     case stop
     case cancel
 
     private enum CodingKeys: String, CodingKey {
         case type
-        case language
     }
 
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         switch self {
-        case .start(let language):
+        case .start:
             try container.encode("dictation_start", forKey: .type)
-            try container.encodeIfPresent(language, forKey: .language)
         case .stop:
             try container.encode("dictation_stop", forKey: .type)
         case .cancel:
@@ -39,14 +37,14 @@ struct DictationProviderInfo: Sendable, Equatable {
 
 enum DictationServerMessage: Decodable, Sendable, Equatable {
     case ready(provider: DictationProviderInfo?)
-    case result(text: String, version: Int)
+    case result(text: String, snap: Bool)
     case final_(text: String, uncorrected: String?, audioId: String?)
     case error(error: String, fatal: Bool)
 
     private enum CodingKeys: String, CodingKey {
         case type
         case text
-        case version
+        case snap
         case uncorrected
         case audioId
         case error
@@ -78,8 +76,8 @@ enum DictationServerMessage: Decodable, Sendable, Equatable {
             self = .ready(provider: info)
         case "dictation_result":
             let text = try container.decode(String.self, forKey: .text)
-            let version = try container.decode(Int.self, forKey: .version)
-            self = .result(text: text, version: version)
+            let snap = try container.decodeIfPresent(Bool.self, forKey: .snap) ?? false
+            self = .result(text: text, snap: snap)
         case "dictation_final":
             let text = try container.decode(String.self, forKey: .text)
             let uncorrected = try container.decodeIfPresent(String.self, forKey: .uncorrected)
@@ -110,8 +108,11 @@ enum DictationServerMessage: Decodable, Sendable, Equatable {
 @MainActor
 final class DictationWebSocket {
     enum ConnectionState: Equatable, Sendable {
+        /// No active URLSessionWebSocketTask.
         case disconnected
+        /// Task is started; waiting for the server's first `dictation_ready`.
         case connecting
+        /// WS is up. Either idle between recordings or actively recording.
         case connected
         case disconnecting
     }
@@ -197,6 +198,35 @@ final class DictationWebSocket {
         startReceiveLoop(wsTask)
 
         logger.info("DictationWS connecting to \(url.absoluteString, privacy: .public)")
+    }
+
+    // MARK: - Per-recording API
+
+    /// Re-arm the ready mechanism for a new recording on an existing open connection.
+    /// Call this before sending `dictation_start` on a reused WS.
+    /// Resets state to `.connecting` so `waitForReady` will block until
+    /// the server responds with `dictation_ready` for this recording.
+    func resetForNewRecording() {
+        guard state == .connected else { return }
+        state = .connecting
+        // Clear any stale continuations from the previous recording
+        readyTimeoutTask?.cancel()
+        readyTimeoutTask = nil
+        readyContinuation = nil
+    }
+
+    /// Create a fresh message stream scoped to the current recording.
+    /// The previous recording's stream (if any) is finished before creating a new one.
+    /// The receive loop yields into this stream until `dictation_final` or WS disconnect.
+    func startRecordingMessages() -> AsyncThrowingStream<DictationServerMessage, Error> {
+        messageContinuation?.finish()
+        messageContinuation = nil
+        _messages = nil
+
+        let (stream, continuation) = AsyncThrowingStream.makeStream(of: DictationServerMessage.self)
+        _messages = stream
+        messageContinuation = continuation
+        return stream
     }
 
     /// Block until the server sends `dictation_ready`, or throw on timeout.
@@ -318,8 +348,16 @@ final class DictationWebSocket {
                             }
                         }
 
-                        // Always yield to the message stream
+                        // Yield to the recording-scoped message stream
                         self.messageContinuation?.yield(serverMessage)
+
+                        // dictation_final ends this recording; finish the stream but
+                        // keep the WS open for the next recording.
+                        if case .final_ = serverMessage {
+                            self.messageContinuation?.finish()
+                            self.messageContinuation = nil
+                            self._messages = nil
+                        }
                     } catch {
                         logger.error("DictationWS decode error: \(error.localizedDescription, privacy: .public)")
                     }

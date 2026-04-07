@@ -389,20 +389,35 @@ final class VoiceInputManager {
         recordingStart = nil
         resultUpdateCount = 0
 
-        if !systemAccess.hasPermissions {
-            guard await requestPermissions() else {
-                state = .error("Microphone or speech permission denied")
-                scheduleErrorReset()
-                return
-            }
-        }
-
         state = .preparingModel
         let startTime = ContinuousClock.now
         let locale = Self.resolvedLocale(keyboardLanguage: keyboardLanguage)
         let localeID = locale.identifier(.bcp47)
         let engine = await effectiveEngine(for: locale, source: source)
         activeEngine = engine
+
+        // Engine-aware permission check: server dictation needs only mic,
+        // on-device engines need both mic + speech recognition.
+        switch engine {
+        case .serverDictation:
+            if !systemAccess.hasMicPermission {
+                guard await systemAccess.requestMicPermission() else {
+                    activeEngine = nil
+                    state = .error("Microphone permission denied")
+                    scheduleErrorReset()
+                    return
+                }
+            }
+        case .modernSpeech, .classicDictation:
+            if !systemAccess.hasPermissions {
+                guard await requestPermissions() else {
+                    activeEngine = nil
+                    state = .error("Microphone or speech permission denied")
+                    scheduleErrorReset()
+                    return
+                }
+            }
+        }
         let metricAnnotation = VoiceMetricAnnotation(
             engine: engine.logName,
             locale: localeID,
@@ -709,16 +724,31 @@ final class VoiceInputManager {
             volatileTranscript = ""
             resultUpdateCount += 1
             logger.debug("Finalized append: \(text.count) chars")
-        case .replaceFinalTranscript(let text):
+        case .replaceFinalTranscript(let text, let snap):
             finalizedTranscript = text
             volatileTranscript = ""
             resultUpdateCount += 1
             if state == .recording {
-                typewriterAnimator.update(fullText: text)
+                if snap {
+                    // Batch correction: commit any in-progress animation.
+                    // Don't start a new one — currentTranscript reads
+                    // finalizedTranscript directly when not animating.
+                    typewriterAnimator.commitCurrentAnimation()
+                } else {
+                    typewriterAnimator.update(fullText: text)
+                }
             }
-            logger.debug("Finalized replace: \(text.count) chars")
+            logger.debug("Finalized replace: \(text.count) chars\(snap ? " (snap)" : "")")
+
         case .remoteChunkTelemetry(let chunk):
             recordRemoteChunkTelemetry(chunk, annotation: annotation)
+
+        case .providerMetricTags(let tags):
+            // Merge backend metadata (stt_backend, model) resolved after readiness.
+            // Subsequent metrics (finalize, session, audio_duration) get the real values.
+            for (key, value) in tags {
+                activeDictationMetricTags[key] = value
+            }
         }
     }
 

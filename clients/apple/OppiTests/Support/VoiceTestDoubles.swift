@@ -6,6 +6,9 @@ final class MockVoiceInputSystemAccess: VoiceInputSystemAccessing {
     var hasPermissions = true
     var requestPermissionsResult = true
     var requestPermissionsCallCount = 0
+    var hasMicPermission = true
+    var requestMicPermissionResult = true
+    var requestMicPermissionCallCount = 0
     var activateAudioSessionCallCount = 0
     var deactivateAudioSessionCallCount = 0
     var activateAudioSessionError: Error?
@@ -13,6 +16,11 @@ final class MockVoiceInputSystemAccess: VoiceInputSystemAccessing {
     func requestPermissions() async -> Bool {
         requestPermissionsCallCount += 1
         return requestPermissionsResult
+    }
+
+    func requestMicPermission() async -> Bool {
+        requestMicPermissionCallCount += 1
+        return requestMicPermissionResult
     }
 
     func activateAudioSession() throws {
@@ -113,6 +121,8 @@ final class MockVoiceSession: VoiceTranscriptionSession {
     var startCallCount = 0
     var stopCallCount = 0
     var cancelCallCount = 0
+    /// Custom stop handler. When set, called instead of default immediate finish.
+    var stopHandler: (@MainActor () async -> Void)?
 
     init() {
         let eventPair = AsyncThrowingStream.makeStream(of: VoiceSessionEvent.self, throwing: Error.self)
@@ -134,8 +144,12 @@ final class MockVoiceSession: VoiceTranscriptionSession {
 
     func stop() async {
         stopCallCount += 1
-        eventContinuation.finish()
-        audioLevelContinuation.finish()
+        if let stopHandler {
+            await stopHandler()
+        } else {
+            eventContinuation.finish()
+            audioLevelContinuation.finish()
+        }
     }
 
     func cancel() async {

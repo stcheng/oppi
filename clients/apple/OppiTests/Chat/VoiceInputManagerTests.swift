@@ -548,6 +548,30 @@ struct VoiceInputManagerTests {
         #expect(classicProvider.prepareSessionCallCount == 0)
     }
 
+    @Test func startRecordingWithServerDictationOnlyRequestsMicPermission() async {
+        resetVoicePreferences()
+        defer { resetVoicePreferences() }
+
+        let systemAccess = MockVoiceInputSystemAccess()
+        systemAccess.hasPermissions = true
+        systemAccess.hasMicPermission = false
+        systemAccess.requestMicPermissionResult = false
+
+        let serverProvider = MockVoiceProvider(id: .oppiServer, engine: .serverDictation)
+        let manager = VoiceInputManager(
+            providerRegistry: VoiceProviderRegistry(providers: [serverProvider]),
+            systemAccess: systemAccess
+        )
+        manager.setEngineMode(.remote)
+
+        try? await manager.startRecording(source: "test")
+
+        #expect(systemAccess.requestMicPermissionCallCount == 1)
+        #expect(systemAccess.requestPermissionsCallCount == 0)
+        #expect(manager.state == .error("Microphone permission denied"))
+        #expect(serverProvider.prepareSessionCallCount == 0)
+    }
+
     @Test func cancelDuringPreparingCancelsProviderPreparationAndPreventsStaleRecording() async {
         resetVoicePreferences()
         defer { resetVoicePreferences() }
@@ -662,6 +686,129 @@ struct VoiceInputManagerTests {
             }
             return false
         }())
+    }
+
+    // MARK: - Send-while-recording: stop awaits final transcript
+
+    /// Verifies that stopRecording() waits for the final transcript event
+    /// before returning. This is critical for send-while-recording: the caller
+    /// must see the corrected transcript before sending the message.
+    @Test func stopRecordingAwaitsServerFinalTranscript() async throws {
+        resetVoicePreferences()
+        defer { resetVoicePreferences() }
+
+        let systemAccess = MockVoiceInputSystemAccess()
+        let session = MockVoiceSession()
+        let classicProvider = MockVoiceProvider(id: .appleClassicDictation, engine: .classicDictation)
+        classicProvider.makeSessionHandler = { _, _ in session }
+
+        let manager = VoiceInputManager(
+            providerRegistry: VoiceProviderRegistry(providers: [classicProvider]),
+            systemAccess: systemAccess
+        )
+
+        try await manager.startRecording(keyboardLanguage: "en-US", source: "test")
+
+        // Simulate streaming partial results (append doesn't trigger typewriter)
+        session.yieldEvent(.appendFinalTranscript("hello world"))
+        #expect(await waitForMainActorCondition { manager.finalizedTranscript == "hello world" })
+
+        // Configure stop to simulate server delay: yield corrected final transcript,
+        // then finish the event stream (mimics dictation_final arrival).
+        session.stopHandler = { @MainActor [weak session] in
+            guard let session else { return }
+            session.yieldEvent(.replaceFinalTranscript("Hello, world!"))
+            session.finishEvents()
+        }
+
+        // stopRecording must wait for the event stream to finish
+        await manager.stopRecording()
+
+        // After stop returns, the corrected transcript should be visible.
+        // finalizedTranscript is set directly by replaceFinalTranscript.
+        #expect(manager.finalizedTranscript == "Hello, world!",
+                "stopRecording must wait for final transcript before returning")
+        #expect(manager.state == .idle)
+    }
+
+    /// Verifies that the transcript seen after stopRecording() includes
+    /// the replaceFinalTranscript event, not just the last partial.
+    @Test func stopRecordingReplacesStreamingTextWithFinal() async throws {
+        resetVoicePreferences()
+        defer { resetVoicePreferences() }
+
+        let systemAccess = MockVoiceInputSystemAccess()
+        let session = MockVoiceSession()
+        let classicProvider = MockVoiceProvider(id: .appleClassicDictation, engine: .classicDictation)
+        classicProvider.makeSessionHandler = { _, _ in session }
+
+        let manager = VoiceInputManager(
+            providerRegistry: VoiceProviderRegistry(providers: [classicProvider]),
+            systemAccess: systemAccess
+        )
+
+        try await manager.startRecording(keyboardLanguage: "en-US", source: "test")
+
+        // Streaming text (uncorrected, use append to avoid typewriter)
+        session.yieldEvent(.appendFinalTranscript("switching back to and we'll see"))
+        #expect(await waitForMainActorCondition {
+            manager.finalizedTranscript == "switching back to and we'll see"
+        })
+
+        // Stop yields batch-corrected final (replace overwrites the append)
+        session.stopHandler = { @MainActor [weak session] in
+            guard let session else { return }
+            session.yieldEvent(.replaceFinalTranscript(
+                "switching back to English, and we'll see"
+            ))
+            session.finishEvents()
+        }
+
+        await manager.stopRecording()
+
+        #expect(manager.finalizedTranscript == "switching back to English, and we'll see",
+                "Final transcript must replace streaming text")
+    }
+
+    /// Verifies that typewriter animation is committed during stop so
+    /// currentTranscript returns the full text, not a partial reveal.
+    /// This ensures send-while-animating captures the complete transcript.
+    @Test func stopRecordingCommitsAnimationBeforeFinalTranscript() async throws {
+        resetVoicePreferences()
+        defer { resetVoicePreferences() }
+
+        let systemAccess = MockVoiceInputSystemAccess()
+        let session = MockVoiceSession()
+        let classicProvider = MockVoiceProvider(id: .appleClassicDictation, engine: .classicDictation)
+        classicProvider.makeSessionHandler = { _, _ in session }
+
+        let manager = VoiceInputManager(
+            providerRegistry: VoiceProviderRegistry(providers: [classicProvider]),
+            systemAccess: systemAccess
+        )
+
+        try await manager.startRecording(keyboardLanguage: "en-US", source: "test")
+
+        // Trigger typewriter animation via replaceFinalTranscript during recording
+        session.yieldEvent(.replaceFinalTranscript("hello world this is a longer sentence"))
+        #expect(await waitForMainActorCondition { manager.finalizedTranscript.contains("hello") })
+
+        // Typewriter might still be animating — displayText could be partial
+        let preStop = manager.typewriterAnimator.isAnimating
+
+        session.stopHandler = { @MainActor [weak session] in
+            guard let session else { return }
+            session.yieldEvent(.replaceFinalTranscript("Hello world, this is a longer sentence."))
+            session.finishEvents()
+        }
+
+        await manager.stopRecording()
+
+        // After stop: no animation, full text available
+        #expect(!manager.typewriterAnimator.isAnimating,
+                "Animation must be finished after stop")
+        #expect(manager.finalizedTranscript == "Hello world, this is a longer sentence.",
+                "Final corrected text must be available after stop")
     }
 
     private func resetVoicePreferences() {

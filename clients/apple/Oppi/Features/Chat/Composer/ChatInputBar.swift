@@ -657,8 +657,9 @@ struct ChatInputBar<ActionRow: View>: View {
     private func handleSend() {
         guard !isSending else { return }
 
-        // Stop voice recording setup/session before sending so transcript updates
-        // don't repopulate the text field after it's cleared.
+        // Stop voice recording before sending. We await the stop so the final
+        // batch-corrected transcript (dictation_final) updates the text field
+        // before onSend() captures it.
         if let manager = voiceInputManager, manager.isRecording || manager.isPreparing {
             textBeforeRecording = nil
             suppressKeyboard = Self.suppressKeyboardAfterSend(
@@ -671,7 +672,9 @@ struct ChatInputBar<ActionRow: View>: View {
                 } else {
                     await manager.cancelRecording()
                 }
+                onSend()
             }
+            return
         }
 
         onSend()

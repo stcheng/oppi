@@ -12,22 +12,43 @@ private let logger = Logger(subsystem: AppIdentifiers.subsystem, category: "Dict
 /// The server returns full text each time:
 /// - `dictation_result` maps to `.replaceFinalTranscript`
 /// - `dictation_final` maps to `.replaceFinalTranscript` + stream completion
+///
+/// **Optimistic recording:** Audio capture starts immediately on `start()`. A background
+/// drain task blocks on `readinessTask` (WS `dictation_ready`) before forwarding audio,
+/// so the UI shows `.recording` with live waveform while the network round-trip completes.
 @MainActor
 final class OppiDictationSession: VoiceTranscriptionSession {
     let events: AsyncThrowingStream<VoiceSessionEvent, Error>
     let audioLevels: AsyncStream<Float>
 
     private let ws: DictationWebSocket
+    /// Resolves once the server sends `dictation_ready`. Audio is buffered until then.
+    private let readinessTask: Task<DictationProviderInfo?, Error>
+    /// Recording-scoped message stream, created by the provider before each tap.
+    /// Scoped to this recording only — the WS connection outlives it.
+    private let recordingMessages: AsyncThrowingStream<DictationServerMessage, Error>
     private let eventContinuation: AsyncThrowingStream<VoiceSessionEvent, Error>.Continuation
     private let audioLevelContinuation: AsyncStream<Float>.Continuation
     private var messageListenTask: Task<Void, Never>?
+    /// Drains the audio stream to the WS, waiting for readiness first.
+    private var audioDrainTask: Task<Void, Never>?
+    /// Feeds raw PCM chunks from the audio tap into the drain task.
+    private var audioContinuation: AsyncStream<Data>.Continuation?
+    /// Pending audio stream, transferred to the drain task on start.
+    private var pendingAudioStream: AsyncStream<Data>?
     private var audioEngine: AVAudioEngine?
     private var audioConverter: AVAudioConverter?
     private var targetFormat: AVAudioFormat?
     private var stopped = false
 
-    init(ws: DictationWebSocket) {
+    init(
+        ws: DictationWebSocket,
+        readinessTask: Task<DictationProviderInfo?, Error>,
+        messages: AsyncThrowingStream<DictationServerMessage, Error>
+    ) {
         self.ws = ws
+        self.readinessTask = readinessTask
+        self.recordingMessages = messages
 
         let (events, eventContinuation) = AsyncThrowingStream.makeStream(of: VoiceSessionEvent.self)
         self.events = events
@@ -50,6 +71,9 @@ final class OppiDictationSession: VoiceTranscriptionSession {
         try startAudioCapture()
         let audioStartMs = audioStart.elapsedMs()
 
+        // Begin draining audio to WS in background (blocks on readinessTask first)
+        startAudioDrainTask()
+
         return VoiceSessionStartTimings(
             analyzerStartMs: analyzerStartMs,
             audioStartMs: audioStartMs
@@ -61,6 +85,14 @@ final class OppiDictationSession: VoiceTranscriptionSession {
         stopped = true
 
         stopAudioEngine()
+        // Close the audio stream so the drain task's for-await loop exits naturally
+        audioContinuation?.finish()
+        audioContinuation = nil
+
+        // Wait for the drain task to flush all buffered audio before signalling stop.
+        // This ensures no audio is lost if the WS was still connecting.
+        await audioDrainTask?.value
+        audioDrainTask = nil
 
         // Send stop, wait for final transcript
         do {
@@ -80,6 +112,13 @@ final class OppiDictationSession: VoiceTranscriptionSession {
         stopped = true
 
         stopAudioEngine()
+        audioContinuation?.finish()
+        audioContinuation = nil
+
+        // Cancel background setup and drain — no audio to flush on cancel
+        readinessTask.cancel()
+        audioDrainTask?.cancel()
+        audioDrainTask = nil
 
         do {
             try await ws.send(.cancel)
@@ -89,7 +128,7 @@ final class OppiDictationSession: VoiceTranscriptionSession {
 
         messageListenTask?.cancel()
         messageListenTask = nil
-        ws.disconnect()
+        // Do NOT disconnect ws — owned by OppiDictationProvider, persists for session lifetime.
         cleanup()
     }
 
@@ -100,9 +139,17 @@ final class OppiDictationSession: VoiceTranscriptionSession {
     /// it runs on the real-time audio thread and libdispatch will crash
     /// with `EXC_BREAKPOINT: Block was expected to execute on queue
     /// [com.apple.main-thread]` if the closure carries MainActor context.
+    ///
+    /// PCM chunks are yielded into `pendingAudioStream` via `audioContinuation`.
+    /// `AsyncStream.Continuation.yield()` is thread-safe and safe to call
+    /// directly from the RT audio thread without dispatch indirection.
     private func startAudioCapture() throws {
+        let (audioStream, audioContinuation) = AsyncStream<Data>.makeStream()
+        self.audioContinuation = audioContinuation
+        self.pendingAudioStream = audioStream
+
         let (engine, levelStream) = try DictationAudioEngineHelper.startEngine(
-            ws: ws,
+            audioContinuation: audioContinuation,
             audioLevelContinuation: audioLevelContinuation
         )
         self.audioEngine = engine
@@ -115,6 +162,50 @@ final class OppiDictationSession: VoiceTranscriptionSession {
         }
 
         logger.info("Audio capture started (16kHz, 16-bit, mono)")
+    }
+
+    /// Starts a background task that:
+    /// 1. Waits for `dictation_ready` (via readinessTask)
+    /// 2. Forwards all buffered + subsequent PCM chunks to the WS
+    ///
+    /// If WS setup fails, the event stream is finished with the error
+    /// so `VoiceInputManager` transitions to `.error` state.
+    private func startAudioDrainTask() {
+        guard let audioStream = pendingAudioStream else { return }
+        pendingAudioStream = nil
+
+        let ws = self.ws
+        let readinessTask = self.readinessTask
+        let eventContinuation = self.eventContinuation
+
+        audioDrainTask = Task {
+            // Block until server is ready (or fails)
+            do {
+                let info = try await readinessTask.value
+                // Emit provider metadata so VoiceInputManager can update metric tags
+                // with the actual stt_backend and model (unknown at setup time).
+                if let info {
+                    eventContinuation.yield(.providerMetricTags([
+                        "stt_backend": info.sttProvider,
+                        "model": info.sttModel,
+                        "llm_correction": info.llmCorrectionEnabled ? "1" : "0",
+                    ]))
+                }
+            } catch is CancellationError {
+                // Cancelled by cancel() — clean exit, no error to surface
+                return
+            } catch {
+                logger.error("Dictation WS setup failed: \(error.localizedDescription, privacy: .public)")
+                eventContinuation.finish(throwing: error)
+                return
+            }
+
+            // WS is ready — pipe all audio (buffered + live) to the server
+            for await chunk in audioStream {
+                guard !Task.isCancelled else { break }
+                try? await ws.sendAudio(chunk)
+            }
+        }
     }
 
     private func stopAudioEngine() {
@@ -147,7 +238,9 @@ final class OppiDictationSession: VoiceTranscriptionSession {
     // MARK: - Server Message Handling
 
     private func startMessageListener() {
-        let stream = ws.messages
+        // Use the recording-scoped stream from OppiDictationProvider.
+        // Ends on dictation_final or WS drop. The WS itself is NOT disconnected here.
+        let stream = recordingMessages
         messageListenTask = Task { [weak self] in
             do {
                 for try await message in stream {
@@ -156,19 +249,20 @@ final class OppiDictationSession: VoiceTranscriptionSession {
 
                     switch message {
                     case .ready:
-                        logger.debug("Server ready for dictation (duplicate ready ignored)")
+                        logger.debug("dictation_ready received (recording started)")
 
-                    case .result(let text, let version):
-                        logger.debug("Dictation result v\(version): \(text.count) chars")
-                        eventContinuation.yield(.replaceFinalTranscript(text))
+                    case .result(let text, let snap):
+                        logger.debug("Dictation result: \(text.count) chars\(snap ? " (snap)" : "")")
+                        eventContinuation.yield(.replaceFinalTranscript(text, snap: snap))
 
                     case .final_(let text, _, _):
                         logger.info("Dictation final: \(text.count) chars")
                         if !text.isEmpty {
                             eventContinuation.yield(.replaceFinalTranscript(text))
                         }
+                        // Recording complete. The WS receive loop already finished
+                        // this stream; the for-await exits naturally after this return.
                         eventContinuation.finish()
-                        ws.disconnect()
                         return
 
                     case .error(let error, let fatal):
@@ -177,7 +271,6 @@ final class OppiDictationSession: VoiceTranscriptionSession {
                             eventContinuation.finish(
                                 throwing: VoiceInputError.internalError("Server error: \(error)")
                             )
-                            ws.disconnect()
                             return
                         }
                     }
@@ -189,12 +282,15 @@ final class OppiDictationSession: VoiceTranscriptionSession {
                 }
             }
 
-            // Stream ended without dictation_final (disconnect, etc.)
+            // Stream ended without dictation_final (WS dropped, etc.)
             self?.eventContinuation.finish()
         }
     }
 
     private func cleanup() {
+        audioDrainTask = nil
+        audioContinuation = nil
+        pendingAudioStream = nil
         messageListenTask = nil
         eventContinuation.finish()
         audioLevelContinuation.finish()
@@ -207,9 +303,13 @@ final class OppiDictationSession: VoiceTranscriptionSession {
 /// The installTap closure runs on the real-time audio thread.
 /// If it inherits @MainActor (from OppiDictationSession), libdispatch
 /// crashes with EXC_BREAKPOINT. This plain enum has no actor isolation.
+///
+/// PCM chunks are yielded into `audioContinuation` directly from the RT thread.
+/// `AsyncStream.Continuation.yield()` is thread-safe and does not create Tasks,
+/// so it is safe to call from the real-time audio callback.
 enum DictationAudioEngineHelper {
     static func startEngine(
-        ws: DictationWebSocket,
+        audioContinuation: AsyncStream<Data>.Continuation,
         audioLevelContinuation: AsyncStream<Float>.Continuation
     ) throws -> (AVAudioEngine, AsyncStream<Float>) {
         let engine = AVAudioEngine()
@@ -232,7 +332,6 @@ enum DictationAudioEngineHelper {
             converter = nil
         }
 
-        let weakWS = WeakRef(ws)
         let (levelStream, levelContinuation) = AsyncStream<Float>.makeStream()
 
         inputNode.installTap(onBus: 0, bufferSize: 1024, format: inputFormat) { buffer, _ in
@@ -257,7 +356,7 @@ enum DictationAudioEngineHelper {
                 outputBuffer = buffer
             }
 
-            // Audio level
+            // Audio level — AsyncStream.Continuation.yield() is thread-safe
             if let channelData = outputBuffer.floatChannelData?[0] {
                 let frameLength = UInt(outputBuffer.frameLength)
                 var rms: Float = 0
@@ -266,18 +365,11 @@ enum DictationAudioEngineHelper {
                 levelContinuation.yield(level)
             }
 
-            // Convert to 16-bit PCM and send over WS
+            // Yield PCM chunk to the audio stream — the drain task forwards
+            // to WS once dictation_ready is received
             let pcmData = OppiDictationSession.convertToInt16PCM(buffer: outputBuffer)
             guard !pcmData.isEmpty else { return }
-            guard let ws = weakWS.value else { return }
-
-            // dispatch_async is safe from the RT audio thread.
-            // Task creation is NOT safe directly on RT threads.
-            DispatchQueue.global(qos: .userInitiated).async {
-                Task {
-                    try? await ws.sendAudio(pcmData)
-                }
-            }
+            audioContinuation.yield(pcmData)
         }
 
         engine.prepare()
@@ -286,13 +378,4 @@ enum DictationAudioEngineHelper {
     }
 }
 
-// MARK: - Weak wrapper for nonisolated audio tap
 
-/// Sendable weak reference wrapper used to pass MainActor-isolated
-/// objects into nonisolated audio tap closures without violating concurrency rules.
-private final class WeakRef<T: AnyObject>: @unchecked Sendable {
-    weak var value: T?
-    init(_ value: T) {
-        self.value = value
-    }
-}

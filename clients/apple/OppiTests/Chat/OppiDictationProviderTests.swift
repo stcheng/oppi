@@ -35,7 +35,7 @@ struct DictationServerMessageDecodingTests {
     @Test func decodesResult() throws {
         let json = #"{"type":"dictation_result","text":"Hello world","version":3}"#
         let message = try decode(json)
-        #expect(message == .result(text: "Hello world", version: 3))
+        #expect(message == .result(text: "Hello world", snap: false))
     }
 
     @Test func decodesFinal() throws {
@@ -81,17 +81,9 @@ struct DictationServerMessageDecodingTests {
 struct DictationClientMessageEncodingTests {
 
     @Test func encodesStart() throws {
-        let message = DictationClientMessage.start(language: "en")
+        let message = DictationClientMessage.start
         let json = try encode(message)
         #expect(json.contains("\"type\":\"dictation_start\""))
-        #expect(json.contains("\"language\":\"en\""))
-    }
-
-    @Test func encodesStartNilLanguage() throws {
-        let message = DictationClientMessage.start(language: nil)
-        let json = try encode(message)
-        #expect(json.contains("\"type\":\"dictation_start\""))
-        #expect(!json.contains("language"))
     }
 
     @Test func encodesStop() throws {
@@ -196,7 +188,7 @@ struct PCMConversionTests {
 struct DictationEventMappingTests {
 
     @Test func resultMapsToReplaceFinalTranscript() {
-        let event = mapServerMessage(.result(text: "Hello world", version: 1))
+        let event = mapServerMessage(.result(text: "Hello world", snap: false))
         #expect(event == .replaceFinalTranscript("Hello world"))
     }
 
@@ -221,8 +213,8 @@ struct DictationEventMappingTests {
         switch message {
         case .ready:
             return nil  // ready is handled at connection level, not as a session event
-        case .result(let text, _):
-            return .replaceFinalTranscript(text)
+        case .result(let text, let snap):
+            return .replaceFinalTranscript(text, snap: snap)
         case .final_(let text, _, _):
             return text.isEmpty ? nil : .replaceFinalTranscript(text)
         case .error(_, let fatal):
@@ -351,7 +343,9 @@ struct DictationCrashRegressionTests {
 
 private struct MockSystemAccess: VoiceInputSystemAccessing {
     let hasPermissions: Bool
+    var hasMicPermission: Bool { hasPermissions }
     func requestPermissions() async -> Bool { hasPermissions }
+    func requestMicPermission() async -> Bool { hasPermissions }
     func activateAudioSession() throws {}
     func deactivateAudioSession() {}
 }
@@ -365,10 +359,12 @@ extension VoiceSessionEvent: @retroactive Equatable {
             return a == b
         case (.appendFinalTranscript(let a), .appendFinalTranscript(let b)):
             return a == b
-        case (.replaceFinalTranscript(let a), .replaceFinalTranscript(let b)):
-            return a == b
+        case (.replaceFinalTranscript(let a, let snapA), .replaceFinalTranscript(let b, let snapB)):
+            return a == b && snapA == snapB
         case (.remoteChunkTelemetry, .remoteChunkTelemetry):
             return true  // approximate for testing
+        case (.providerMetricTags(let a), .providerMetricTags(let b)):
+            return a == b
         default:
             return false
         }

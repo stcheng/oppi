@@ -85,7 +85,7 @@ final class VoiceInputSessionMonitor {
             return "volatile"
         case .appendFinalTranscript, .replaceFinalTranscript:
             return "final"
-        case .remoteChunkTelemetry:
+        case .remoteChunkTelemetry, .providerMetricTags:
             return nil
         }
     }
