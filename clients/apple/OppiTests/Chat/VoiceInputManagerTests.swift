@@ -607,7 +607,7 @@ struct VoiceInputManagerTests {
         #expect(manager.activeEngine == nil)
     }
 
-    @Test func resultsStreamFailureTransitionsToError() async throws {
+    @Test func resultsStreamFailureTransitionsToErrorAndCleansUpSession() async throws {
         resetVoicePreferences()
         defer { resetVoicePreferences() }
 
@@ -622,14 +622,18 @@ struct VoiceInputManagerTests {
         )
 
         try await manager.startRecording(source: "test")
+        session.yieldEvent(.replaceFinalTranscript("hello"))
         session.finishEvents(throwing: TestVoiceError("stream blew up"))
 
         #expect(await waitForMainActorCondition {
-            if case .error("Transcription failed") = manager.state {
+            if case .error("stream blew up") = manager.state {
                 return true
             }
             return false
         })
+        #expect(systemAccess.deactivateAudioSessionCallCount == 1)
+        #expect(manager.currentTranscript.isEmpty)
+        #expect(manager.activeEngine == nil)
     }
 
     @Test func startRecordingFailureCleansUpAudioSessionAndRethrows() async {

@@ -91,6 +91,14 @@ final class ServerConnection {
     /// Test seam: observe refresh breadcrumbs emitted by list refresh paths.
     var _onRefreshBreadcrumbForTesting: ((_ message: String, _ metadata: [String: String], _ level: ClientLogLevel) -> Void)?
 
+    // periphery:ignore - used by OppiDictationProviderTests via @testable import
+    /// Test seam: override dictation control sends without a live WebSocket.
+    var _sendDictationForTesting: ((ClientMessage) async throws -> Void)?
+
+    // periphery:ignore - used by OppiDictationProviderTests via @testable import
+    /// Test seam: override dictation audio sends without a live WebSocket.
+    var _sendDictationAudioForTesting: ((Data) async throws -> Void)?
+
     // Extension UI
     var activeExtensionDialog: ExtensionUIRequest?
     var extensionToast: String?
@@ -810,12 +818,20 @@ final class ServerConnection {
 
     /// Send a dictation control message (text frame).
     func sendDictation(_ message: ClientMessage) async throws {
+        if let _sendDictationForTesting {
+            try await _sendDictationForTesting(message)
+            return
+        }
         guard let wsClient else { throw WebSocketError.notConnected }
         try await wsClient.send(message)
     }
 
     /// Send raw PCM audio as a binary WebSocket frame.
     func sendDictationAudio(_ data: Data) async throws {
+        if let _sendDictationAudioForTesting {
+            try await _sendDictationAudioForTesting(data)
+            return
+        }
         guard let wsClient else { throw WebSocketError.notConnected }
         try await wsClient.sendBinary(data)
     }

@@ -686,19 +686,9 @@ final class VoiceInputManager {
             },
             onError: { [weak self] error in
                 guard let self else { return }
-                logger.error("Results stream error: \(error.localizedDescription)")
-                self.recordDictationCountMetric(
-                    .dictationError,
-                    value: 1,
-                    annotation: metricAnnotation,
-                    status: "error",
-                    extraTags: [
-                        "phase": "stream",
-                        "error_kind": Self.metricErrorKind(for: error),
-                    ]
-                )
-                self.state = .error("Transcription failed")
-                self.scheduleErrorReset()
+                Task { @MainActor [weak self] in
+                    await self?.handleSessionStreamError(error, annotation: metricAnnotation)
+                }
             }
         )
 
@@ -787,6 +777,29 @@ final class VoiceInputManager {
         await sessionMonitor.cancel()
         deactivateAudioSession()
         teardownSession()
+    }
+
+    private func handleSessionStreamError(
+        _ error: Error,
+        annotation: VoiceMetricAnnotation
+    ) async {
+        logger.error("Results stream error: \(error.localizedDescription, privacy: .public)")
+        recordDictationCountMetric(
+            .dictationError,
+            value: 1,
+            annotation: annotation,
+            status: "error",
+            extraTags: [
+                "phase": "stream",
+                "error_kind": Self.metricErrorKind(for: error),
+            ]
+        )
+
+        await sessionMonitor.cancel()
+        deactivateAudioSession()
+        teardownSession()
+        state = .error(userFacingErrorMessage(for: error))
+        scheduleErrorReset()
     }
 
     private func scheduleErrorReset() {

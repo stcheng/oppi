@@ -198,10 +198,20 @@ final class OppiDictationSession: VoiceTranscriptionSession {
                 return
             }
 
-            // Server is ready — pipe all audio (buffered + live) as binary frames
+            // Server is ready — pipe all audio (buffered + live) as binary frames.
+            // Surface send failures instead of swallowing them so the manager can
+            // stop recording and show a real error when the WS drops mid-dictation.
             for await chunk in audioStream {
                 guard !Task.isCancelled else { break }
-                try? await connection.sendDictationAudio(chunk)
+                do {
+                    try await connection.sendDictationAudio(chunk)
+                } catch is CancellationError {
+                    return
+                } catch {
+                    logger.error("Failed to send dictation audio: \(error.localizedDescription, privacy: .public)")
+                    eventContinuation.finish(throwing: Self.surfacedDisconnectError(for: error))
+                    return
+                }
             }
         }
     }
@@ -275,9 +285,27 @@ final class OppiDictationSession: VoiceTranscriptionSession {
                 }
             }
 
-            // Stream ended without dictation_final (WS dropped, etc.)
-            self?.eventContinuation.finish()
+            guard let self else { return }
+            if Task.isCancelled {
+                return
+            }
+
+            // Stream ended without dictation_final (WS dropped, provider routing ended, etc.).
+            logger.error("Dictation message stream ended before final transcript")
+            self.eventContinuation.finish(throwing: Self.disconnectError())
         }
+    }
+
+    private nonisolated static func disconnectError() -> VoiceInputError {
+        .internalError("Dictation connection lost")
+    }
+
+    private nonisolated static func surfacedDisconnectError(for error: Error) -> Error {
+        if let wsError = error as? WebSocketError,
+           case .notConnected = wsError {
+            return disconnectError()
+        }
+        return error
     }
 
     private func cleanup() {
@@ -289,6 +317,25 @@ final class OppiDictationSession: VoiceTranscriptionSession {
         audioLevelContinuation.finish()
     }
 }
+
+#if DEBUG
+extension OppiDictationSession {
+    // periphery:ignore - used by OppiDictationProviderTests via @testable import
+    func _startMessageListenerForTesting() {
+        startMessageListener()
+    }
+
+    // periphery:ignore - used by OppiDictationProviderTests via @testable import
+    func _setPendingAudioStreamForTesting(_ stream: AsyncStream<Data>) {
+        pendingAudioStream = stream
+    }
+
+    // periphery:ignore - used by OppiDictationProviderTests via @testable import
+    func _startAudioDrainTaskForTesting() {
+        startAudioDrainTask()
+    }
+}
+#endif
 
 // MARK: - Non-actor audio engine helper
 

@@ -284,6 +284,71 @@ struct OppiDictationProviderTests {
     }
 }
 
+// MARK: - Disconnect Regression Tests
+
+@Suite("Dictation disconnect regression")
+@MainActor
+struct DictationDisconnectRegressionTests {
+
+    @Test func unexpectedMessageStreamEndSurfacesDisconnectError() async {
+        let connection = ServerConnection()
+        let recordingPair = AsyncStream.makeStream(of: ServerMessage.self)
+        let session = OppiDictationSession(
+            connection: connection,
+            readinessTask: Task { nil },
+            messages: recordingPair.stream
+        )
+
+        let errorTask = Task {
+            await consumeStreamError(from: session.events)
+        }
+
+        session._startMessageListenerForTesting()
+        recordingPair.continuation.finish()
+
+        let error = await errorTask.value
+        #expect(error?.localizedDescription == "Dictation connection lost")
+    }
+
+    @Test func audioDrainSendFailureSurfacesDisconnectError() async {
+        let connection = ServerConnection()
+        connection._sendDictationAudioForTesting = { _ in
+            throw WebSocketError.notConnected
+        }
+
+        let recordingPair = AsyncStream.makeStream(of: ServerMessage.self)
+        let audioPair = AsyncStream.makeStream(of: Data.self)
+        let session = OppiDictationSession(
+            connection: connection,
+            readinessTask: Task { nil },
+            messages: recordingPair.stream
+        )
+
+        let errorTask = Task {
+            await consumeStreamError(from: session.events)
+        }
+
+        session._setPendingAudioStreamForTesting(audioPair.stream)
+        session._startAudioDrainTaskForTesting()
+        audioPair.continuation.yield(Data([0x01, 0x02]))
+        audioPair.continuation.finish()
+
+        let error = await errorTask.value
+        #expect(error?.localizedDescription == "Dictation connection lost")
+    }
+
+    private func consumeStreamError(
+        from events: AsyncThrowingStream<VoiceSessionEvent, Error>
+    ) async -> Error? {
+        do {
+            for try await _ in events {}
+            return nil
+        } catch {
+            return error
+        }
+    }
+}
+
 // MARK: - Crash Regression Tests
 
 @Suite("Dictation crash regression")
