@@ -40,14 +40,8 @@ export interface DictationConfig {
   /** Max dictation session duration in seconds (0 = unlimited). */
   maxDurationSec: number;
 
-  /** LLM correction endpoint (OpenAI-compatible /v1/chat/completions). */
+  /** LLM endpoint (OpenAI-compatible /v1/chat/completions). Used by term sheet curation. */
   llmEndpoint: string;
-
-  /** Model for LLM correction. */
-  llmModel: string;
-
-  /** Whether to run LLM correction on finalize. */
-  llmCorrectionEnabled: boolean;
 
   /**
    * Run regex-extracted term sheet candidates through a local LLM to
@@ -63,8 +57,6 @@ export const DEFAULT_DICTATION_CONFIG: DictationConfig = {
   preserveAudio: true,
   maxDurationSec: 0,
   llmEndpoint: "http://localhost:8400",
-  llmModel: "Qwen3.5-122B-A10B-4bit",
-  llmCorrectionEnabled: false,
   termSheetEnabled: true,
   termSheetLlmCurationEnabled: false,
 };
@@ -96,8 +88,6 @@ export interface DictationReadyMessage {
   sttProvider?: string;
   /** STT model identifier. */
   sttModel?: string;
-  /** Whether LLM correction is enabled for finalization. */
-  llmCorrectionEnabled?: boolean;
 }
 
 export interface DictationResultMessage {
@@ -126,13 +116,6 @@ export type DictationServerMessage =
   | DictationFinalMessage
   | DictationErrorMessage;
 
-// ─── Dictionary ───
-
-export interface DictationDictionary {
-  corrections: Record<string, string>;
-  domain_terms: string[];
-}
-
 // ─── Audio metadata (saved alongside FLAC) ───
 
 export interface DictationAudioMetadata {
@@ -152,11 +135,11 @@ export interface DictationAudioMetadata {
     finalSttMs: number;
     /** Real-time factor for final STT (sttMs / audioDurationMs). <1.0 = faster than real-time. */
     sttRealTimeFactor: number;
-    /** LLM correction call latency in ms (0 if disabled or skipped). */
-    llmCorrectionMs: number;
+    /** Batch retranscription latency in ms (0 if skipped). */
+    retranscribeMs: number;
     /** Audio save (FLAC encode + write) latency in ms. */
     audioSaveMs: number;
-    /** Total finalize latency in ms (final STT + LLM + save). */
+    /** Total finalize latency in ms (final STT + retranscribe + save). */
     finalizeMs: number;
   };
 }

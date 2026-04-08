@@ -1,7 +1,7 @@
 /**
  * Tests for DictationManager — audio accumulation, WAV encoding,
- * STT provider integration (streaming + HTTP adapter), LLM correction,
- * dictionary merge, and error handling.
+ * STT provider integration (streaming), batch retranscription,
+ * and error handling.
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
@@ -9,7 +9,6 @@ import {
   DictationManager,
   encodeFlac,
   encodeWav,
-  extractJsonFromResponse,
   type DictationSendFn,
 } from "./dictation-manager.js";
 
@@ -25,8 +24,6 @@ function testConfig(overrides: Partial<DictationConfig> = {}): DictationConfig {
     preserveAudio: false,
     maxDurationSec: 300,
     llmEndpoint: "http://localhost:8400",
-    llmModel: "test-llm",
-    llmCorrectionEnabled: false,
     ...overrides,
   };
 }
@@ -101,15 +98,49 @@ function failingSttProvider(error: string) {
   return Object.assign(provider, { start: startFn, feedAudio: feedAudioFn, stop: stopFn });
 }
 
-/** Create a mock fetch that handles LLM correction calls only. */
-function mockLlmFetch(llmResponse: Record<string, unknown>): typeof globalThis.fetch {
-  return vi.fn().mockResolvedValue({
-    ok: true,
-    json: async () => ({
-      choices: [{ message: { content: JSON.stringify(llmResponse) } }],
-    }),
-    text: async () => "",
-  }) as unknown as typeof globalThis.fetch;
+/**
+ * Create a mock SttProvider with retranscribe support.
+ * Returns a different text via retranscribe than the streaming stop().
+ */
+// eslint-disable-next-line @typescript-eslint/explicit-function-return-type
+function mockSttProviderWithRetranscribe(
+  streamingTokens: string[],
+  retranscribeResult: string | null,
+) {
+  let tokenCb: ((text: string) => void) | null = null;
+  const accumulated = streamingTokens.join(" ");
+
+  const startFn = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
+  const feedAudioFn = vi.fn<(pcm: Buffer) => void>();
+  const stopFn = vi.fn<() => Promise<string>>().mockResolvedValue(accumulated);
+  const retranscribeFn = vi
+    .fn<(pcm: Buffer) => Promise<string | null>>()
+    .mockResolvedValue(retranscribeResult);
+
+  const provider: SttProvider & { _fireTokens: () => void } = {
+    name: "mock",
+    model: "mock-model",
+    start: startFn,
+    feedAudio: feedAudioFn,
+    onToken(cb: (text: string) => void) {
+      tokenCb = cb;
+    },
+    stop: stopFn,
+    retranscribe: retranscribeFn,
+    _fireTokens() {
+      let running = "";
+      for (const t of streamingTokens) {
+        running += (running.length > 0 ? " " : "") + t;
+        tokenCb?.(running);
+      }
+    },
+  };
+  return Object.assign(provider, {
+    start: startFn,
+    feedAudio: feedAudioFn,
+    stop: stopFn,
+    retranscribe: retranscribeFn,
+  });
 }
 
 // ─── Unit tests for standalone utilities ───
@@ -191,31 +222,7 @@ describe("encodeFlac", () => {
   });
 });
 
-describe("extractJsonFromResponse", () => {
-  it("extracts from markdown code fence", () => {
-    const input = '```json\n{"corrected": "hello"}\n```';
-    expect(JSON.parse(extractJsonFromResponse(input))).toEqual({ corrected: "hello" });
-  });
-
-  it("extracts from bare code fence", () => {
-    const input = '```\n{"corrected": "hello"}\n```';
-    expect(JSON.parse(extractJsonFromResponse(input))).toEqual({ corrected: "hello" });
-  });
-
-  it("extracts JSON object from mixed text", () => {
-    const input = 'Here is the result:\n{"corrected": "hello", "new_terms": []}';
-    expect(JSON.parse(extractJsonFromResponse(input))).toEqual({
-      corrected: "hello",
-      new_terms: [],
-    });
-  });
-
-  it("returns raw string when no JSON found", () => {
-    expect(extractJsonFromResponse("no json here")).toBe("no json here");
-  });
-});
-
-// ─── DictationManager with streaming provider (native path) ───
+// ─── DictationManager with streaming provider ───
 
 describe("DictationManager", () => {
   let manager: DictationManager;
@@ -248,7 +255,6 @@ describe("DictationManager", () => {
       const ready = messagesOfType(sent, "dictation_ready")[0];
       expect(ready.sttProvider).toBe("mock");
       expect(ready.sttModel).toBe("mock-model");
-      expect(ready.llmCorrectionEnabled).toBe(false);
     });
 
     it("calls start() on dictation_start", async () => {
@@ -426,21 +432,10 @@ describe("DictationManager", () => {
     });
   });
 
-  describe("LLM correction", () => {
-    it("applies LLM correction on finalize when enabled", async () => {
-      const llmResponse = {
-        corrected: "Hello World",
-        new_corrections: [{ original: "hello world", corrected: "Hello World" }],
-        new_terms: [],
-      };
-      const sp = mockSttProvider(["hello", "world"]);
-      const llmFetch = mockLlmFetch(llmResponse);
-      const mgr = new DictationManager(
-        testConfig({ llmCorrectionEnabled: true }),
-        "/tmp/test",
-        sp,
-        llmFetch,
-      );
+  describe("batch retranscription", () => {
+    it("uses retranscribed text when provider supports it", async () => {
+      const sp = mockSttProviderWithRetranscribe(["hello", "wrold"], "Hello World");
+      const mgr = new DictationManager(testConfig(), "/tmp/test", sp);
       const mgrSent: DictationServerMessage[] = [];
       const mgrSendFn: DictationSendFn = (msg) => {
         mgrSent.push(msg);
@@ -456,21 +451,13 @@ describe("DictationManager", () => {
       const finals = messagesOfType(mgrSent, "dictation_final");
       expect(finals).toHaveLength(1);
       expect(finals[0].text).toBe("Hello World");
-      expect(finals[0].uncorrected).toBe("hello world");
+      expect(finals[0].uncorrected).toBe("hello wrold");
+      expect(sp.retranscribe).toHaveBeenCalledTimes(1);
     });
 
-    it("falls back to raw ASR text when LLM fails", async () => {
-      const failLlmFetch = vi
-        .fn()
-        .mockRejectedValue(new Error("LLM timeout")) as unknown as typeof globalThis.fetch;
-
-      const sp = mockSttProvider(["raw", "asr", "text"]);
-      const mgr = new DictationManager(
-        testConfig({ llmCorrectionEnabled: true }),
-        "/tmp/test",
-        sp,
-        failLlmFetch,
-      );
+    it("falls back to streaming text when retranscribe returns null", async () => {
+      const sp = mockSttProviderWithRetranscribe(["raw", "asr", "text"], null);
+      const mgr = new DictationManager(testConfig(), "/tmp/test", sp);
       const mgrSent: DictationServerMessage[] = [];
       const mgrSendFn: DictationSendFn = (msg) => {
         mgrSent.push(msg);
@@ -489,36 +476,10 @@ describe("DictationManager", () => {
       expect(finals[0].uncorrected).toBeUndefined();
     });
 
-    it("skips LLM when disabled", async () => {
-      manager.handleControlMessage({ type: "dictation_start" }, sendFn);
-      await drain();
-      manager.handleAudioData(silencePcm(1000));
-      manager.handleControlMessage({ type: "dictation_stop" }, sendFn);
-      vi.advanceTimersByTime(10);
-      await drain();
-
-      const finals = messagesOfType(sent, "dictation_final");
-      expect(finals).toHaveLength(1);
-      expect(finals[0].text).toBe("hello world");
-      expect(finals[0].uncorrected).toBeUndefined();
-    });
-
-    it("handles LLM returning non-JSON gracefully", async () => {
-      const badLlmFetch = vi.fn().mockResolvedValue({
-        ok: true,
-        json: async () => ({
-          choices: [{ message: { content: "I cannot help with that" } }],
-        }),
-        text: async () => "",
-      }) as unknown as typeof globalThis.fetch;
-
-      const sp = mockSttProvider(["raw", "text"]);
-      const mgr = new DictationManager(
-        testConfig({ llmCorrectionEnabled: true }),
-        "/tmp/test",
-        sp,
-        badLlmFetch,
-      );
+    it("falls back to streaming text when retranscribe throws", async () => {
+      const sp = mockSttProviderWithRetranscribe(["raw", "text"], "never used");
+      sp.retranscribe.mockRejectedValue(new Error("network error"));
+      const mgr = new DictationManager(testConfig(), "/tmp/test", sp);
       const mgrSent: DictationServerMessage[] = [];
       const mgrSendFn: DictationSendFn = (msg) => {
         mgrSent.push(msg);
@@ -534,6 +495,43 @@ describe("DictationManager", () => {
       const finals = messagesOfType(mgrSent, "dictation_final");
       expect(finals).toHaveLength(1);
       expect(finals[0].text).toBe("raw text");
+      expect(finals[0].uncorrected).toBeUndefined();
+    });
+
+    it("skips retranscription when provider does not have the method", async () => {
+      // Default mockSttProvider has no retranscribe method
+      manager.handleControlMessage({ type: "dictation_start" }, sendFn);
+      await drain();
+      manager.handleAudioData(silencePcm(1000));
+      manager.handleControlMessage({ type: "dictation_stop" }, sendFn);
+      vi.advanceTimersByTime(10);
+      await drain();
+
+      const finals = messagesOfType(sent, "dictation_final");
+      expect(finals).toHaveLength(1);
+      expect(finals[0].text).toBe("hello world");
+      expect(finals[0].uncorrected).toBeUndefined();
+    });
+
+    it("keeps streaming text when retranscribe returns same text", async () => {
+      const sp = mockSttProviderWithRetranscribe(["hello", "world"], "hello world");
+      const mgr = new DictationManager(testConfig(), "/tmp/test", sp);
+      const mgrSent: DictationServerMessage[] = [];
+      const mgrSendFn: DictationSendFn = (msg) => {
+        mgrSent.push(msg);
+      };
+
+      mgr.handleControlMessage({ type: "dictation_start" }, mgrSendFn);
+      await drain();
+      mgr.handleAudioData(silencePcm(1000));
+      mgr.handleControlMessage({ type: "dictation_stop" }, mgrSendFn);
+      vi.advanceTimersByTime(10);
+      await drain();
+
+      const finals = messagesOfType(mgrSent, "dictation_final");
+      expect(finals).toHaveLength(1);
+      expect(finals[0].text).toBe("hello world");
+      expect(finals[0].uncorrected).toBeUndefined();
     });
   });
 });

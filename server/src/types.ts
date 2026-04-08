@@ -258,7 +258,7 @@ export interface ServerConfig {
 
   /**
    * ASR / dictation pipeline configuration. Controls the /dictation WS endpoint,
-   * STT backend, LLM correction, and audio preservation.
+   * STT backend, batch retranscription, and audio preservation.
    */
   asr?: {
     sttEndpoint?: string;
@@ -267,8 +267,6 @@ export interface ServerConfig {
     preserveAudio?: boolean;
     maxDurationSec?: number;
     llmEndpoint?: string;
-    llmModel?: string;
-    llmCorrectionEnabled?: boolean;
     termSheetEnabled?: boolean;
     termSheetExtraFiles?: string[];
     termSheetExtraDirs?: string[];
@@ -1255,7 +1253,6 @@ export type ServerMessage = // ── Connection ──
         type: "dictation_ready";
         sttProvider?: string;
         sttModel?: string;
-        llmCorrectionEnabled?: boolean;
       }
     | { type: "dictation_result"; text: string; snap?: boolean }
     | { type: "dictation_final"; text: string; uncorrected?: string; audioId?: string }

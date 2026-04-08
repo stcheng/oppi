@@ -14,12 +14,11 @@ struct DictationServerMessageDecodingTests {
     }
 
     @Test func decodesReadyWithProviderInfo() throws {
-        let json = #"{"type":"dictation_ready","sttProvider":"mlx-server","sttModel":"Qwen3-ASR-1.7B","llmCorrectionEnabled":true}"#
+        let json = #"{"type":"dictation_ready","sttProvider":"mlx-server","sttModel":"Qwen3-ASR-1.7B"}"#
         let message = try decode(json)
         let expected = DictationProviderInfo(
             sttProvider: "mlx-server",
-            sttModel: "Qwen3-ASR-1.7B",
-            llmCorrectionEnabled: true
+            sttModel: "Qwen3-ASR-1.7B"
         )
         #expect(message == .dictationReady(provider: expected))
     }

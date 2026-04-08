@@ -270,8 +270,6 @@ describe("Storage config validation", () => {
         preserveAudio: false,
         maxDurationSec: 120,
         llmEndpoint: "http://localhost:8400",
-        llmModel: "gpt-4o",
-        llmCorrectionEnabled: true,
       },
     };
 
@@ -281,8 +279,6 @@ describe("Storage config validation", () => {
     expect(result.config?.asr?.preserveAudio).toBe(false);
     expect(result.config?.asr?.maxDurationSec).toBe(120);
     expect(result.config?.asr?.llmEndpoint).toBe("http://localhost:8400");
-    expect(result.config?.asr?.llmModel).toBe("gpt-4o");
-    expect(result.config?.asr?.llmCorrectionEnabled).toBe(true);
   });
 
   it("omits asr when not present in config", () => {

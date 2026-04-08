@@ -40,8 +40,10 @@ The server distinguishes dictation traffic by message type.
 2. The server creates a stateful streaming session on the STT backend.
 3. Audio is fed in ~2s chunks; each returns an updated transcript.
 4. Interim results stream back to the phone (typewriter animation).
-5. On `dictation_stop`, the server gets final text, optionally runs LLM
-   correction, and saves the audio as FLAC.
+5. On `dictation_stop`, the server gets final text from the streaming
+   session, then retranscribes the full audio through the batch model
+   for higher accuracy. The streaming text is used as fallback if
+   retranscription fails. Audio is saved as FLAC.
 
 ### STT Backend
 
@@ -77,17 +79,6 @@ Edit `~/.config/oppi/config.json`, then restart the server (`kill $(lsof -ti:774
 | `preserveAudio` | `true` | Save audio as FLAC on the server |
 | `maxDurationSec` | `0` | Max session length in seconds (0 = unlimited) |
 
-### LLM Correction
-
-Post-transcription LLM pass that fixes ASR errors using domain context
-(e.g. "queen three point five" → "Qwen3.5").
-
-| Field | Default | Description |
-|-------|---------|-------------|
-| `llmCorrectionEnabled` | `false` | Enable LLM correction on finalize |
-| `llmEndpoint` | `http://localhost:8400` | OpenAI-compatible `/v1/chat/completions` endpoint |
-| `llmModel` | `Qwen3.5-122B-A10B-4bit` | Model for correction |
-
 ### Term Sheets
 
 Automatically extracts domain-specific terms (proper nouns, project names,
@@ -110,7 +101,6 @@ model's system prompt. Improves accuracy at zero latency cost.
     "sttEndpoint": "http://localhost:9748",
     "sttModel": "mlx-community/Qwen3-ASR-1.7B-bf16",
     "preserveAudio": true,
-    "llmCorrectionEnabled": true,
     "termSheetEnabled": true
   }
 }
@@ -131,6 +121,14 @@ regardless of which models the backend uses internally.
 
 The result: fast typewriter feedback while speaking, accurate final text
 after each pause.
+
+### Batch Retranscription on Finalize
+
+When the user stops recording, the server sends the full accumulated audio
+to the STT backend for a clean batch retranscription. This produces more
+accurate final text than the last streaming partial, since the batch model
+processes the entire utterance in a single pass with full context. The
+streaming text is kept as fallback if retranscription fails.
 
 ## Performance
 

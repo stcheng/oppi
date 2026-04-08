@@ -9,7 +9,6 @@ import Foundation
 struct DictationProviderInfo: Sendable, Equatable {
     let sttProvider: String
     let sttModel: String
-    let llmCorrectionEnabled: Bool
 }
 
 enum ServerMessage: Sendable, Equatable {
@@ -163,7 +162,7 @@ extension ServerMessage: Decodable {
         // git_status
         case workspaceId, status
         // dictation
-        case sttProvider, sttModel, llmCorrectionEnabled
+        case sttProvider, sttModel
         case text, snap, uncorrected, audioId
     }
 
@@ -370,13 +369,11 @@ extension ServerMessage: Decodable {
         case "dictation_ready":
             let providerName = try c.decodeIfPresent(String.self, forKey: .sttProvider)
             let model = try c.decodeIfPresent(String.self, forKey: .sttModel)
-            let llmEnabled = try c.decodeIfPresent(Bool.self, forKey: .llmCorrectionEnabled)
             let info: DictationProviderInfo?
             if let providerName, let model {
                 info = DictationProviderInfo(
                     sttProvider: providerName,
-                    sttModel: model,
-                    llmCorrectionEnabled: llmEnabled ?? false
+                    sttModel: model
                 )
             } else {
                 info = nil

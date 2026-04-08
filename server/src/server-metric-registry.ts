@@ -202,14 +202,14 @@ export const SERVER_METRIC_REGISTRY = {
     description:
       "Real-time factor: STT latency / audio duration. <1.0 means faster than real-time. Tagged by phase.",
   },
-  "server.dictation_llm_correction_ms": {
+  "server.dictation_retranscribe_ms": {
     unit: "ms",
-    description: "LLM correction call latency. Tagged by changed (true/false), model.",
+    description: "Batch retranscription latency on finalize. Tagged by changed (true/false).",
   },
   "server.dictation_finalize_ms": {
     unit: "ms",
     description:
-      "Total finalize duration (final STT + LLM correction + audio save). Tagged by language.",
+      "Total finalize duration (final STT + retranscribe + audio save). Tagged by language.",
   },
   "server.dictation_audio_save_ms": {
     unit: "ms",
@@ -226,7 +226,7 @@ export const SERVER_METRIC_REGISTRY = {
   },
   "server.dictation_error": {
     unit: "count",
-    description: "Dictation errors. Tagged by phase (stt, llm, save), fatal (true/false).",
+    description: "Dictation errors. Tagged by phase (stt, retranscribe, save), fatal (true/false).",
   },
 } as const satisfies Readonly<Record<string, ServerMetricDefinition>>;
 

@@ -34,6 +34,13 @@ export interface SttProvider {
   dispose?(): Promise<void>;
   /** Update the ASR system prompt (e.g. domain term sheet). */
   setSystemPrompt?(prompt: string | undefined): void;
+  /**
+   * Retranscribe full audio through the batch model.
+   * Creates a separate session, feeds all audio at once, and returns
+   * the batch result. Returns null on failure (caller should fall back
+   * to the streaming final text).
+   */
+  retranscribe?(pcm: Buffer): Promise<string | null>;
 }
 
 // ─── Streaming Session Provider ───
@@ -211,6 +218,54 @@ export class StreamingSttProvider implements SttProvider {
       this.warmSessionId = null;
     }
     await Promise.allSettled(promises);
+  }
+
+  /**
+   * Retranscribe full audio through the batch model.
+   * Creates a disposable session, feeds all PCM in one shot, then
+   * DELETEs to get the final text. Independent of the main streaming
+   * session — safe to call after stop().
+   */
+  async retranscribe(pcm: Buffer): Promise<string | null> {
+    let sessionId: string | null = null;
+    try {
+      // 1. Create a one-shot session
+      const createRes = await this.fetchFn(this.basePath, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: this.sessionCreateBody(),
+        signal: AbortSignal.timeout(10_000),
+      });
+      if (!createRes.ok) return null;
+      const createData = (await createRes.json()) as { session_id?: string };
+      sessionId = createData.session_id ?? null;
+      if (!sessionId) return null;
+
+      // 2. Feed all audio as a single chunk
+      const feedRes = await this.fetchFn(`${this.basePath}/${sessionId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/octet-stream" },
+        body: new Uint8Array(pcm),
+        signal: AbortSignal.timeout(30_000),
+      });
+      if (!feedRes.ok) {
+        void this.deleteSession(sessionId);
+        return null;
+      }
+
+      // 3. DELETE to finalize and get the batch result
+      const delRes = await this.fetchFn(`${this.basePath}/${sessionId}`, {
+        method: "DELETE",
+        signal: AbortSignal.timeout(30_000),
+      });
+      if (!delRes.ok) return null;
+      const delData = (await delRes.json()) as { text?: string };
+      return (delData.text ?? "").trim() || null;
+    } catch (err) {
+      console.warn("[stt] Retranscribe failed:", err instanceof Error ? err.message : String(err));
+      if (sessionId) void this.deleteSession(sessionId);
+      return null;
+    }
   }
 
   /** Detect if the sidecar returned our system prompt text instead of a real transcript. */

@@ -3,7 +3,7 @@
  *
  * Handles per-connection lifecycle: audio accumulation for FLAC
  * preservation, forwarding audio to the SttProvider, relaying transcript
- * updates to the client, optional LLM post-correction, and audio archival.
+ * updates to the client, optional batch retranscription, and audio archival.
  *
  * All STT providers implement the same streaming interface (SttProvider).
  * DictationManager has one code path — no branching on provider type.
@@ -17,7 +17,6 @@ import type {
   DictationConfig,
   DictationClientMessage,
   DictationServerMessage,
-  DictationDictionary,
   DictationAudioMetadata,
 } from "./dictation-types.js";
 import type { SttProvider } from "./stt-provider.js";
@@ -110,14 +109,8 @@ export type DictationSendFn = (msg: DictationServerMessage) => void;
 export class DictationManager {
   private config: DictationConfig;
   private dataDir: string;
-  private dictionary: DictationDictionary = { corrections: {}, domain_terms: [] };
-  private dictionaryPath: string;
-  private dictionaryLoaded = false;
 
   private sttProvider: SttProvider;
-
-  /** Injected fetch — used for LLM correction calls. */
-  private fetchFn: typeof globalThis.fetch;
 
   /** Optional metrics collector for pipeline telemetry. */
   private metrics: ServerMetricCollector | null;
@@ -132,14 +125,11 @@ export class DictationManager {
     config: DictationConfig,
     dataDir: string,
     sttProvider: SttProvider,
-    fetchFn: typeof globalThis.fetch = globalThis.fetch,
     metrics?: ServerMetricCollector,
   ) {
     this.config = config;
     this.dataDir = dataDir;
-    this.dictionaryPath = join(dataDir, "dictation", "dictionary.json");
     this.sttProvider = sttProvider;
-    this.fetchFn = fetchFn;
     this.metrics = metrics ?? null;
   }
 
@@ -240,8 +230,6 @@ export class DictationManager {
   // ─── Session lifecycle ───
 
   private startSession(): void {
-    void this.ensureDictionary();
-
     // Start the STT provider (async — validates backend is reachable).
     // Only send dictation_ready after the session is confirmed.
     void this.startSttAndSignalReady();
@@ -268,7 +256,6 @@ export class DictationManager {
       type: "dictation_ready",
       sttProvider: this.sttProvider.name,
       sttModel: this.sttProvider.model,
-      llmCorrectionEnabled: this.config.llmCorrectionEnabled,
     });
 
     // Forward transcript updates to the client
@@ -347,42 +334,40 @@ export class DictationManager {
       return;
     }
 
-    // Optional LLM correction
+    // Optional batch retranscription — send full audio to the ASR batch model
+    // for a clean single-pass transcription (more accurate than streaming).
     let uncorrected: string | undefined;
-    let llmCorrectionMs = 0;
-    if (this.config.llmCorrectionEnabled && text.trim().length > 0) {
-      const llmT0 = performance.now();
+    let retranscribeMs = 0;
+    if (this.sttProvider.retranscribe && text.trim().length > 0) {
+      const retranscribeT0 = performance.now();
       try {
-        const corrected = await this.correctWithLlm(text);
-        llmCorrectionMs = Math.round(performance.now() - llmT0);
-        const changed = corrected !== null && corrected !== undefined && corrected !== text;
+        const pcm = session.audioBuffer.subarray(0, session.totalBytes);
+        const retranscribed = await this.sttProvider.retranscribe(pcm);
+        retranscribeMs = Math.round(performance.now() - retranscribeT0);
+        const changed = retranscribed !== null && retranscribed !== text;
         this.metrics?.record(
-          "server.dictation_llm_correction_ms",
-          llmCorrectionMs,
-          this.metricTags({
-            changed: String(changed),
-            llm_model: this.config.llmModel,
-            language: langTag,
-          }),
+          "server.dictation_retranscribe_ms",
+          retranscribeMs,
+          this.metricTags({ changed: String(changed), language: langTag }),
         );
-        if (changed) {
+        if (changed && retranscribed) {
           uncorrected = text;
-          text = corrected;
+          text = retranscribed;
         }
       } catch (err) {
-        llmCorrectionMs = Math.round(performance.now() - llmT0);
+        retranscribeMs = Math.round(performance.now() - retranscribeT0);
         this.metrics?.record(
           "server.dictation_error",
           1,
-          this.metricTags({ phase: "llm", fatal: "false", error_kind: "llm", language: langTag }),
-        );
-        this.metrics?.record(
-          "server.dictation_llm_correction_ms",
-          llmCorrectionMs,
-          this.metricTags({ changed: "error", llm_model: this.config.llmModel, language: langTag }),
+          this.metricTags({
+            phase: "retranscribe",
+            fatal: "false",
+            error_kind: "retranscribe",
+            language: langTag,
+          }),
         );
         console.warn(
-          "[dictation] LLM correction failed, using raw ASR:",
+          "[dictation] Retranscription failed, using streaming text:",
           err instanceof Error ? err.message : err,
         );
       }
@@ -399,7 +384,7 @@ export class DictationManager {
         sessionMs,
         finalSttMs,
         sttRealTimeFactor: sttRtf,
-        llmCorrectionMs,
+        retranscribeMs,
         audioSaveMs: 0,
         finalizeMs: 0,
       };
@@ -445,111 +430,6 @@ export class DictationManager {
       model: this.sttProvider.model,
       ...extra,
     };
-  }
-
-  // ─── LLM correction ───
-
-  async correctWithLlm(rawText: string): Promise<string | null> {
-    const dictTerms =
-      Object.entries(this.dictionary.corrections)
-        .map(([from, to]) => `"${from}" -> "${to}"`)
-        .concat(this.dictionary.domain_terms.map((t) => `"${t}"`))
-        .join(", ") || "none";
-
-    const prompt = [
-      "Fix ASR errors only. Never censor, rephrase, or remove profanity. Preserve all languages verbatim.",
-      "Return JSON: {corrected, new_corrections: [{original, corrected}], new_terms: []}",
-      `Dictionary: ${dictTerms}`,
-      `Raw: "${rawText}"`,
-    ].join("\n");
-
-    const url = `${this.config.llmEndpoint}/v1/chat/completions`;
-    const response = await this.fetchFn(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: this.config.llmModel,
-        chat_template_kwargs: { enable_thinking: false },
-        messages: [{ role: "user", content: prompt }],
-        temperature: 0,
-      }),
-      signal: AbortSignal.timeout(60_000),
-    });
-
-    if (!response.ok) {
-      const body = await response.text().catch(() => "");
-      throw new Error(`LLM HTTP ${response.status}: ${body}`);
-    }
-
-    const completion = (await response.json()) as {
-      choices?: Array<{ message?: { content?: string } }>;
-    };
-    const content = completion.choices?.[0]?.message?.content;
-    if (!content) return null;
-
-    const jsonStr = extractJsonFromResponse(content);
-    let parsed: {
-      corrected?: string;
-      new_corrections?: Array<{ original: string; corrected: string }>;
-      new_terms?: string[];
-    };
-    try {
-      parsed = JSON.parse(jsonStr);
-    } catch {
-      console.warn("[dictation] LLM returned non-JSON:", content.slice(0, 200));
-      return null;
-    }
-
-    if (parsed.new_corrections?.length || parsed.new_terms?.length) {
-      if (parsed.new_corrections) {
-        for (const c of parsed.new_corrections) {
-          if (c.original && c.corrected) {
-            this.dictionary.corrections[c.original.toLowerCase()] = c.corrected;
-          }
-        }
-      }
-      if (parsed.new_terms) {
-        const existing = new Set(this.dictionary.domain_terms);
-        for (const term of parsed.new_terms) {
-          if (term && !existing.has(term)) {
-            this.dictionary.domain_terms.push(term);
-            existing.add(term);
-          }
-        }
-      }
-      void this.saveDictionary();
-    }
-
-    return typeof parsed.corrected === "string" ? parsed.corrected : null;
-  }
-
-  // ─── Dictionary ───
-
-  private async ensureDictionary(): Promise<void> {
-    if (this.dictionaryLoaded) return;
-    this.dictionaryLoaded = true;
-
-    try {
-      const raw = await readFile(this.dictionaryPath, "utf-8");
-      const parsed = JSON.parse(raw) as DictationDictionary;
-      if (parsed.corrections) this.dictionary.corrections = parsed.corrections;
-      if (parsed.domain_terms) this.dictionary.domain_terms = parsed.domain_terms;
-    } catch {
-      // No dictionary yet — start fresh
-    }
-  }
-
-  private async saveDictionary(): Promise<void> {
-    try {
-      const dir = join(this.dataDir, "dictation");
-      await mkdir(dir, { recursive: true });
-      await writeFile(this.dictionaryPath, JSON.stringify(this.dictionary, null, 2));
-    } catch (err) {
-      console.warn(
-        "[dictation] Failed to save dictionary:",
-        err instanceof Error ? err.message : err,
-      );
-    }
   }
 
   // ─── Audio preservation ───
@@ -605,22 +485,6 @@ export class DictationManager {
 }
 
 // ─── Helpers ───
-
-/**
- * Extract JSON from an LLM response that may be wrapped in markdown code fences.
- */
-export function extractJsonFromResponse(content: string): string {
-  const fenceMatch = content.match(/```(?:json)?\s*\n?([\s\S]*?)\n?\s*```/);
-  if (fenceMatch) return fenceMatch[1].trim();
-
-  const braceStart = content.indexOf("{");
-  const braceEnd = content.lastIndexOf("}");
-  if (braceStart !== -1 && braceEnd > braceStart) {
-    return content.slice(braceStart, braceEnd + 1);
-  }
-
-  return content;
-}
 
 /**
  * Encode WAV buffer to FLAC via ffmpeg subprocess.

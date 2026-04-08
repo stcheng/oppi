@@ -430,7 +430,6 @@ export class Server {
         asrConfig,
         dataDir,
         sttProvider,
-        globalThis.fetch,
         this.opsMetrics,
       );
 

@@ -186,7 +186,6 @@ final class OppiDictationSession: VoiceTranscriptionSession {
                     eventContinuation.yield(.providerMetricTags([
                         "stt_backend": info.sttProvider,
                         "model": info.sttModel,
-                        "llm_correction": info.llmCorrectionEnabled ? "1" : "0",
                     ]))
                 }
             } catch is CancellationError {

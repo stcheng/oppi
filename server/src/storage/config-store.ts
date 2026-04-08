@@ -705,8 +705,6 @@ function normalizeConfig(
       "preserveAudio",
       "maxDurationSec",
       "llmEndpoint",
-      "llmModel",
-      "llmCorrectionEnabled",
       "termSheetEnabled",
       "termSheetExtraFiles",
       "termSheetExtraDirs",
@@ -745,12 +743,6 @@ function normalizeConfig(
     }
     if (typeof asr.llmEndpoint === "string" && asr.llmEndpoint.trim().length > 0) {
       asrConfig.llmEndpoint = asr.llmEndpoint.trim();
-    }
-    if (typeof asr.llmModel === "string" && asr.llmModel.trim().length > 0) {
-      asrConfig.llmModel = asr.llmModel.trim();
-    }
-    if (typeof asr.llmCorrectionEnabled === "boolean") {
-      asrConfig.llmCorrectionEnabled = asr.llmCorrectionEnabled;
     }
     if (typeof asr.termSheetEnabled === "boolean") {
       asrConfig.termSheetEnabled = asr.termSheetEnabled;

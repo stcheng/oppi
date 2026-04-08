@@ -312,7 +312,6 @@ describe("stream dictation routing", () => {
             type: "dictation_ready",
             sttProvider: "test-provider",
             sttModel: "test-model",
-            llmCorrectionEnabled: false,
           });
         },
       );

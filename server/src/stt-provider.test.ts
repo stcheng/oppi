@@ -430,6 +430,100 @@ describe("StreamingSttProvider", () => {
     await expect(provider.dispose()).resolves.toBeUndefined();
   });
 
+  // ─── retranscribe ───
+
+  it("retranscribe: create → feed → delete returns batch text", async () => {
+    let sessionCounter = 0;
+    const { fetchFn, calls } = createMockFetch([
+      { match: isCreate, response: () => jsonResponse({ session_id: `r${++sessionCounter}` })() },
+      { match: isFeed, response: jsonResponse({ text: "partial" }) },
+      { match: isDelete, response: jsonResponse({ text: "batch result" }) },
+    ]);
+
+    const provider = makeProvider(fetchFn);
+    await flush(); // constructor warm-up = r1
+
+    const pcm = Buffer.alloc(32000, 0x42); // 1s of audio
+    const result = await provider.retranscribe(pcm);
+    expect(result).toBe("batch result");
+
+    // Should have created a new session (r2) separate from the warm one (r1)
+    const creates = calls.filter((c) => isCreate(c.url, c.method));
+    expect(creates.length).toBe(2); // warm + retranscribe
+
+    // Feed was called on the retranscribe session
+    const feeds = calls.filter((c) => isFeed(c.url, c.method));
+    expect(feeds.some((c) => c.url === `${STREAM_URL}/r2`)).toBe(true);
+
+    // DELETE was called on the retranscribe session
+    const deletes = calls.filter((c) => isDelete(c.url, c.method));
+    expect(deletes.some((c) => c.url === `${STREAM_URL}/r2`)).toBe(true);
+
+    await provider.dispose();
+  });
+
+  it("retranscribe returns null on create failure", async () => {
+    const { fetchFn } = createMockFetch([{ match: isCreate, response: errorResponse(500) }]);
+
+    const provider = makeProvider(fetchFn);
+    await flush();
+
+    const result = await provider.retranscribe(Buffer.alloc(100));
+    expect(result).toBeNull();
+  });
+
+  it("retranscribe returns null on feed failure and cleans up session", async () => {
+    const { fetchFn, calls } = createMockFetch([
+      { match: isCreate, response: jsonResponse({ session_id: "rt-1" }) },
+      { match: isFeed, response: errorResponse(500) },
+      { match: isDelete, response: jsonResponse({ text: "" }) },
+    ]);
+
+    const provider = makeProvider(fetchFn);
+    await flush();
+
+    const result = await provider.retranscribe(Buffer.alloc(100));
+    expect(result).toBeNull();
+
+    // Session should be cleaned up via DELETE
+    await flush();
+    const deletes = calls.filter((c) => isDelete(c.url, c.method));
+    expect(deletes.some((c) => c.url === `${STREAM_URL}/rt-1`)).toBe(true);
+  });
+
+  it("retranscribe returns null on delete failure", async () => {
+    const { fetchFn } = createMockFetch([
+      { match: isCreate, response: jsonResponse({ session_id: "rt-2" }) },
+      { match: isFeed, response: jsonResponse({ text: "partial" }) },
+      {
+        match: isDelete,
+        response: () => {
+          throw new Error("timeout");
+        },
+      },
+    ]);
+
+    const provider = makeProvider(fetchFn);
+    await flush();
+
+    const result = await provider.retranscribe(Buffer.alloc(100));
+    expect(result).toBeNull();
+  });
+
+  it("retranscribe returns null for empty text", async () => {
+    const { fetchFn } = createMockFetch([
+      { match: isCreate, response: jsonResponse({ session_id: "rt-3" }) },
+      { match: isFeed, response: jsonResponse({ text: "" }) },
+      { match: isDelete, response: jsonResponse({ text: "   " }) },
+    ]);
+
+    const provider = makeProvider(fetchFn);
+    await flush();
+
+    const result = await provider.retranscribe(Buffer.alloc(100));
+    expect(result).toBeNull();
+  });
+
   // Edge: stop returns last known text when DELETE fails
   it("stop returns last text when DELETE fails", async () => {
     const { fetchFn } = createMockFetch([

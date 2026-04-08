@@ -183,7 +183,6 @@ final class OppiDictationProvider: VoiceTranscriptionProvider {
             "model": serverInfo?.sttModel ?? "unknown",
             "transport": "ws",
             "live_preview": "1",
-            "llm_correction": serverInfo?.llmCorrectionEnabled == true ? "1" : "0",
         ]
     }
 
