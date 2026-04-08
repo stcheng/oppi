@@ -213,6 +213,15 @@ export class StreamingSttProvider implements SttProvider {
     await Promise.allSettled(promises);
   }
 
+  /** Detect if the sidecar returned our system prompt text instead of a real transcript. */
+  private isPromptLeak(text: string): boolean {
+    if (!this.systemPrompt) return false;
+    // The prompt starts with "Domain terms and proper nouns".
+    // If the transcript starts with the same prefix, it's a hallucination.
+    const promptPrefix = this.systemPrompt.slice(0, 30);
+    return text.startsWith(promptPrefix);
+  }
+
   // ─── Internal ───
 
   /** Base path for streaming session endpoints. */
@@ -317,7 +326,7 @@ export class StreamingSttProvider implements SttProvider {
       if (res.ok) {
         const data = (await res.json()) as { text?: string; batch_corrected?: boolean };
         const text = (data.text ?? "").trim();
-        if (text && text !== this.lastText) {
+        if (text && text !== this.lastText && !this.isPromptLeak(text)) {
           this.lastText = text;
           this.tokenCb?.(text, data.batch_corrected ? { snap: true } : undefined);
         }
