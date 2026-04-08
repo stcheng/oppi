@@ -6,7 +6,7 @@
  *
  * StreamingSttProvider talks to any server implementing the stateful
  * session API (see docs/asr.md). The API was designed alongside
- * squawk's transcribe.py and is not tied to any specific backend.
+ * any OpenAI-compatible streaming STT endpoint (not tied to a specific backend).
  */
 
 // ─── Interface ───
@@ -56,7 +56,7 @@ export interface StreamingSttOptions {
  *   DELETE  {endpoint}/v1/audio/transcriptions/stream/:id   → stop, get final text
  *
  * Uses encoder window caching + decoder KV reuse for O(1) per-chunk latency.
- * Compatible with squawk's transcribe.py sidecar (the default ASR backend).
+ * Compatible with any streaming STT endpoint that implements the session API.
  */
 export class StreamingSttProvider implements SttProvider {
   readonly name: string;

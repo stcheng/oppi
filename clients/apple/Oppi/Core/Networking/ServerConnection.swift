@@ -27,7 +27,7 @@ final class ServerConnection {
         wsClient?.status == .connected
     }
 
-    /// Whether the server has ASR configured (Squawk or another STT backend).
+    /// Whether the server has ASR configured (remote dictation server or another STT backend).
     /// Updated on each `/stream` connection from the `stream_connected` message.
     private(set) var asrAvailable = false
 

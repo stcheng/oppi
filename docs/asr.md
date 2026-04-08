@@ -53,10 +53,10 @@ The server talks to any endpoint that implements the streaming session API:
 | `POST` | `/v1/audio/transcriptions/stream/:id` | Feed audio chunk (raw PCM, `application/octet-stream`) |
 | `DELETE` | `/v1/audio/transcriptions/stream/:id` | Stop session, get final text |
 
-The recommended backend is [Squawk](https://github.com/niceda/squawk), a macOS
-menu bar app that runs Qwen3-ASR locally on Apple Silicon. Squawk exposes the
-streaming session API on `localhost:9748` and also provides system-wide voice
-dictation via hotkey. Install Squawk, launch it, and Oppi connects automatically.
+Any macOS app or server that implements the streaming session API above can
+serve as the backend. A typical setup is a local menu bar app running
+Qwen3-ASR on Apple Silicon, exposing the API on `localhost:9748`. Launch
+the ASR server and Oppi connects automatically.
 
 ## Configuration
 
@@ -116,22 +116,21 @@ model's system prompt. Improves accuracy at zero latency cost.
 }
 ```
 
-## Dual-Model ASR (Squawk)
+## Dual-Model ASR
 
-Squawk supports a hybrid streaming/batch strategy that balances latency and
-accuracy. This is configured entirely within Squawk and is transparent to
-Oppi — the server sees a single STT endpoint regardless of which models
-Squawk uses internally.
+The recommended ASR backend supports a hybrid streaming/batch strategy
+that balances latency and accuracy. This is configured on the ASR server
+side and is transparent to Oppi — the server sees a single STT endpoint
+regardless of which models the backend uses internally.
 
 - **Streaming model** (e.g. Qwen3-ASR 0.6B-4bit) — produces low-latency
   partials as the user speaks. Optimized for speed over accuracy.
-- **Batch model** (e.g. Qwen3-ASR 1.7B-bf16) — on pause, Squawk
+- **Batch model** (e.g. Qwen3-ASR 1.7B-bf16) — on pause, the backend
   re-transcribes the full utterance with the larger model and sends a
   corrected replacement. This fixes errors from the streaming pass.
 
 The result: fast typewriter feedback while speaking, accurate final text
-after each pause. Configure the model pair in Squawk's menu bar menu
-under Model Presets.
+after each pause.
 
 ## Performance
 
