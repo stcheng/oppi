@@ -35,7 +35,7 @@ The server embeds the [pi SDK](https://github.com/badlogic/pi-mono) directly —
 
 ## Install
 
-Requires [Bun](https://bun.sh) (recommended) or Node.js 22+, and [pi](https://github.com/badlogic/pi-mono) with at least one provider authenticated (`pi auth`).
+Requires Node.js 22+ and [pi](https://github.com/badlogic/pi-mono) with at least one provider authenticated (`pi auth`).
 
 ```bash
 git clone https://github.com/duh17/oppi.git
@@ -44,12 +44,12 @@ bash setup.sh              # install deps, build, start foreground
 bash setup.sh --install    # same, but install as macOS background service
 ```
 
-`setup.sh` detects Bun or Node.js, installs dependencies, builds, and either starts the server or installs a LaunchAgent. On first run, the server shows a pairing QR code — scan it in the Oppi iOS app.
+`setup.sh` installs dependencies, builds, and either starts the server or installs a LaunchAgent. On first run, the server shows a pairing QR code — scan it in the Oppi iOS app.
 
 Your phone and server need to be on the same local network, or reachable via Tailscale:
 
 ```bash
-bun dist/src/cli.js serve --host <your-host>.ts.net
+node dist/src/cli.js serve --host <your-host>.ts.net
 ```
 
 ### Background service (macOS)
@@ -57,9 +57,9 @@ bun dist/src/cli.js serve --host <your-host>.ts.net
 If you used `bash setup.sh --install`, the server runs as a LaunchAgent that starts on login and restarts on crash. Manage it with:
 
 ```bash
-bun dist/src/cli.js server status     # check if running
-bun dist/src/cli.js server restart    # restart
-bun dist/src/cli.js server uninstall  # remove
+node dist/src/cli.js server status     # check if running
+node dist/src/cli.js server restart    # restart
+node dist/src/cli.js server uninstall  # remove
 ```
 
 ## What you can do
@@ -68,24 +68,24 @@ bun dist/src/cli.js server uninstall  # remove
 
 ## Commands
 
-All commands run from the `server/` directory. Replace `bun` with `node` if you don't have Bun.
+All commands run from the `server/` directory.
 
 ```
-bun dist/src/cli.js serve [--host <h>]      start server
-bun dist/src/cli.js pair [--host <h>]       regenerate pairing QR
-bun dist/src/cli.js status                  server config overview
-bun dist/src/cli.js doctor                  check prerequisites
-bun dist/src/cli.js update                  update dependencies
-bun dist/src/cli.js init                    interactive first-time setup
-bun dist/src/cli.js config show             current config
-bun dist/src/cli.js config set <k> <v>      update config value
-bun dist/src/cli.js config validate         validate config file
-bun dist/src/cli.js token rotate            rotate owner auth token
-bun dist/src/cli.js server install          install LaunchAgent (macOS)
-bun dist/src/cli.js server uninstall        remove LaunchAgent
-bun dist/src/cli.js server status           check background service
-bun dist/src/cli.js server restart          restart background server
-bun dist/src/cli.js server stop             stop background server
+node dist/src/cli.js serve [--host <h>]      start server
+node dist/src/cli.js pair [--host <h>]       regenerate pairing QR
+node dist/src/cli.js status                  server config overview
+node dist/src/cli.js doctor                  check prerequisites
+node dist/src/cli.js update                  update dependencies
+node dist/src/cli.js init                    interactive first-time setup
+node dist/src/cli.js config show             current config
+node dist/src/cli.js config set <k> <v>      update config value
+node dist/src/cli.js config validate         validate config file
+node dist/src/cli.js token rotate            rotate owner auth token
+node dist/src/cli.js server install          install LaunchAgent (macOS)
+node dist/src/cli.js server uninstall        remove LaunchAgent
+node dist/src/cli.js server status           check background service
+node dist/src/cli.js server restart          restart background server
+node dist/src/cli.js server stop             stop background server
 ```
 
 ## Mac App (experimental)
