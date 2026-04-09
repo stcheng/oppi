@@ -479,10 +479,15 @@ struct ToolTimelineRowContentViewTests {
         }
         #expect(hosted == nil)
 
-        let hint = try #require(timelineAllTextRenderViews(in: view).first {
-            timelineRenderedText(of: $0).contains("image attachment")
-        })
-        #expect(timelineRenderedText(of: hint).contains("collapsed preview"))
+        let hasInlineImageView = timelineAllViews(in: view).contains {
+            String(describing: type(of: $0)).contains("NativeExpandedInlineImageView")
+        }
+        #expect(hasInlineImageView)
+
+        let hasCollapsedPreviewHint = timelineAllTextRenderViews(in: view).contains {
+            timelineRenderedText(of: $0).contains("collapsed preview")
+        }
+        #expect(!hasCollapsedPreviewHint)
     }
 
     @MainActor

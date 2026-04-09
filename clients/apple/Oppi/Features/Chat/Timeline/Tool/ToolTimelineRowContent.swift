@@ -536,6 +536,19 @@ final class ToolTimelineRowContentView: UIView, UIContentView, UIScrollViewDeleg
             await MainActor.run { [weak self] in
                 guard let self, self.imagePreviewDecodedKey == currentKey else { return }
                 self.imagePreviewImageView.image = image
+                if let image,
+                   image.size.width > 0,
+                   image.size.height > 0 {
+                    self.layoutIfNeeded()
+                    let availableWidth = max(1, self.imagePreviewContainer.bounds.width - 12)
+                    let targetHeight = min(
+                        220,
+                        max(80, availableWidth * (image.size.height / image.size.width) + 12)
+                    )
+                    self.imagePreviewHeightConstraint?.constant = targetHeight
+                    self.setNeedsLayout()
+                    ToolTimelineRowPresentationHelpers.invalidateEnclosingCollectionViewLayout(startingAt: self)
+                }
             }
         }
     }

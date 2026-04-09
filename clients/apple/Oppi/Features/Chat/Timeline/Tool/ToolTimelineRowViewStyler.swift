@@ -128,7 +128,7 @@ enum ToolTimelineRowViewStyler {
         imagePreviewImageView: UIImageView
     ) {
         imagePreviewContainer.translatesAutoresizingMaskIntoConstraints = false
-        imagePreviewContainer.backgroundColor = UIColor(Color.themeBgDark)
+        imagePreviewContainer.backgroundColor = .clear
         imagePreviewContainer.layer.cornerRadius = 6
         imagePreviewContainer.layer.masksToBounds = true
         imagePreviewContainer.isHidden = true

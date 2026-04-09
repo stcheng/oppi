@@ -4,6 +4,7 @@ import SwiftUI
 final class NativeExpandedReadMediaView: UIView {
     private let rootStack = UIStackView()
     private var renderSignature: Int?
+    private let maxInlineImagePixelSize: CGFloat = 1_600
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -56,12 +57,24 @@ final class NativeExpandedReadMediaView: UIView {
         }
 
         if !parsed.images.isEmpty {
-            let hint = UILabel()
-            hint.font = ToolFont.regular
-            hint.textColor = UIColor(palette.comment)
-            hint.numberOfLines = 0
-            hint.text = imageAttachmentHint(count: parsed.images.count)
-            rootStack.addArrangedSubview(makeCardView(contentView: hint, palette: palette))
+            let countLabel = UILabel()
+            countLabel.font = ToolFont.smallBold
+            countLabel.textColor = UIColor(palette.comment)
+            countLabel.text = parsed.images.count == 1 ? "Image" : "Images (\(parsed.images.count))"
+            rootStack.addArrangedSubview(countLabel)
+
+            for image in parsed.images.prefix(6) {
+                let imageView = NativeExpandedInlineImageView(maxPixelSize: maxInlineImagePixelSize)
+                imageView.apply(base64: image.base64)
+                rootStack.addArrangedSubview(imageView)
+            }
+            if parsed.images.count > 6 {
+                let more = UILabel()
+                more.font = ToolFont.small
+                more.textColor = UIColor(palette.comment)
+                more.text = "+\(parsed.images.count - 6) more image attachment(s)"
+                rootStack.addArrangedSubview(more)
+            }
         }
 
         if !parsed.audio.isEmpty {
@@ -137,18 +150,102 @@ final class NativeExpandedReadMediaView: UIView {
         return container
     }
 
-    private func imageAttachmentHint(count: Int) -> String {
-        if count == 1 {
-            return "1 image attachment available in collapsed preview. Tap image to open full screen."
-        }
-        return "\(count) image attachments available in collapsed preview. Tap image to open full screen."
-    }
-
     private func clearRows() {
         for view in rootStack.arrangedSubviews {
             rootStack.removeArrangedSubview(view)
             view.removeFromSuperview()
         }
+    }
+}
+
+final class NativeExpandedInlineImageView: UIView {
+    private let imageView = UIImageView()
+    private let placeholder = UIActivityIndicatorView(style: .medium)
+    private var aspectRatioConstraint: NSLayoutConstraint?
+    private var decodeTask: Task<Void, Never>?
+    private var decodedKey: String?
+    private let maxPixelSize: CGFloat
+
+    init(maxPixelSize: CGFloat) {
+        self.maxPixelSize = maxPixelSize
+        super.init(frame: .zero)
+        setupViews()
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { nil }
+
+    deinit {
+        decodeTask?.cancel()
+    }
+
+    func apply(base64: String) {
+        let key = ImageDecodeCache.decodeKey(for: base64, maxPixelSize: maxPixelSize)
+        guard key != decodedKey else { return }
+        decodedKey = key
+
+        decodeTask?.cancel()
+        imageView.image = nil
+        placeholder.isHidden = false
+        placeholder.startAnimating()
+
+        let maxPixelSize = self.maxPixelSize
+        decodeTask = Task.detached(priority: .userInitiated) { [weak self] in
+            let image = ImageDecodeCache.decode(base64: base64, maxPixelSize: maxPixelSize)
+            await MainActor.run { [weak self] in
+                guard let self, self.decodedKey == key else { return }
+                self.applyDecodedImage(image)
+            }
+        }
+    }
+
+    private func setupViews() {
+        translatesAutoresizingMaskIntoConstraints = false
+        backgroundColor = .clear
+        clipsToBounds = true
+
+        imageView.translatesAutoresizingMaskIntoConstraints = false
+        imageView.contentMode = .scaleAspectFit
+        imageView.backgroundColor = .clear
+        imageView.isUserInteractionEnabled = true
+        addSubview(imageView)
+
+        placeholder.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(placeholder)
+
+        NSLayoutConstraint.activate([
+            imageView.leadingAnchor.constraint(equalTo: leadingAnchor),
+            imageView.trailingAnchor.constraint(equalTo: trailingAnchor),
+            imageView.topAnchor.constraint(equalTo: topAnchor),
+            imageView.bottomAnchor.constraint(equalTo: bottomAnchor),
+            placeholder.centerXAnchor.constraint(equalTo: centerXAnchor),
+            placeholder.centerYAnchor.constraint(equalTo: centerYAnchor),
+            heightAnchor.constraint(greaterThanOrEqualToConstant: 80),
+        ])
+
+        let tap = UITapGestureRecognizer(target: self, action: #selector(handleTap))
+        imageView.addGestureRecognizer(tap)
+    }
+
+    private func applyDecodedImage(_ image: UIImage?) {
+        imageView.image = image
+        placeholder.stopAnimating()
+        placeholder.isHidden = image != nil
+
+        aspectRatioConstraint?.isActive = false
+        aspectRatioConstraint = nil
+
+        guard let image, image.size.width > 0, image.size.height > 0 else { return }
+        let aspectRatio = image.size.height / image.size.width
+        let constraint = heightAnchor.constraint(equalTo: widthAnchor, multiplier: aspectRatio)
+        constraint.priority = .required
+        constraint.isActive = true
+        aspectRatioConstraint = constraint
+    }
+
+    @objc private func handleTap() {
+        guard let image = imageView.image else { return }
+        FullScreenImageViewController.present(image: image)
     }
 }
 
@@ -183,4 +280,3 @@ private enum NativeExpandedReadMediaParser {
         )
     }
 }
-
