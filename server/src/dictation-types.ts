@@ -100,7 +100,6 @@ export interface DictationResultMessage {
 export interface DictationFinalMessage {
   type: "dictation_final";
   text: string;
-  uncorrected?: string;
   audioId?: string;
 }
 
@@ -135,11 +134,9 @@ export interface DictationAudioMetadata {
     finalSttMs: number;
     /** Real-time factor for final STT (sttMs / audioDurationMs). <1.0 = faster than real-time. */
     sttRealTimeFactor: number;
-    /** Batch retranscription latency in ms (0 if skipped). */
-    retranscribeMs: number;
     /** Audio save (FLAC encode + write) latency in ms. */
     audioSaveMs: number;
-    /** Total finalize latency in ms (final STT + retranscribe + save). */
+    /** Total finalize latency in ms (final STT + save). */
     finalizeMs: number;
   };
 }

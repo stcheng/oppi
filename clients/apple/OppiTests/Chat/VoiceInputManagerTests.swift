@@ -789,7 +789,7 @@ struct VoiceInputManagerTests {
 
         try await manager.startRecording(keyboardLanguage: "en-US", source: "test")
 
-        // Streaming text (uncorrected, use append to avoid typewriter)
+        // Streaming text preview (use append to avoid typewriter)
         session.yieldEvent(.appendFinalTranscript("switching back to and we'll see"))
         #expect(await waitForMainActorCondition {
             manager.finalizedTranscript == "switching back to and we'll see"

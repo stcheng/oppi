@@ -1255,7 +1255,7 @@ export type ServerMessage = // ── Connection ──
         sttModel?: string;
       }
     | { type: "dictation_result"; text: string; snap?: boolean }
-    | { type: "dictation_final"; text: string; uncorrected?: string; audioId?: string }
+    | { type: "dictation_final"; text: string; audioId?: string }
     | { type: "dictation_error"; error: string; fatal: boolean }
   ) & {
     seq?: number;

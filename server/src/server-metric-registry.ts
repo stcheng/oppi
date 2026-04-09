@@ -195,7 +195,7 @@ export const SERVER_METRIC_REGISTRY = {
   "server.dictation_stt_ms": {
     unit: "ms",
     description:
-      "STT HTTP call latency per callStt invocation. Tagged by phase (retranscribe, finalize), audio_seconds.",
+      "Final STT latency on session stop. Tagged by phase (finalize), audio_seconds.",
   },
   "server.dictation_stt_audio_ratio": {
     unit: "ratio",
@@ -204,12 +204,11 @@ export const SERVER_METRIC_REGISTRY = {
   },
   "server.dictation_retranscribe_ms": {
     unit: "ms",
-    description: "Batch retranscription latency on finalize. Tagged by changed (true/false).",
+    description: "Retired metric kept for historical dashboard compatibility.",
   },
   "server.dictation_finalize_ms": {
     unit: "ms",
-    description:
-      "Total finalize duration (final STT + retranscribe + audio save). Tagged by language.",
+    description: "Total finalize duration (final STT + audio save). Tagged by language.",
   },
   "server.dictation_audio_save_ms": {
     unit: "ms",
@@ -217,16 +216,15 @@ export const SERVER_METRIC_REGISTRY = {
   },
   "server.dictation_retranscribe_count": {
     unit: "count",
-    description: "Number of retranscribe ticks fired during a session. Tagged by language.",
+    description: "Retired metric kept for historical dashboard compatibility.",
   },
   "server.dictation_retranscribe_skip": {
     unit: "count",
-    description:
-      "Retranscribe ticks skipped (inflight or no audio). Tagged by reason (inflight, empty).",
+    description: "Retired metric kept for historical dashboard compatibility.",
   },
   "server.dictation_error": {
     unit: "count",
-    description: "Dictation errors. Tagged by phase (stt, retranscribe, save), fatal (true/false).",
+    description: "Dictation errors. Tagged by phase (stt, save), fatal (true/false).",
   },
 } as const satisfies Readonly<Record<string, ServerMetricDefinition>>;
 

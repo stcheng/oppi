@@ -411,6 +411,83 @@ describe("StreamingSttProvider", () => {
     await provider.stop();
   });
 
+  // Edge: 404 on feed + createSession also fails → logs warning, no throw
+  it("handles 404 on feed when session recreation also fails", async () => {
+    let sessionCounter = 0;
+    let createShouldFail = false;
+    const { fetchFn, calls } = createMockFetch([
+      {
+        match: isCreate,
+        response: () => {
+          if (createShouldFail) return errorResponse(500)();
+          return jsonResponse({ session_id: `s${++sessionCounter}` })();
+        },
+      },
+      { match: isFeed, response: errorResponse(404) },
+      { match: isDelete, response: jsonResponse({ text: "done" }) },
+    ]);
+
+    const provider = makeProvider(fetchFn);
+    await flush(); // warm = s1
+
+    await provider.start(); // active = s1
+
+    // Now make createSession fail so the 404 recovery path hits the inner catch
+    createShouldFail = true;
+
+    provider.feedAudio(Buffer.from([1, 2]));
+    vi.advanceTimersByTime(100);
+    await flush();
+
+    // Should not throw — the error is logged and swallowed
+    // Session should be null after the failed recreation
+    const creates = calls.filter((c) => isCreate(c.url, c.method));
+    expect(creates.length).toBeGreaterThanOrEqual(1);
+
+    await provider.dispose();
+  });
+
+  // Edge: fetch itself throws during feed → outer catch handles it
+  it("handles fetch throwing during flushAudio", async () => {
+    let feedShouldThrow = false;
+    const { fetchFn } = createMockFetch([
+      { match: isCreate, response: jsonResponse({ session_id: "s1" }) },
+      {
+        match: isFeed,
+        response: () => {
+          if (feedShouldThrow) throw new Error("network timeout");
+          return jsonResponse({ text: "ok" })();
+        },
+      },
+      { match: isDelete, response: jsonResponse({ text: "done" }) },
+    ]);
+
+    const provider = makeProvider(fetchFn);
+    await flush();
+
+    const tokens: string[] = [];
+    provider.onToken((t) => tokens.push(t));
+    await provider.start();
+
+    // First feed succeeds
+    provider.feedAudio(Buffer.from([1, 2]));
+    vi.advanceTimersByTime(100);
+    await flush();
+    expect(tokens).toEqual(["ok"]);
+
+    // Now make fetch throw on the next feed
+    feedShouldThrow = true;
+    provider.feedAudio(Buffer.from([3, 4]));
+    vi.advanceTimersByTime(100);
+    await flush();
+
+    // Should not throw — error is caught and logged
+    // No new tokens emitted from the failed feed
+    expect(tokens).toEqual(["ok"]);
+
+    await provider.stop();
+  });
+
   // Edge: dispose is safe when fetch throws (network down)
   it("dispose handles network errors gracefully", async () => {
     const { fetchFn } = createMockFetch([
@@ -430,98 +507,171 @@ describe("StreamingSttProvider", () => {
     await expect(provider.dispose()).resolves.toBeUndefined();
   });
 
-  // ─── retranscribe ───
 
-  it("retranscribe: create → feed → delete returns batch text", async () => {
-    let sessionCounter = 0;
-    const { fetchFn, calls } = createMockFetch([
-      { match: isCreate, response: () => jsonResponse({ session_id: `r${++sessionCounter}` })() },
-      { match: isFeed, response: jsonResponse({ text: "partial" }) },
-      { match: isDelete, response: jsonResponse({ text: "batch result" }) },
-    ]);
+  // ─── Hallucination filter (isPromptLeak) ───
 
-    const provider = makeProvider(fetchFn);
-    await flush(); // constructor warm-up = r1
+  describe("hallucination filter (system prompt leak suppression)", () => {
+    const SYSTEM_PROMPT = "Domain terms and proper nouns: Oppi, StreamingSttProvider, PCM audio";
 
-    const pcm = Buffer.alloc(32000, 0x42); // 1s of audio
-    const result = await provider.retranscribe(pcm);
-    expect(result).toBe("batch result");
+    /** Create a provider with the system prompt set. */
+    function makeProviderWithPrompt(
+      fetchFn: typeof globalThis.fetch,
+    ): StreamingSttProvider {
+      return new StreamingSttProvider(
+        { endpoint: BASE, model: "test-model", systemPrompt: SYSTEM_PROMPT },
+        fetchFn,
+        100,
+      );
+    }
 
-    // Should have created a new session (r2) separate from the warm one (r1)
-    const creates = calls.filter((c) => isCreate(c.url, c.method));
-    expect(creates.length).toBe(2); // warm + retranscribe
+    it("suppresses transcript that starts with the system prompt prefix", async () => {
+      const leaked = SYSTEM_PROMPT; // exact match of entire prompt
+      const { fetchFn } = createMockFetch([
+        { match: isCreate, response: jsonResponse({ session_id: "s1" }) },
+        { match: isFeed, response: jsonResponse({ text: leaked }) },
+        { match: isDelete, response: jsonResponse({ text: "final" }) },
+      ]);
 
-    // Feed was called on the retranscribe session
-    const feeds = calls.filter((c) => isFeed(c.url, c.method));
-    expect(feeds.some((c) => c.url === `${STREAM_URL}/r2`)).toBe(true);
+      const provider = makeProviderWithPrompt(fetchFn);
+      await flush();
 
-    // DELETE was called on the retranscribe session
-    const deletes = calls.filter((c) => isDelete(c.url, c.method));
-    expect(deletes.some((c) => c.url === `${STREAM_URL}/r2`)).toBe(true);
+      const tokens: string[] = [];
+      provider.onToken((t) => tokens.push(t));
+      await provider.start();
 
-    await provider.dispose();
-  });
+      provider.feedAudio(Buffer.from([1, 2, 3]));
+      vi.advanceTimersByTime(100);
+      await flush();
 
-  it("retranscribe returns null on create failure", async () => {
-    const { fetchFn } = createMockFetch([{ match: isCreate, response: errorResponse(500) }]);
+      // Leaked text should have been suppressed — no tokens emitted
+      expect(tokens).toEqual([]);
 
-    const provider = makeProvider(fetchFn);
-    await flush();
+      await provider.stop();
+    });
 
-    const result = await provider.retranscribe(Buffer.alloc(100));
-    expect(result).toBeNull();
-  });
+    it("suppresses transcript with prompt prefix followed by trailing content", async () => {
+      // First 30 chars match, plus extra garbage the model appended
+      const leaked = SYSTEM_PROMPT.slice(0, 30) + " ...some hallucinated continuation";
+      const { fetchFn } = createMockFetch([
+        { match: isCreate, response: jsonResponse({ session_id: "s1" }) },
+        { match: isFeed, response: jsonResponse({ text: leaked }) },
+        { match: isDelete, response: jsonResponse({ text: "final" }) },
+      ]);
 
-  it("retranscribe returns null on feed failure and cleans up session", async () => {
-    const { fetchFn, calls } = createMockFetch([
-      { match: isCreate, response: jsonResponse({ session_id: "rt-1" }) },
-      { match: isFeed, response: errorResponse(500) },
-      { match: isDelete, response: jsonResponse({ text: "" }) },
-    ]);
+      const provider = makeProviderWithPrompt(fetchFn);
+      await flush();
 
-    const provider = makeProvider(fetchFn);
-    await flush();
+      const tokens: string[] = [];
+      provider.onToken((t) => tokens.push(t));
+      await provider.start();
 
-    const result = await provider.retranscribe(Buffer.alloc(100));
-    expect(result).toBeNull();
+      provider.feedAudio(Buffer.from([1, 2]));
+      vi.advanceTimersByTime(100);
+      await flush();
 
-    // Session should be cleaned up via DELETE
-    await flush();
-    const deletes = calls.filter((c) => isDelete(c.url, c.method));
-    expect(deletes.some((c) => c.url === `${STREAM_URL}/rt-1`)).toBe(true);
-  });
+      expect(tokens).toEqual([]);
 
-  it("retranscribe returns null on delete failure", async () => {
-    const { fetchFn } = createMockFetch([
-      { match: isCreate, response: jsonResponse({ session_id: "rt-2" }) },
-      { match: isFeed, response: jsonResponse({ text: "partial" }) },
-      {
-        match: isDelete,
-        response: () => {
-          throw new Error("timeout");
-        },
-      },
-    ]);
+      await provider.stop();
+    });
 
-    const provider = makeProvider(fetchFn);
-    await flush();
+    it("passes through normal transcript unchanged", async () => {
+      const { fetchFn } = createMockFetch([
+        { match: isCreate, response: jsonResponse({ session_id: "s1" }) },
+        { match: isFeed, response: jsonResponse({ text: "The quick brown fox" }) },
+        { match: isDelete, response: jsonResponse({ text: "done" }) },
+      ]);
 
-    const result = await provider.retranscribe(Buffer.alloc(100));
-    expect(result).toBeNull();
-  });
+      const provider = makeProviderWithPrompt(fetchFn);
+      await flush();
 
-  it("retranscribe returns null for empty text", async () => {
-    const { fetchFn } = createMockFetch([
-      { match: isCreate, response: jsonResponse({ session_id: "rt-3" }) },
-      { match: isFeed, response: jsonResponse({ text: "" }) },
-      { match: isDelete, response: jsonResponse({ text: "   " }) },
-    ]);
+      const tokens: string[] = [];
+      provider.onToken((t) => tokens.push(t));
+      await provider.start();
 
-    const provider = makeProvider(fetchFn);
-    await flush();
+      provider.feedAudio(Buffer.from([1, 2]));
+      vi.advanceTimersByTime(100);
+      await flush();
 
-    const result = await provider.retranscribe(Buffer.alloc(100));
-    expect(result).toBeNull();
+      expect(tokens).toEqual(["The quick brown fox"]);
+
+      await provider.stop();
+    });
+
+    it("does not suppress partial/similar-but-not-matching text (no false positives)", async () => {
+      // Starts with "Domain" but diverges before hitting the 30-char prefix
+      const similar = "Domain terms are interesting things to study";
+      const { fetchFn } = createMockFetch([
+        { match: isCreate, response: jsonResponse({ session_id: "s1" }) },
+        { match: isFeed, response: jsonResponse({ text: similar }) },
+        { match: isDelete, response: jsonResponse({ text: "done" }) },
+      ]);
+
+      const provider = makeProviderWithPrompt(fetchFn);
+      await flush();
+
+      const tokens: string[] = [];
+      provider.onToken((t) => tokens.push(t));
+      await provider.start();
+
+      provider.feedAudio(Buffer.from([1, 2]));
+      vi.advanceTimersByTime(100);
+      await flush();
+
+      // Should NOT be suppressed — only the first few words match, not the 30-char prefix
+      expect(tokens).toEqual([similar]);
+
+      await provider.stop();
+    });
+
+    it("does not suppress when no system prompt is configured", async () => {
+      const textLookingLikePrompt = SYSTEM_PROMPT;
+      const { fetchFn } = createMockFetch([
+        { match: isCreate, response: jsonResponse({ session_id: "s1" }) },
+        { match: isFeed, response: jsonResponse({ text: textLookingLikePrompt }) },
+        { match: isDelete, response: jsonResponse({ text: "done" }) },
+      ]);
+
+      // No systemPrompt — use the default makeProvider
+      const provider = makeProvider(fetchFn);
+      await flush();
+
+      const tokens: string[] = [];
+      provider.onToken((t) => tokens.push(t));
+      await provider.start();
+
+      provider.feedAudio(Buffer.from([1, 2]));
+      vi.advanceTimersByTime(100);
+      await flush();
+
+      // Without a system prompt, the filter is disabled — text passes through
+      expect(tokens).toEqual([textLookingLikePrompt]);
+
+      await provider.stop();
+    });
+
+    it("handles empty transcript (not emitted regardless of filter)", async () => {
+      const { fetchFn } = createMockFetch([
+        { match: isCreate, response: jsonResponse({ session_id: "s1" }) },
+        { match: isFeed, response: jsonResponse({ text: "" }) },
+        { match: isDelete, response: jsonResponse({ text: "done" }) },
+      ]);
+
+      const provider = makeProviderWithPrompt(fetchFn);
+      await flush();
+
+      const tokens: string[] = [];
+      provider.onToken((t) => tokens.push(t));
+      await provider.start();
+
+      provider.feedAudio(Buffer.from([1, 2]));
+      vi.advanceTimersByTime(100);
+      await flush();
+
+      // Empty text is already filtered by the `text &&` guard before isPromptLeak
+      expect(tokens).toEqual([]);
+
+      await provider.stop();
+    });
   });
 
   // Edge: stop returns last known text when DELETE fails

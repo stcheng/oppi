@@ -37,15 +37,15 @@ struct DictationServerMessageDecodingTests {
     }
 
     @Test func decodesFinal() throws {
-        let json = #"{"type":"dictation_final","text":"Hello world how are you","uncorrected":"hello world how are you","audioId":"dict_abc123"}"#
+        let json = #"{"type":"dictation_final","text":"Hello world how are you","audioId":"dict_abc123"}"#
         let message = try decode(json)
-        #expect(message == .dictationFinal(text: "Hello world how are you", uncorrected: "hello world how are you", audioId: "dict_abc123"))
+        #expect(message == .dictationFinal(text: "Hello world how are you", audioId: "dict_abc123"))
     }
 
     @Test func decodesFinalMinimal() throws {
         let json = #"{"type":"dictation_final","text":"Hello"}"#
         let message = try decode(json)
-        #expect(message == .dictationFinal(text: "Hello", uncorrected: nil, audioId: nil))
+        #expect(message == .dictationFinal(text: "Hello", audioId: nil))
     }
 
     @Test func decodesError() throws {
@@ -183,7 +183,7 @@ struct DictationEventMappingTests {
     }
 
     @Test func finalMapsToReplaceFinalTranscript() {
-        let event = mapServerMessage(.dictationFinal(text: "Complete transcript", uncorrected: nil, audioId: nil))
+        let event = mapServerMessage(.dictationFinal(text: "Complete transcript", audioId: nil))
         #expect(event == .replaceFinalTranscript("Complete transcript"))
     }
 
@@ -205,7 +205,7 @@ struct DictationEventMappingTests {
             return nil
         case .dictationResult(let text, let snap):
             return .replaceFinalTranscript(text, snap: snap)
-        case .dictationFinal(let text, _, _):
+        case .dictationFinal(let text, _):
             return text.isEmpty ? nil : .replaceFinalTranscript(text)
         case .dictationError(_, let fatal):
             return fatal ? nil : nil

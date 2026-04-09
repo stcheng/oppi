@@ -3,7 +3,11 @@
  *
  * Handles per-connection lifecycle: audio accumulation for FLAC
  * preservation, forwarding audio to the SttProvider, relaying transcript
- * updates to the client, optional batch retranscription, and audio archival.
+ * updates to the client, and audio archival.
+ *
+ * Final transcript correctness now lives in the upstream streaming STT
+ * service (Yuwp segment-commit). Oppi forwards streaming updates and the
+ * provider's final text instead of re-running a second whole-audio batch pass.
  *
  * All STT providers implement the same streaming interface (SttProvider).
  * DictationManager has one code path — no branching on provider type.
@@ -334,46 +338,9 @@ export class DictationManager {
       return;
     }
 
-    // Optional batch retranscription — send full audio to the ASR batch model
-    // for a clean single-pass transcription (more accurate than streaming).
-    let uncorrected: string | undefined;
-    let retranscribeMs = 0;
-    if (this.sttProvider.retranscribe && text.trim().length > 0) {
-      const retranscribeT0 = performance.now();
-      try {
-        const pcm = session.audioBuffer.subarray(0, session.totalBytes);
-        const retranscribed = await this.sttProvider.retranscribe(pcm);
-        retranscribeMs = Math.round(performance.now() - retranscribeT0);
-        const changed = retranscribed !== null && retranscribed !== text;
-        this.metrics?.record(
-          "server.dictation_retranscribe_ms",
-          retranscribeMs,
-          this.metricTags({ changed: String(changed), language: langTag }),
-        );
-        if (changed && retranscribed) {
-          uncorrected = text;
-          text = retranscribed;
-        }
-      } catch (err) {
-        retranscribeMs = Math.round(performance.now() - retranscribeT0);
-        this.metrics?.record(
-          "server.dictation_error",
-          1,
-          this.metricTags({
-            phase: "retranscribe",
-            fatal: "false",
-            error_kind: "retranscribe",
-            language: langTag,
-          }),
-        );
-        console.warn(
-          "[dictation] Retranscription failed, using streaming text:",
-          err instanceof Error ? err.message : err,
-        );
-      }
-    }
-
     // Audio preservation
+    // Segment-commit Yuwp already batch-corrects on pause/finalize, so the
+    // provider's final text is the source of truth.
     let audioId: string | undefined;
     let audioSaveMs = 0;
     if (this.config.preserveAudio) {
@@ -384,7 +351,6 @@ export class DictationManager {
         sessionMs,
         finalSttMs,
         sttRealTimeFactor: sttRtf,
-        retranscribeMs,
         audioSaveMs: 0,
         finalizeMs: 0,
       };
@@ -416,7 +382,6 @@ export class DictationManager {
     this.send({
       type: "dictation_final",
       text,
-      ...(uncorrected !== undefined ? { uncorrected } : {}),
       ...(audioId !== undefined ? { audioId } : {}),
     });
   }

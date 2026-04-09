@@ -1,6 +1,6 @@
 /**
  * Tests for DictationManager — audio accumulation, WAV encoding,
- * STT provider integration (streaming), batch retranscription,
+ * STT provider integration (streaming), final transcript forwarding,
  * and error handling.
  */
 
@@ -98,50 +98,6 @@ function failingSttProvider(error: string) {
   return Object.assign(provider, { start: startFn, feedAudio: feedAudioFn, stop: stopFn });
 }
 
-/**
- * Create a mock SttProvider with retranscribe support.
- * Returns a different text via retranscribe than the streaming stop().
- */
-// eslint-disable-next-line @typescript-eslint/explicit-function-return-type
-function mockSttProviderWithRetranscribe(
-  streamingTokens: string[],
-  retranscribeResult: string | null,
-) {
-  let tokenCb: ((text: string) => void) | null = null;
-  const accumulated = streamingTokens.join(" ");
-
-  const startFn = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
-  const feedAudioFn = vi.fn<(pcm: Buffer) => void>();
-  const stopFn = vi.fn<() => Promise<string>>().mockResolvedValue(accumulated);
-  const retranscribeFn = vi
-    .fn<(pcm: Buffer) => Promise<string | null>>()
-    .mockResolvedValue(retranscribeResult);
-
-  const provider: SttProvider & { _fireTokens: () => void } = {
-    name: "mock",
-    model: "mock-model",
-    start: startFn,
-    feedAudio: feedAudioFn,
-    onToken(cb: (text: string) => void) {
-      tokenCb = cb;
-    },
-    stop: stopFn,
-    retranscribe: retranscribeFn,
-    _fireTokens() {
-      let running = "";
-      for (const t of streamingTokens) {
-        running += (running.length > 0 ? " " : "") + t;
-        tokenCb?.(running);
-      }
-    },
-  };
-  return Object.assign(provider, {
-    start: startFn,
-    feedAudio: feedAudioFn,
-    stop: stopFn,
-    retranscribe: retranscribeFn,
-  });
-}
 
 // ─── Unit tests for standalone utilities ───
 
@@ -432,74 +388,8 @@ describe("DictationManager", () => {
     });
   });
 
-  describe("batch retranscription", () => {
-    it("uses retranscribed text when provider supports it", async () => {
-      const sp = mockSttProviderWithRetranscribe(["hello", "wrold"], "Hello World");
-      const mgr = new DictationManager(testConfig(), "/tmp/test", sp);
-      const mgrSent: DictationServerMessage[] = [];
-      const mgrSendFn: DictationSendFn = (msg) => {
-        mgrSent.push(msg);
-      };
-
-      mgr.handleControlMessage({ type: "dictation_start" }, mgrSendFn);
-      await drain();
-      mgr.handleAudioData(silencePcm(1000));
-      mgr.handleControlMessage({ type: "dictation_stop" }, mgrSendFn);
-      vi.advanceTimersByTime(10);
-      await drain();
-
-      const finals = messagesOfType(mgrSent, "dictation_final");
-      expect(finals).toHaveLength(1);
-      expect(finals[0].text).toBe("Hello World");
-      expect(finals[0].uncorrected).toBe("hello wrold");
-      expect(sp.retranscribe).toHaveBeenCalledTimes(1);
-    });
-
-    it("falls back to streaming text when retranscribe returns null", async () => {
-      const sp = mockSttProviderWithRetranscribe(["raw", "asr", "text"], null);
-      const mgr = new DictationManager(testConfig(), "/tmp/test", sp);
-      const mgrSent: DictationServerMessage[] = [];
-      const mgrSendFn: DictationSendFn = (msg) => {
-        mgrSent.push(msg);
-      };
-
-      mgr.handleControlMessage({ type: "dictation_start" }, mgrSendFn);
-      await drain();
-      mgr.handleAudioData(silencePcm(1000));
-      mgr.handleControlMessage({ type: "dictation_stop" }, mgrSendFn);
-      vi.advanceTimersByTime(10);
-      await drain();
-
-      const finals = messagesOfType(mgrSent, "dictation_final");
-      expect(finals).toHaveLength(1);
-      expect(finals[0].text).toBe("raw asr text");
-      expect(finals[0].uncorrected).toBeUndefined();
-    });
-
-    it("falls back to streaming text when retranscribe throws", async () => {
-      const sp = mockSttProviderWithRetranscribe(["raw", "text"], "never used");
-      sp.retranscribe.mockRejectedValue(new Error("network error"));
-      const mgr = new DictationManager(testConfig(), "/tmp/test", sp);
-      const mgrSent: DictationServerMessage[] = [];
-      const mgrSendFn: DictationSendFn = (msg) => {
-        mgrSent.push(msg);
-      };
-
-      mgr.handleControlMessage({ type: "dictation_start" }, mgrSendFn);
-      await drain();
-      mgr.handleAudioData(silencePcm(1000));
-      mgr.handleControlMessage({ type: "dictation_stop" }, mgrSendFn);
-      vi.advanceTimersByTime(10);
-      await drain();
-
-      const finals = messagesOfType(mgrSent, "dictation_final");
-      expect(finals).toHaveLength(1);
-      expect(finals[0].text).toBe("raw text");
-      expect(finals[0].uncorrected).toBeUndefined();
-    });
-
-    it("skips retranscription when provider does not have the method", async () => {
-      // Default mockSttProvider has no retranscribe method
+  describe("final transcript forwarding", () => {
+    it("forwards provider final text unchanged", async () => {
       manager.handleControlMessage({ type: "dictation_start" }, sendFn);
       await drain();
       manager.handleAudioData(silencePcm(1000));
@@ -510,28 +400,6 @@ describe("DictationManager", () => {
       const finals = messagesOfType(sent, "dictation_final");
       expect(finals).toHaveLength(1);
       expect(finals[0].text).toBe("hello world");
-      expect(finals[0].uncorrected).toBeUndefined();
-    });
-
-    it("keeps streaming text when retranscribe returns same text", async () => {
-      const sp = mockSttProviderWithRetranscribe(["hello", "world"], "hello world");
-      const mgr = new DictationManager(testConfig(), "/tmp/test", sp);
-      const mgrSent: DictationServerMessage[] = [];
-      const mgrSendFn: DictationSendFn = (msg) => {
-        mgrSent.push(msg);
-      };
-
-      mgr.handleControlMessage({ type: "dictation_start" }, mgrSendFn);
-      await drain();
-      mgr.handleAudioData(silencePcm(1000));
-      mgr.handleControlMessage({ type: "dictation_stop" }, mgrSendFn);
-      vi.advanceTimersByTime(10);
-      await drain();
-
-      const finals = messagesOfType(mgrSent, "dictation_final");
-      expect(finals).toHaveLength(1);
-      expect(finals[0].text).toBe("hello world");
-      expect(finals[0].uncorrected).toBeUndefined();
     });
   });
 });

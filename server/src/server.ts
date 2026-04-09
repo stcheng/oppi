@@ -417,7 +417,7 @@ export class Server {
       resolveWorkspaceForSession: (session) => this.resolveWorkspaceForSession(session),
     });
 
-    // Dictation pipeline (streaming native or HTTP retranscribe)
+    // Dictation pipeline (streaming STT via Yuwp / asr-server)
     // Must be created BEFORE the stream mux so it's available for /stream routing.
     const asrEnabled = !!config.asr?.sttEndpoint;
     if (asrEnabled) {
