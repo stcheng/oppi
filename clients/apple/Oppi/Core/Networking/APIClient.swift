@@ -156,9 +156,19 @@ actor APIClient {
     /// Create a new session in a target workspace.
     ///
     /// If `workspaceId` is nil, the first available workspace is used.
-    func createSession(name: String? = nil, model: String? = nil, workspaceId: String? = nil) async throws -> Session {
+    func createSession(
+        name: String? = nil,
+        model: String? = nil,
+        workspaceId: String? = nil,
+        ephemeral: Bool? = nil
+    ) async throws -> Session {
         if let workspaceId, !workspaceId.isEmpty {
-            return try await createWorkspaceSession(workspaceId: workspaceId, name: name, model: model).session
+            return try await createWorkspaceSession(
+                workspaceId: workspaceId,
+                name: name,
+                model: model,
+                ephemeral: ephemeral
+            ).session
         }
 
         let workspaces = try await listWorkspaces()
@@ -169,7 +179,8 @@ actor APIClient {
         return try await createWorkspaceSession(
             workspaceId: fallbackWorkspace.id,
             name: name,
-            model: model
+            model: model,
+            ephemeral: ephemeral
         ).session
     }
 
@@ -657,6 +668,7 @@ actor APIClient {
         model: String? = nil,
         prompt: String? = nil,
         thinking: String? = nil,
+        ephemeral: Bool? = nil,
         images: [ImageAttachment]? = nil
     ) async throws -> CreateSessionResponse {
         struct ImageBody: Encodable {
@@ -669,12 +681,20 @@ actor APIClient {
             let model: String?
             let prompt: String?
             let thinking: String?
+            let ephemeral: Bool?
             let images: [ImageBody]?
         }
         let imagesBodies = images?.map { ImageBody(type: "image", data: $0.data, mimeType: $0.mimeType) }
         let data = try await post(
             "/workspaces/\(workspaceId)/sessions",
-            body: Body(name: name, model: model, prompt: prompt, thinking: thinking, images: imagesBodies)
+            body: Body(
+                name: name,
+                model: model,
+                prompt: prompt,
+                thinking: thinking,
+                ephemeral: ephemeral,
+                images: imagesBodies
+            )
         )
         return try JSONDecoder().decode(CreateSessionResponse.self, from: data)
     }

@@ -162,6 +162,15 @@ export class SessionStateCoordinator {
         session.piSessionFiles = [...knownFiles, state.sessionFile];
         changed = true;
       }
+    } else if (session.ephemeral) {
+      if (session.piSessionFile !== undefined) {
+        session.piSessionFile = undefined;
+        changed = true;
+      }
+      if ((session.piSessionFiles?.length ?? 0) > 0) {
+        session.piSessionFiles = undefined;
+        changed = true;
+      }
     }
 
     if (typeof state.sessionId === "string" && state.sessionId.length > 0) {

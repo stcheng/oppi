@@ -227,6 +227,11 @@ export class SessionManager extends EventEmitter {
     // Update search index on relevant events
     if (this.searchIndex) {
       const sessionId = key; // sessionKey is identity
+      const session = this.storage.getSession(sessionId);
+      if (session?.ephemeral) {
+        this.searchIndex.deleteSession(sessionId);
+        return;
+      }
       if (data.type === "message_end") {
         const msg = (data as Record<string, unknown>).message as
           | Record<string, unknown>

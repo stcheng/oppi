@@ -130,6 +130,7 @@ export function createSessionRoutes(ctx: RouteContext, helpers: RouteHelpers): R
       prompt?: string;
       thinking?: string;
       parentSessionId?: string;
+      ephemeral?: boolean;
       images?: Array<{ type: "image"; data: string; mimeType: string }>;
     }>(req);
 
@@ -195,6 +196,9 @@ export function createSessionRoutes(ctx: RouteContext, helpers: RouteHelpers): R
     session.workspaceName = workspace.name;
     if (body.parentSessionId) {
       session.parentSessionId = body.parentSessionId;
+    }
+    if (body.ephemeral === true) {
+      session.ephemeral = true;
     }
     ctx.storage.saveSession(session);
 
@@ -314,6 +318,11 @@ export function createSessionRoutes(ctx: RouteContext, helpers: RouteHelpers): R
 
     if (session.workspaceId !== workspaceId) {
       helpers.error(res, 400, "Session does not belong to this workspace");
+      return;
+    }
+
+    if (session.ephemeral) {
+      helpers.error(res, 400, "Incognito sessions cannot be resumed");
       return;
     }
 

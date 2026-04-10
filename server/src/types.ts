@@ -116,6 +116,9 @@ export interface Session {
   piSessionFiles?: string[]; // all observed session JSONL paths for this session
   piSessionId?: string; // pi internal session UUID reported by get_state
 
+  // Privacy / persistence
+  ephemeral?: boolean; // true for in-memory pi sessions (incognito mode)
+
   // Parent-child tree (spawn_agent)
   parentSessionId?: string; // set when spawned by another session
 }

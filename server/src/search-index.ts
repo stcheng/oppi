@@ -324,6 +324,11 @@ export class SearchIndex {
       const session = this.getSession(sessionId);
       if (!session) return;
 
+      if (session.ephemeral) {
+        this.deleteSession(sessionId);
+        return;
+      }
+
       const jsonlPath = (session as unknown as Record<string, unknown>).piSessionFile as
         | string
         | undefined;
@@ -450,13 +455,14 @@ export class SearchIndex {
     skipped: number;
   } {
     const start = performance.now();
-    const sessionIds = new Set(sessions.map((s) => s.id));
+    const indexableSessions = sessions.filter((s) => !s.ephemeral);
+    const sessionIds = new Set(indexableSessions.map((s) => s.id));
     let reindexed = 0;
     let added = 0;
     let skipped = 0;
 
     const txn = this.db.transaction(() => {
-      for (const session of sessions) {
+      for (const session of indexableSessions) {
         const jsonlPath = (session as unknown as Record<string, unknown>).piSessionFile as
           | string
           | undefined;

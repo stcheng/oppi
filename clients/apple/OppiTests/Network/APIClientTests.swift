@@ -162,6 +162,31 @@ struct APIClientTests {
         #expect(session.workspaceId == "w1")
     }
 
+    @Test func createWorkspaceSessionIncognitoEncodesEphemeral() async throws {
+        let client = makeClient()
+        defer { cleanup() }
+
+        MockURLProtocol.handler = { request in
+            #expect(request.httpMethod == "POST")
+            #expect(request.url?.path == "/workspaces/w1/sessions")
+
+            let body = self.requestBodyData(request)
+            if let json = try? JSONSerialization.jsonObject(with: body) as? [String: Any] {
+                #expect(json["ephemeral"] as? Bool == true)
+            } else {
+                Issue.record("Expected JSON body")
+            }
+
+            return self.mockResponse(json: """
+            {"session":{"id":"new","workspaceId":"w1","status":"starting","createdAt":0,"lastActivity":0,"messageCount":0,"tokens":{"input":0,"output":0},"cost":0,"ephemeral":true}}
+            """)
+        }
+
+        let response = try await client.createWorkspaceSession(workspaceId: "w1", ephemeral: true)
+        #expect(response.session.id == "new")
+        #expect(response.session.ephemeral == true)
+    }
+
     @Test func forkWorkspaceSession() async throws {
         let client = makeClient()
         defer { cleanup() }

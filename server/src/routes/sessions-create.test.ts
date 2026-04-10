@@ -340,6 +340,27 @@ describe("POST /workspaces/:id/sessions", () => {
     expect(promptCall[2]).toEqual({ images });
   });
 
+  it("persists ephemeral flag for incognito sessions", async () => {
+    const mock = createMockContext();
+
+    await dispatchCreate(mock, { name: "secret", ephemeral: true });
+
+    expect(mock.storage.saveSession).toHaveBeenCalledTimes(1);
+    const savedSession = mock.storage.saveSession.mock.calls[0]![0] as Session;
+    expect(savedSession.ephemeral).toBe(true);
+  });
+
+  it("keeps incognito prompt flow working", async () => {
+    const mock = createMockContext();
+
+    await dispatchCreate(mock, { prompt: "quietly", ephemeral: true });
+
+    expect(mock.sessions.startSession).toHaveBeenCalledTimes(1);
+    expect(mock.sessions.sendPrompt).toHaveBeenCalledTimes(1);
+    const firstSave = mock.storage.saveSession.mock.calls[0]![0] as Session;
+    expect(firstSave.ephemeral).toBe(true);
+  });
+
   it("returns 404 for unknown workspace", async () => {
     const mock = createMockContext();
     mock.storage.getWorkspace.mockReturnValue(undefined);
@@ -386,6 +407,34 @@ describe("POST /workspaces/:id/sessions", () => {
     // Should NOT start or prompt
     expect(mock.sessions.startSession).not.toHaveBeenCalled();
     expect(mock.sessions.sendPrompt).not.toHaveBeenCalled();
+  });
+});
+
+describe("POST /workspaces/:id/sessions/:sessionId/resume", () => {
+  async function dispatchResume(mock: MockRouteContext, sessionId = "sess-1"): Promise<boolean> {
+    const dispatcher = createSessionRoutes(mock.ctx, mock.helpers);
+    const req = new PassThrough() as unknown as IncomingMessage;
+    const res = {} as ServerResponse;
+    const url = new URL(`https://localhost/workspaces/ws-1/sessions/${sessionId}/resume`);
+    return dispatcher({
+      method: "POST",
+      path: `/workspaces/ws-1/sessions/${sessionId}/resume`,
+      url,
+      req,
+      res,
+    });
+  }
+
+  it("rejects resuming incognito sessions", async () => {
+    const mock = createMockContext();
+    mock.storage.getSession.mockReturnValue(
+      makeSession({ id: "sess-1", workspaceId: "ws-1", ephemeral: true, status: "stopped" }),
+    );
+
+    await dispatchResume(mock);
+
+    expect(mock.sessions.startSession).not.toHaveBeenCalled();
+    expect(mock.errors).toEqual([{ status: 400, message: "Incognito sessions cannot be resumed" }]);
   });
 });
 

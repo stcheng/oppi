@@ -146,12 +146,14 @@ struct WorkspaceStoppedSessionsSection: View {
                             }
                             .listRowBackground(Color.themeBg)
                             .swipeActions(edge: .leading) {
-                                Button {
-                                    onResumeSession(session)
-                                } label: {
-                                    Label("Resume", systemImage: "play.fill")
+                                if session.ephemeral != true {
+                                    Button {
+                                        onResumeSession(session)
+                                    } label: {
+                                        Label("Resume", systemImage: "play.fill")
+                                    }
+                                    .tint(.themeGreen)
                                 }
-                                .tint(.themeGreen)
                             }
                             .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                                 Button(role: .destructive) {

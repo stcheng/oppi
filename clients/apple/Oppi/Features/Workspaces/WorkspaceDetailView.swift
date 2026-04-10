@@ -390,7 +390,7 @@ struct WorkspaceDetailView: View {
                     ContentUnavailableView(
                         "No Sessions",
                         systemImage: "terminal",
-                        description: Text("Tap + to start a new session in this workspace.")
+                        description: Text("Tap + to start a new session. Long press for incognito.")
                     )
                     .listRowBackground(Color.themeBg)
                 }
@@ -455,13 +455,7 @@ struct WorkspaceDetailView: View {
         }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
-                Button {
-                    Task { await createSession() }
-                } label: {
-                    Image(systemName: "plus")
-                }
-                .accessibilityIdentifier("workspace.newSession")
-                .disabled(isCreating)
+                newSessionToolbarItem
             }
             ToolbarItemGroup(placement: .bottomBar) {
                 NavigationLink(value: FileBrowserNavTarget(workspaceId: workspace.id, path: "")) {
@@ -627,6 +621,29 @@ struct WorkspaceDetailView: View {
         session.displayTitle
     }
 
+    private var newSessionToolbarItem: some View {
+        Button {
+            Task { await createSession() }
+        } label: {
+            Image(systemName: "plus")
+        }
+        .contextMenu {
+            Button {
+                Task { await createSession() }
+            } label: {
+                Label("New Session", systemImage: "plus")
+            }
+
+            Button {
+                Task { await createSession(ephemeral: true) }
+            } label: {
+                Label("Incognito Session", systemImage: "eye.slash")
+            }
+        }
+        .accessibilityIdentifier("workspace.newSession")
+        .disabled(isCreating)
+    }
+
     // MARK: - Actions
 
     /// Create a new session in this workspace.
@@ -634,7 +651,7 @@ struct WorkspaceDetailView: View {
     /// Sandbox VM errors (QEMU unavailable, VM start failure) return as
     /// standard API errors (500/503) and are caught and displayed in the
     /// error alert — no special handling needed.
-    private func createSession() async {
+    private func createSession(ephemeral: Bool = false) async {
         guard let api = apiClient else {
             error = "Server is offline — reconnecting in background"
             return
@@ -643,7 +660,10 @@ struct WorkspaceDetailView: View {
         error = nil
 
         do {
-            let response = try await api.createWorkspaceSession(workspaceId: workspace.id)
+            let response = try await api.createWorkspaceSession(
+                workspaceId: workspace.id,
+                ephemeral: ephemeral ? true : nil
+            )
             sessionStore.upsert(response.session)
             isCreating = false
         } catch {

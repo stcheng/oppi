@@ -172,6 +172,14 @@ export class SdkBackend {
     this.modelRegistry = modelRegistry;
   }
 
+  private static createPiSessionManager(session: Session, cwd: string): PiSessionManager {
+    const piSessionFile = session.piSessionFile;
+    if (session.ephemeral) {
+      return PiSessionManager.inMemory(cwd);
+    }
+    return piSessionFile ? PiSessionManager.open(piSessionFile) : PiSessionManager.create(cwd);
+  }
+
   static async create(config: SdkBackendConfig): Promise<SdkBackend> {
     const createStartMs = Date.now();
     const { session, workspace, onEvent, onEnd: _onEnd } = config;
@@ -190,11 +198,7 @@ export class SdkBackend {
       });
     }
 
-    // Use file-based session manager for persistence
-    const piSessionFile = (session as { piSessionFile?: string }).piSessionFile;
-    const piSessionManager = piSessionFile
-      ? PiSessionManager.open(piSessionFile)
-      : PiSessionManager.create(cwd);
+    const piSessionManager = SdkBackend.createPiSessionManager(session, cwd);
 
     // Build extension factories for in-process tools
     const extensionFactories: ExtensionFactory[] = [];

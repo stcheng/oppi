@@ -39,6 +39,9 @@ struct Session: Identifiable, Sendable, Equatable {
     // Agent config state (synced from pi get_state)
     var thinkingLevel: String?
 
+    // Privacy / persistence
+    var ephemeral: Bool?
+
     // Parent-child tree (spawn_agent)
     var parentSessionId: String?
 
@@ -81,7 +84,7 @@ extension Session: Codable {
         case name, status, createdAt, lastActivity
         case model, messageCount, tokens, cost, changeStats
         case contextTokens, contextWindow, firstMessage, lastMessage
-        case thinkingLevel, parentSessionId
+        case thinkingLevel, ephemeral, parentSessionId
     }
 
     init(from decoder: Decoder) throws {
@@ -101,6 +104,7 @@ extension Session: Codable {
         firstMessage = try c.decodeIfPresent(String.self, forKey: .firstMessage)
         lastMessage = try c.decodeIfPresent(String.self, forKey: .lastMessage)
         thinkingLevel = try c.decodeIfPresent(String.self, forKey: .thinkingLevel)
+        ephemeral = try c.decodeIfPresent(Bool.self, forKey: .ephemeral)
         parentSessionId = try c.decodeIfPresent(String.self, forKey: .parentSessionId)
 
 
@@ -129,6 +133,7 @@ extension Session: Codable {
         try c.encodeIfPresent(firstMessage, forKey: .firstMessage)
         try c.encodeIfPresent(lastMessage, forKey: .lastMessage)
         try c.encodeIfPresent(thinkingLevel, forKey: .thinkingLevel)
+        try c.encodeIfPresent(ephemeral, forKey: .ephemeral)
         try c.encodeIfPresent(parentSessionId, forKey: .parentSessionId)
 
         try c.encode(createdAt.timeIntervalSince1970 * 1000, forKey: .createdAt)

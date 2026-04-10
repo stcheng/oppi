@@ -1,9 +1,10 @@
 import { homedir } from "node:os";
 import { resolve as resolvePath } from "node:path";
 import { describe, expect, it, vi } from "vitest";
+import * as PiSdk from "@mariozechner/pi-coding-agent";
 
 import { resolveSdkSessionCwd, SdkBackend } from "../src/sdk-backend.js";
-import type { Workspace } from "../src/types.js";
+import type { Session, Workspace } from "../src/types.js";
 
 describe("resolveSdkSessionCwd", () => {
   it("defaults to home dir when workspace is missing", () => {
@@ -98,6 +99,45 @@ describe("SdkBackend.setModel", () => {
       id: "qwen3-coder",
       name: "Qwen3 Coder",
     });
+  });
+});
+
+describe("SdkBackend.createPiSessionManager", () => {
+  it("uses pi's in-memory session manager for incognito sessions", () => {
+    const cwd = resolvePath(homedir(), "workspace", "oppi");
+    const session = {
+      id: "sess-1",
+      status: "starting",
+      createdAt: 0,
+      lastActivity: 0,
+      messageCount: 0,
+      tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      cost: 0,
+      ephemeral: true,
+    } as Session;
+
+    const inMemoryManager = { kind: "in-memory" } as unknown as PiSdk.SessionManager;
+    const persistedManager = { kind: "persisted" } as unknown as PiSdk.SessionManager;
+    const inMemorySpy = vi.spyOn(PiSdk.SessionManager, "inMemory").mockReturnValue(inMemoryManager);
+    const createSpy = vi.spyOn(PiSdk.SessionManager, "create").mockReturnValue(persistedManager);
+    const openSpy = vi.spyOn(PiSdk.SessionManager, "open").mockReturnValue(persistedManager);
+
+    try {
+      const manager = (
+        SdkBackend as unknown as {
+          createPiSessionManager: (session: Session, cwd: string) => PiSdk.SessionManager;
+        }
+      ).createPiSessionManager(session, cwd);
+
+      expect(manager).toBe(inMemoryManager);
+      expect(inMemorySpy).toHaveBeenCalledWith(cwd);
+      expect(createSpy).not.toHaveBeenCalled();
+      expect(openSpy).not.toHaveBeenCalled();
+    } finally {
+      inMemorySpy.mockRestore();
+      createSpy.mockRestore();
+      openSpy.mockRestore();
+    }
   });
 });
 
