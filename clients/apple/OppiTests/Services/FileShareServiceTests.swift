@@ -263,6 +263,474 @@ struct FileShareServiceTests {
         FileShareService.cleanupTempFiles()
     }
 
+    // MARK: - Diff Export Spec
+
+    @Test func defaultFormatForDiffIsImage() {
+        let hunks = Self.sampleDiffHunks
+        let format = FileShareService.defaultFormat(for: .diff(hunks, filePath: "test.swift"))
+        #expect(format == .image)
+    }
+
+    @Test func diffHasImagePDFAndSourceFormats() {
+        let hunks = Self.sampleDiffHunks
+        let formats = FileShareService.availableFormats(for: .diff(hunks, filePath: "test.swift"))
+        #expect(formats == [.image, .pdf, .source])
+    }
+
+    @Test func diffExportSpecHasCorrectMetadata() {
+        let hunks = Self.sampleDiffHunks
+        let spec = FileShareService.exportSpec(for: .diff(hunks, filePath: "test.swift"))
+        #expect(spec.defaultFormat == .image)
+        #expect(spec.sourceLabel == "Diff File")
+        #expect(spec.sourceBaseName == "diff")
+        #expect(spec.sourceExtension == "diff")
+        #expect(spec.pdfFilename == "diff.pdf")
+    }
+
+    @Test func diffFormatDisplayInfoShowsCorrectLabels() {
+        let hunks = Self.sampleDiffHunks
+        let content = FileShareService.ShareableContent.diff(hunks, filePath: "test.swift")
+
+        let imageInfo = FileShareService.formatDisplayInfo(.image, for: content)
+        #expect(imageInfo.label == "Image")
+        #expect(imageInfo.icon == "photo")
+
+        let pdfInfo = FileShareService.formatDisplayInfo(.pdf, for: content)
+        #expect(pdfInfo.label == "PDF")
+
+        let sourceInfo = FileShareService.formatDisplayInfo(.source, for: content)
+        #expect(sourceInfo.label == "Diff File")
+        #expect(sourceInfo.icon == "doc.text")
+    }
+
+    // MARK: - Diff Source Export (Unified Diff Text)
+
+    @Test func diffSourceExportProducesUnifiedDiffFormat() async {
+        let hunks = Self.sampleDiffHunks
+        let item = await FileShareService.render(.diff(hunks, filePath: "test.swift"), as: .source)
+        guard case .file(let url) = item else {
+            Issue.record("Expected file URL, got \(item)")
+            return
+        }
+
+        #expect(url.lastPathComponent == "diff.diff")
+        let content = try? String(contentsOf: url, encoding: .utf8)
+        guard let content else {
+            Issue.record("Could not read diff file")
+            return
+        }
+
+        // Must contain the hunk header
+        #expect(content.contains("@@ -1,4 +1,4 @@"))
+
+        // Must contain prefixed lines
+        #expect(content.contains(" let x = 1"))       // context line with space prefix
+        #expect(content.contains("-let y = 2"))        // removed line with - prefix
+        #expect(content.contains("+let y = 3"))        // added line with + prefix
+
+        FileShareService.cleanupTempFiles()
+    }
+
+    @Test func diffSourceExportMultipleHunksJoinedByNewline() async {
+        let hunks = Self.multiHunkDiff
+        let item = await FileShareService.render(.diff(hunks, filePath: "test.swift"), as: .source)
+        guard case .file(let url) = item else {
+            Issue.record("Expected file URL, got \(item)")
+            return
+        }
+
+        let content = try? String(contentsOf: url, encoding: .utf8)
+        guard let content else {
+            Issue.record("Could not read diff file")
+            return
+        }
+
+        // Both hunk headers must be present
+        #expect(content.contains("@@ -1,4 +1,4 @@"))
+        #expect(content.contains("@@ -20,3 +20,4 @@"))
+
+        // Content from both hunks
+        #expect(content.contains("-let y = 2"))
+        #expect(content.contains("+let y = 3"))
+        #expect(content.contains("+    let extra = true"))
+
+        FileShareService.cleanupTempFiles()
+    }
+
+    @Test func emptyDiffSourceExportProducesEmptyContent() async {
+        let item = await FileShareService.render(.diff([], filePath: "test.swift"), as: .source)
+        guard case .file(let url) = item else {
+            Issue.record("Expected file URL, got \(item)")
+            return
+        }
+
+        let content = try? String(contentsOf: url, encoding: .utf8)
+        #expect(content == "")
+        FileShareService.cleanupTempFiles()
+    }
+
+    // MARK: - Diff Image Rendering
+
+    @Test func diffRendersToImage() async {
+        let hunks = Self.sampleDiffHunks
+        let item = await FileShareService.render(.diff(hunks, filePath: "test.swift"), as: .image)
+        guard case .image(let image) = item else {
+            Issue.record("Expected image, got \(item)")
+            return
+        }
+        #expect(image.size.width > 0)
+        #expect(image.size.height > 0)
+    }
+
+    @Test func emptyDiffRendersToImage() async {
+        let item = await FileShareService.render(.diff([], filePath: "test.swift"), as: .image)
+        guard case .image(let image) = item else {
+            Issue.record("Expected image, got \(item)")
+            return
+        }
+        // Should produce *something* even for empty input (attributed string is empty but layout still runs)
+        #expect(image.size.width > 0)
+        #expect(image.size.height > 0)
+    }
+
+    @Test func diffImageDefaultRenderUsesImageFormat() async {
+        let hunks = Self.sampleDiffHunks
+        let item = await FileShareService.renderDefault(.diff(hunks, filePath: "test.swift"))
+        guard case .image = item else {
+            Issue.record("Expected image (default format for diff), got \(item)")
+            return
+        }
+    }
+
+    // MARK: - Diff PDF Rendering
+
+    @Test func diffRendersToPDF() async {
+        let hunks = Self.sampleDiffHunks
+        let item = await FileShareService.render(.diff(hunks, filePath: "test.swift"), as: .pdf)
+        guard case .pdf(let data, let filename) = item else {
+            Issue.record("Expected PDF, got \(item)")
+            return
+        }
+        #expect(!data.isEmpty)
+        #expect(filename == "diff.pdf")
+
+        // Validate PDF header
+        let header = String(data: data.prefix(5), encoding: .ascii)
+        #expect(header == "%PDF-")
+    }
+
+    @Test func emptyDiffRendersToPDF() async {
+        let item = await FileShareService.render(.diff([], filePath: "test.swift"), as: .pdf)
+        guard case .pdf(let data, let filename) = item else {
+            Issue.record("Expected PDF, got \(item)")
+            return
+        }
+        #expect(filename == "diff.pdf")
+        // Even empty diff should produce valid PDF structure
+        if !data.isEmpty {
+            let header = String(data: data.prefix(5), encoding: .ascii)
+            #expect(header == "%PDF-")
+        }
+    }
+
+    // MARK: - Diff Attributed String Line Kind Attributes
+
+    @Test func diffAttributedStringHasCorrectLineKindAttributes() {
+        let hunks = Self.sampleDiffHunks
+        let attrString = DiffAttributedStringBuilder.build(
+            hunks: hunks, filePath: "test.swift", includeStats: true
+        )
+        let text = attrString.string as NSString
+
+        // Collect all diffLineKindAttributeKey values
+        var kinds: [String] = []
+        attrString.enumerateAttribute(
+            diffLineKindAttributeKey,
+            in: NSRange(location: 0, length: text.length),
+            options: []
+        ) { value, _, _ in
+            if let kind = value as? String {
+                kinds.append(kind)
+            }
+        }
+
+        // Must contain all three kinds from the sample hunks
+        #expect(kinds.contains("added"), "Must tag added lines")
+        #expect(kinds.contains("removed"), "Must tag removed lines")
+        #expect(kinds.contains("header"), "Must tag header lines")
+    }
+
+    @Test func diffAttributedStringContextLinesHaveNoLineKind() {
+        let hunks = [
+            WorkspaceReviewDiffHunk(
+                oldStart: 1, oldCount: 1, newStart: 1, newCount: 1,
+                lines: [
+                    WorkspaceReviewDiffLine(kind: .context, text: "unchanged", oldLine: 1, newLine: 1, spans: nil),
+                ]
+            ),
+        ]
+        let attrString = DiffAttributedStringBuilder.build(hunks: hunks, filePath: "test.txt")
+        let text = attrString.string as NSString
+
+        // Find the code portion of the context line (after gutter + line nums)
+        // The context gutter is "   " (3 spaces), then line numbers, then code
+        var foundLineKindOnCode = false
+        attrString.enumerateAttribute(
+            diffLineKindAttributeKey,
+            in: NSRange(location: 0, length: text.length),
+            options: []
+        ) { value, range, _ in
+            if let kind = value as? String, kind != "header" {
+                // Context lines should not have "added" or "removed" kind
+                let rangeText = text.substring(with: range)
+                if rangeText.contains("unchanged") {
+                    foundLineKindOnCode = true
+                }
+            }
+        }
+        #expect(!foundLineKindOnCode, "Context code region should not have a diffLineKind attribute")
+    }
+
+    // MARK: - Diff with Word-Level Spans
+
+    @Test func diffWithWordSpansRendersToImage() async {
+        let hunks = [
+            WorkspaceReviewDiffHunk(
+                oldStart: 10, oldCount: 2, newStart: 10, newCount: 2,
+                lines: [
+                    WorkspaceReviewDiffLine(
+                        kind: .removed, text: "let color = .red",
+                        oldLine: 10, newLine: nil,
+                        spans: [WorkspaceReviewDiffSpan(start: 13, end: 17, kind: .changed)]
+                    ),
+                    WorkspaceReviewDiffLine(
+                        kind: .added, text: "let color = .blue",
+                        oldLine: nil, newLine: 10,
+                        spans: [WorkspaceReviewDiffSpan(start: 13, end: 18, kind: .changed)]
+                    ),
+                ]
+            ),
+        ]
+        let item = await FileShareService.render(.diff(hunks, filePath: "test.swift"), as: .image)
+        guard case .image(let image) = item else {
+            Issue.record("Expected image, got \(item)")
+            return
+        }
+        #expect(image.size.width > 0)
+        #expect(image.size.height > 0)
+    }
+
+    @Test func diffWordSpansGetBackgroundAttributes() {
+        let hunks = [
+            WorkspaceReviewDiffHunk(
+                oldStart: 1, oldCount: 2, newStart: 1, newCount: 2,
+                lines: [
+                    WorkspaceReviewDiffLine(
+                        kind: .removed, text: "let x = old",
+                        oldLine: 1, newLine: nil,
+                        spans: [WorkspaceReviewDiffSpan(start: 8, end: 11, kind: .changed)]
+                    ),
+                    WorkspaceReviewDiffLine(
+                        kind: .added, text: "let x = new",
+                        oldLine: nil, newLine: 1,
+                        spans: [WorkspaceReviewDiffSpan(start: 8, end: 11, kind: .changed)]
+                    ),
+                ]
+            ),
+        ]
+        let attrString = DiffAttributedStringBuilder.build(hunks: hunks, filePath: "test.swift")
+        let text = attrString.string as NSString
+
+        // Find "old" in the removed line and verify it has a background color
+        let oldRange = text.range(of: "old")
+        guard oldRange.location != NSNotFound else {
+            Issue.record("Could not find 'old' in diff text")
+            return
+        }
+        let oldBg = attrString.attribute(.backgroundColor, at: oldRange.location, effectiveRange: nil) as? UIColor
+        #expect(oldBg != nil, "Word-level span on removed line must have background color")
+
+        // Find "new" in the added line and verify it has a background color
+        let newRange = text.range(of: "new")
+        guard newRange.location != NSNotFound else {
+            Issue.record("Could not find 'new' in diff text")
+            return
+        }
+        let newBg = attrString.attribute(.backgroundColor, at: newRange.location, effectiveRange: nil) as? UIColor
+        #expect(newBg != nil, "Word-level span on added line must have background color")
+
+        // The two backgrounds should differ (removed vs added use different highlight colors)
+        #expect(oldBg != newBg, "Removed and added word-span backgrounds should differ")
+    }
+
+    // MARK: - Large Diff Handling
+
+    @Test func largeDiffRendersWithoutCrash() async {
+        // Generate a diff with 500 lines to verify no OOM or excessive rendering time
+        var lines: [WorkspaceReviewDiffLine] = []
+        for i in 1...500 {
+            let kind: WorkspaceReviewDiffLine.Kind = i % 3 == 0 ? .added : (i % 3 == 1 ? .removed : .context)
+            lines.append(WorkspaceReviewDiffLine(
+                kind: kind,
+                text: "    let variable\(i) = \(i) // some code here with padding",
+                oldLine: kind == .added ? nil : i,
+                newLine: kind == .removed ? nil : i,
+                spans: nil
+            ))
+        }
+        let hunks = [WorkspaceReviewDiffHunk(oldStart: 1, oldCount: 334, newStart: 1, newCount: 334, lines: lines)]
+
+        let item = await FileShareService.render(.diff(hunks, filePath: "test.swift"), as: .image)
+        guard case .image(let image) = item else {
+            Issue.record("Expected image for large diff")
+            return
+        }
+        #expect(image.size.width > 0)
+        #expect(image.size.height > 0)
+    }
+
+    // MARK: - Diff Stats Summary
+
+    @Test func diffAttributedStringIncludesStatsWhenRequested() {
+        let hunks = Self.sampleDiffHunks
+        let withStats = DiffAttributedStringBuilder.build(
+            hunks: hunks, filePath: "test.swift", includeStats: true
+        )
+        let text = withStats.string
+
+        // Stats line should include counts
+        #expect(text.contains("+1"), "Stats should show added count")
+        #expect(text.contains("-1"), "Stats should show removed count")
+        #expect(text.contains("lines"), "Stats should show total line count")
+    }
+
+    @Test func diffAttributedStringOmitsStatsWhenNotRequested() {
+        let hunks = Self.sampleDiffHunks
+        let withoutStats = DiffAttributedStringBuilder.build(
+            hunks: hunks, filePath: "test.swift", includeStats: false
+        )
+        let text = withoutStats.string
+
+        // Should not have the stats summary prefix (the "+1 -1 N lines" line)
+        // But should still have the hunk content
+        #expect(text.contains("let x = 1"))
+        // The first non-whitespace content should be the header
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        #expect(trimmed.hasPrefix("@@"), "Without stats, content should start with hunk header")
+    }
+
+    // MARK: - Diff Unified Text Correctness
+
+    @Test func diffSourceExportContextLinesHaveSpacePrefix() async {
+        let hunks = [
+            WorkspaceReviewDiffHunk(
+                oldStart: 5, oldCount: 1, newStart: 5, newCount: 1,
+                lines: [
+                    WorkspaceReviewDiffLine(kind: .context, text: "return true", oldLine: 5, newLine: 5, spans: nil),
+                ]
+            ),
+        ]
+        let item = await FileShareService.render(.diff(hunks, filePath: "test.swift"), as: .source)
+        guard case .file(let url) = item else {
+            Issue.record("Expected file URL")
+            return
+        }
+
+        let content = try? String(contentsOf: url, encoding: .utf8)
+        guard let content else {
+            Issue.record("Could not read file")
+            return
+        }
+
+        // Unified diff format: context lines start with " " (space)
+        let lines = content.components(separatedBy: "\n")
+        let contextLine = lines.first(where: { $0.contains("return true") })
+        #expect(contextLine?.hasPrefix(" ") == true, "Context lines must have space prefix in unified diff")
+
+        FileShareService.cleanupTempFiles()
+    }
+
+    @Test func diffSourceExportAddedLinesHavePlusPrefix() async {
+        let hunks = [
+            WorkspaceReviewDiffHunk(
+                oldStart: 1, oldCount: 0, newStart: 1, newCount: 1,
+                lines: [
+                    WorkspaceReviewDiffLine(kind: .added, text: "import UIKit", oldLine: nil, newLine: 1, spans: nil),
+                ]
+            ),
+        ]
+        let item = await FileShareService.render(.diff(hunks, filePath: "test.swift"), as: .source)
+        guard case .file(let url) = item else {
+            Issue.record("Expected file URL")
+            return
+        }
+
+        let content = try? String(contentsOf: url, encoding: .utf8)
+        let lines = content?.components(separatedBy: "\n")
+        let addedLine = lines?.first(where: { $0.contains("import UIKit") })
+        #expect(addedLine?.hasPrefix("+") == true, "Added lines must have + prefix in unified diff")
+
+        FileShareService.cleanupTempFiles()
+    }
+
+    @Test func diffSourceExportRemovedLinesHaveMinusPrefix() async {
+        let hunks = [
+            WorkspaceReviewDiffHunk(
+                oldStart: 1, oldCount: 1, newStart: 1, newCount: 0,
+                lines: [
+                    WorkspaceReviewDiffLine(kind: .removed, text: "import UIKit", oldLine: 1, newLine: nil, spans: nil),
+                ]
+            ),
+        ]
+        let item = await FileShareService.render(.diff(hunks, filePath: "test.swift"), as: .source)
+        guard case .file(let url) = item else {
+            Issue.record("Expected file URL")
+            return
+        }
+
+        let content = try? String(contentsOf: url, encoding: .utf8)
+        let lines = content?.components(separatedBy: "\n")
+        let removedLine = lines?.first(where: { $0.contains("import UIKit") })
+        #expect(removedLine?.hasPrefix("-") == true, "Removed lines must have - prefix in unified diff")
+
+        FileShareService.cleanupTempFiles()
+    }
+
+    // MARK: - Diff Fixtures
+
+    private static let sampleDiffHunks: [WorkspaceReviewDiffHunk] = [
+        WorkspaceReviewDiffHunk(
+            oldStart: 1, oldCount: 4, newStart: 1, newCount: 4,
+            lines: [
+                WorkspaceReviewDiffLine(kind: .context, text: "let x = 1", oldLine: 1, newLine: 1, spans: nil),
+                WorkspaceReviewDiffLine(kind: .removed, text: "let y = 2", oldLine: 2, newLine: nil, spans: nil),
+                WorkspaceReviewDiffLine(kind: .added, text: "let y = 3", oldLine: nil, newLine: 2, spans: nil),
+                WorkspaceReviewDiffLine(kind: .context, text: "let z = 4", oldLine: 3, newLine: 3, spans: nil),
+            ]
+        ),
+    ]
+
+    private static let multiHunkDiff: [WorkspaceReviewDiffHunk] = [
+        WorkspaceReviewDiffHunk(
+            oldStart: 1, oldCount: 4, newStart: 1, newCount: 4,
+            lines: [
+                WorkspaceReviewDiffLine(kind: .context, text: "let x = 1", oldLine: 1, newLine: 1, spans: nil),
+                WorkspaceReviewDiffLine(kind: .removed, text: "let y = 2", oldLine: 2, newLine: nil, spans: nil),
+                WorkspaceReviewDiffLine(kind: .added, text: "let y = 3", oldLine: nil, newLine: 2, spans: nil),
+                WorkspaceReviewDiffLine(kind: .context, text: "let z = 4", oldLine: 3, newLine: 3, spans: nil),
+            ]
+        ),
+        WorkspaceReviewDiffHunk(
+            oldStart: 20, oldCount: 3, newStart: 20, newCount: 4,
+            lines: [
+                WorkspaceReviewDiffLine(kind: .context, text: "func test() {", oldLine: 20, newLine: 20, spans: nil),
+                WorkspaceReviewDiffLine(kind: .context, text: "    let result = true", oldLine: 21, newLine: 21, spans: nil),
+                WorkspaceReviewDiffLine(kind: .added, text: "    let extra = true", oldLine: nil, newLine: 22, spans: nil),
+                WorkspaceReviewDiffLine(kind: .context, text: "}", oldLine: 22, newLine: 23, spans: nil),
+            ]
+        ),
+    ]
+
     // MARK: - Activity Items
 
     @Test func imageShareItemProvidesActivityItems() async {

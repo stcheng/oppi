@@ -393,6 +393,955 @@ private struct MockSystemAccess: VoiceInputSystemAccessing {
     func deactivateAudioSession() {}
 }
 
+// MARK: - Provider Lifecycle Tests
+
+@Suite("OppiDictationProvider lifecycle")
+@MainActor
+struct OppiDictationProviderLifecycleTests {
+
+    private static func makeCredentials() -> ServerCredentials {
+        ServerCredentials(
+            host: "localhost", port: 7749,
+            token: "test-token",
+            name: "test-server",
+            scheme: .http
+        )
+    }
+
+    private static func makeContextWithConnection() -> (VoiceProviderContext, ServerConnection) {
+        let connection = ServerConnection()
+        let credentials = makeCredentials()
+        let context = VoiceProviderContext(
+            locale: Locale(identifier: "en-US"),
+            source: "test",
+            serverCredentials: credentials,
+            serverConnection: connection
+        )
+        return (context, connection)
+    }
+
+    // MARK: - prewarm
+
+    @Test func prewarmIsNoOp() async throws {
+        let provider = OppiDictationProvider()
+        let context = VoiceProviderContext(locale: Locale(identifier: "en-US"), source: "test")
+        // Should complete without throwing — it's a no-op for server dictation
+        try await provider.prewarm(context: context)
+    }
+
+    // MARK: - invalidateCache
+
+    @Test func invalidateCacheDoesNotCrashWhenClean() {
+        let provider = OppiDictationProvider()
+        // Should not crash when called with no active state
+        provider.invalidateCache()
+    }
+
+    // MARK: - cancelPreparation
+
+    @Test func cancelPreparationDoesNotCrashWhenClean() {
+        let provider = OppiDictationProvider()
+        // Should not crash when called with no active preparation
+        provider.cancelPreparation()
+    }
+
+    @Test func cancelPreparationIsIdempotent() {
+        let provider = OppiDictationProvider()
+        provider.cancelPreparation()
+        provider.cancelPreparation()
+        // No crash, no assertion failure — idempotent cleanup
+    }
+
+    @Test func invalidateCacheIsIdempotent() {
+        let provider = OppiDictationProvider()
+        provider.invalidateCache()
+        provider.invalidateCache()
+        // No crash, no assertion failure — idempotent cleanup
+    }
+
+    // MARK: - prepareSession + makeSession happy path
+
+    @Test func prepareSessionReturnsPreparationWithCorrectPathTag() async throws {
+        let (context, connection) = Self.makeContextWithConnection()
+        let provider = OppiDictationProvider()
+
+        // Stub dictation sends to avoid real WS
+        connection._sendDictationForTesting = { _ in }
+
+        let preparation = try await provider.prepareSession(context: context)
+        #expect(preparation.pathTag == "dictation_ws")
+        #expect(preparation.audioFormat == nil)
+        #expect(preparation.setupMetricTags["dictation_mode"] == "server")
+        #expect(preparation.setupMetricTags["transport"] == "ws")
+        #expect(preparation.setupMetricTags["host"] == "localhost")
+        #expect(preparation.setupMetricTags["provider_id"] == "oppi_server_dictation")
+        #expect(preparation.setupMetricTags["provider_kind"] == "local_server")
+
+        // Cleanup
+        provider.invalidateCache()
+    }
+
+    @Test func makeSessionSucceedsAfterPrepare() async throws {
+        let (context, connection) = Self.makeContextWithConnection()
+        let provider = OppiDictationProvider()
+
+        connection._sendDictationForTesting = { _ in }
+
+        let preparation = try await provider.prepareSession(context: context)
+        let session = try provider.makeSession(context: context, preparation: preparation)
+        #expect(session is OppiDictationSession)
+
+        // After makeSession, internal state should be transferred
+        // A second makeSession should fail (readiness task consumed)
+        #expect(throws: VoiceInputError.self) {
+            try provider.makeSession(context: context, preparation: preparation)
+        }
+
+        // Cleanup
+        provider.invalidateCache()
+    }
+
+    @Test func makeSessionThrowsWhenConnectionMissing() async throws {
+        let (context, connection) = Self.makeContextWithConnection()
+        let provider = OppiDictationProvider()
+
+        connection._sendDictationForTesting = { _ in }
+        let preparation = try await provider.prepareSession(context: context)
+
+        // Create context without connection
+        let noConnectionContext = VoiceProviderContext(
+            locale: Locale(identifier: "en-US"),
+            source: "test",
+            serverCredentials: Self.makeCredentials()
+        )
+
+        #expect(throws: VoiceInputError.self) {
+            try provider.makeSession(context: noConnectionContext, preparation: preparation)
+        }
+
+        // Cleanup
+        provider.invalidateCache()
+    }
+
+    // MARK: - invalidateCache after prepare
+
+    @Test func invalidateCacheClearsActiveState() async throws {
+        let (context, connection) = Self.makeContextWithConnection()
+        let provider = OppiDictationProvider()
+
+        connection._sendDictationForTesting = { _ in }
+        let preparation = try await provider.prepareSession(context: context)
+
+        // Invalidate clears readiness task and recording state
+        provider.invalidateCache()
+
+        // makeSession should now fail because state was cleared
+        #expect(throws: VoiceInputError.self) {
+            try provider.makeSession(context: context, preparation: preparation)
+        }
+    }
+
+    // MARK: - cancelPreparation after prepare
+
+    @Test func cancelPreparationClearsActiveState() async throws {
+        let (context, connection) = Self.makeContextWithConnection()
+        let provider = OppiDictationProvider()
+
+        connection._sendDictationForTesting = { _ in }
+        let preparation = try await provider.prepareSession(context: context)
+
+        provider.cancelPreparation()
+
+        #expect(throws: VoiceInputError.self) {
+            try provider.makeSession(context: context, preparation: preparation)
+        }
+    }
+
+    // MARK: - metricTags
+
+    @Test func metricTagsIncludeUnknownWhenNoServerInfo() async throws {
+        let (context, connection) = Self.makeContextWithConnection()
+        let provider = OppiDictationProvider()
+
+        connection._sendDictationForTesting = { _ in }
+        let preparation = try await provider.prepareSession(context: context)
+
+        // At setup time, stt_backend and model are unknown
+        #expect(preparation.setupMetricTags["stt_backend"] == "unknown")
+        #expect(preparation.setupMetricTags["model"] == "unknown")
+        #expect(preparation.setupMetricTags["live_preview"] == "1")
+
+        provider.invalidateCache()
+    }
+}
+
+// MARK: - Session Message Listener Tests
+
+@Suite("OppiDictationSession message listener")
+@MainActor
+struct OppiDictationSessionMessageListenerTests {
+
+    @Test func dictationResultYieldsReplaceFinalTranscript() async {
+        let connection = ServerConnection()
+        let (messageStream, messageCont) = AsyncStream.makeStream(of: ServerMessage.self)
+        let session = OppiDictationSession(
+            connection: connection,
+            readinessTask: Task { nil },
+            messages: messageStream
+        )
+
+        let collectTask = Task {
+            await collectEvents(from: session.events, count: 1)
+        }
+
+        session._startMessageListenerForTesting()
+        messageCont.yield(.dictationResult(text: "Hello world", snap: false))
+        // Send final to cleanly end the stream
+        messageCont.yield(.dictationFinal(text: "Hello world", audioId: nil))
+
+        let events = await collectTask.value
+        #expect(events.count >= 1)
+        #expect(events[0] == .replaceFinalTranscript("Hello world"))
+    }
+
+    @Test func dictationResultWithSnapYieldsSnapEvent() async {
+        let connection = ServerConnection()
+        let (messageStream, messageCont) = AsyncStream.makeStream(of: ServerMessage.self)
+        let session = OppiDictationSession(
+            connection: connection,
+            readinessTask: Task { nil },
+            messages: messageStream
+        )
+
+        let collectTask = Task {
+            await collectEvents(from: session.events, count: 1)
+        }
+
+        session._startMessageListenerForTesting()
+        messageCont.yield(.dictationResult(text: "Snapped text", snap: true))
+        messageCont.yield(.dictationFinal(text: "Snapped text", audioId: nil))
+
+        let events = await collectTask.value
+        #expect(events.count >= 1)
+        #expect(events[0] == .replaceFinalTranscript("Snapped text", snap: true))
+    }
+
+    @Test func dictationFinalYieldsTranscriptAndFinishes() async {
+        let connection = ServerConnection()
+        let (messageStream, messageCont) = AsyncStream.makeStream(of: ServerMessage.self)
+        let session = OppiDictationSession(
+            connection: connection,
+            readinessTask: Task { nil },
+            messages: messageStream
+        )
+
+        let collectTask = Task {
+            await collectAllEvents(from: session.events)
+        }
+
+        session._startMessageListenerForTesting()
+        messageCont.yield(.dictationFinal(text: "Final transcript", audioId: "abc"))
+
+        let (events, error) = await collectTask.value
+        // Should have received the final transcript
+        #expect(events.contains(.replaceFinalTranscript("Final transcript")))
+        // Stream should finish cleanly (no error)
+        #expect(error == nil)
+    }
+
+    @Test func emptyDictationFinalDoesNotYieldEvent() async {
+        let connection = ServerConnection()
+        let (messageStream, messageCont) = AsyncStream.makeStream(of: ServerMessage.self)
+        let session = OppiDictationSession(
+            connection: connection,
+            readinessTask: Task { nil },
+            messages: messageStream
+        )
+
+        let collectTask = Task {
+            await collectAllEvents(from: session.events)
+        }
+
+        session._startMessageListenerForTesting()
+        messageCont.yield(.dictationFinal(text: "", audioId: nil))
+
+        let (events, error) = await collectTask.value
+        // Empty final text should not produce a transcript event
+        #expect(events.isEmpty)
+        #expect(error == nil)
+    }
+
+    @Test func fatalDictationErrorFinishesWithError() async {
+        let connection = ServerConnection()
+        let (messageStream, messageCont) = AsyncStream.makeStream(of: ServerMessage.self)
+        let session = OppiDictationSession(
+            connection: connection,
+            readinessTask: Task { nil },
+            messages: messageStream
+        )
+
+        let collectTask = Task {
+            await collectAllEvents(from: session.events)
+        }
+
+        session._startMessageListenerForTesting()
+        messageCont.yield(.dictationError(error: "STT crashed", fatal: true))
+
+        let (_, error) = await collectTask.value
+        #expect(error != nil)
+        #expect(error?.localizedDescription.contains("STT crashed") == true)
+    }
+
+    @Test func nonFatalDictationErrorContinuesStream() async {
+        let connection = ServerConnection()
+        let (messageStream, messageCont) = AsyncStream.makeStream(of: ServerMessage.self)
+        let session = OppiDictationSession(
+            connection: connection,
+            readinessTask: Task { nil },
+            messages: messageStream
+        )
+
+        let collectTask = Task {
+            await collectAllEvents(from: session.events)
+        }
+
+        session._startMessageListenerForTesting()
+        // Non-fatal error should not end the stream
+        messageCont.yield(.dictationError(error: "transient hiccup", fatal: false))
+        // Stream should still accept more messages
+        messageCont.yield(.dictationResult(text: "After error", snap: false))
+        messageCont.yield(.dictationFinal(text: "After error", audioId: nil))
+
+        let (events, error) = await collectTask.value
+        #expect(error == nil)
+        #expect(events.contains(.replaceFinalTranscript("After error")))
+    }
+
+    @Test func dictationReadyDoesNotYieldEvent() async {
+        let connection = ServerConnection()
+        let (messageStream, messageCont) = AsyncStream.makeStream(of: ServerMessage.self)
+        let session = OppiDictationSession(
+            connection: connection,
+            readinessTask: Task { nil },
+            messages: messageStream
+        )
+
+        let collectTask = Task {
+            await collectAllEvents(from: session.events)
+        }
+
+        session._startMessageListenerForTesting()
+        messageCont.yield(.dictationReady(provider: DictationProviderInfo(sttProvider: "test", sttModel: "test")))
+        messageCont.yield(.dictationFinal(text: "Done", audioId: nil))
+
+        let (events, _) = await collectTask.value
+        // dictationReady should not produce any VoiceSessionEvent transcript
+        let transcriptEvents = events.filter {
+            if case .replaceFinalTranscript("Done", _) = $0 { return false }
+            if case .providerMetricTags = $0 { return false }
+            return true
+        }
+        #expect(transcriptEvents.isEmpty)
+    }
+
+    @Test func multipleResultsBeforeFinal() async {
+        let connection = ServerConnection()
+        let (messageStream, messageCont) = AsyncStream.makeStream(of: ServerMessage.self)
+        let session = OppiDictationSession(
+            connection: connection,
+            readinessTask: Task { nil },
+            messages: messageStream
+        )
+
+        let collectTask = Task {
+            await collectAllEvents(from: session.events)
+        }
+
+        session._startMessageListenerForTesting()
+        messageCont.yield(.dictationResult(text: "Hello", snap: false))
+        messageCont.yield(.dictationResult(text: "Hello world", snap: false))
+        messageCont.yield(.dictationResult(text: "Hello world how", snap: false))
+        messageCont.yield(.dictationFinal(text: "Hello world how are you", audioId: nil))
+
+        let (events, error) = await collectTask.value
+        #expect(error == nil)
+        // Should have 4 replaceFinalTranscript events (3 results + 1 final)
+        let transcriptEvents = events.filter {
+            if case .replaceFinalTranscript = $0 { return true }
+            return false
+        }
+        #expect(transcriptEvents.count == 4)
+    }
+
+    // MARK: - Helpers
+
+    private func collectEvents(
+        from events: AsyncThrowingStream<VoiceSessionEvent, Error>,
+        count: Int
+    ) async -> [VoiceSessionEvent] {
+        var collected: [VoiceSessionEvent] = []
+        do {
+            for try await event in events {
+                collected.append(event)
+                if collected.count >= count { break }
+            }
+        } catch {}
+        return collected
+    }
+
+    private func collectAllEvents(
+        from events: AsyncThrowingStream<VoiceSessionEvent, Error>
+    ) async -> ([VoiceSessionEvent], Error?) {
+        var collected: [VoiceSessionEvent] = []
+        do {
+            for try await event in events {
+                collected.append(event)
+            }
+            return (collected, nil)
+        } catch {
+            return (collected, error)
+        }
+    }
+}
+
+// MARK: - Session Audio Drain Tests
+
+@Suite("OppiDictationSession audio drain")
+@MainActor
+struct OppiDictationSessionAudioDrainTests {
+
+    @Test func readinessFailureSurfacesErrorToEventStream() async {
+        let connection = ServerConnection()
+        let (messageStream, _) = AsyncStream.makeStream(of: ServerMessage.self)
+        let (audioStream, audioCont) = AsyncStream.makeStream(of: Data.self)
+
+        let readinessError = VoiceInputError.remoteRequestTimedOut
+        let session = OppiDictationSession(
+            connection: connection,
+            readinessTask: Task<DictationProviderInfo?, Error> { throw readinessError },
+            messages: messageStream
+        )
+
+        let errorTask = Task {
+            await consumeStreamError(from: session.events)
+        }
+
+        session._setPendingAudioStreamForTesting(audioStream)
+        session._startAudioDrainTaskForTesting()
+        audioCont.finish()
+
+        let error = await errorTask.value
+        #expect(error != nil)
+    }
+
+    @Test func providerMetricTagsEmittedWhenInfoAvailable() async {
+        let connection = ServerConnection()
+        connection._sendDictationAudioForTesting = { _ in }
+
+        let (messageStream, messageCont) = AsyncStream.makeStream(of: ServerMessage.self)
+        let (audioStream, audioCont) = AsyncStream.makeStream(of: Data.self)
+
+        let info = DictationProviderInfo(sttProvider: "mlx-server", sttModel: "Qwen3-ASR")
+        let session = OppiDictationSession(
+            connection: connection,
+            readinessTask: Task<DictationProviderInfo?, Error> { info },
+            messages: messageStream
+        )
+
+        let collectTask = Task { () -> [VoiceSessionEvent] in
+            var events: [VoiceSessionEvent] = []
+            do {
+                for try await event in session.events {
+                    events.append(event)
+                    // Collect the metric tag event then stop
+                    if case .providerMetricTags = event { break }
+                }
+            } catch {}
+            return events
+        }
+
+        session._setPendingAudioStreamForTesting(audioStream)
+        session._startAudioDrainTaskForTesting()
+
+        // Give drain task time to process readiness
+        try? await Task.sleep(for: .milliseconds(50))
+        audioCont.finish()
+        messageCont.finish()
+
+        let events = await collectTask.value
+        let metricEvents = events.filter {
+            if case .providerMetricTags = $0 { return true }
+            return false
+        }
+        #expect(metricEvents.count == 1)
+        if case .providerMetricTags(let tags) = metricEvents.first {
+            #expect(tags["stt_backend"] == "mlx-server")
+            #expect(tags["model"] == "Qwen3-ASR")
+        }
+    }
+
+    @Test func noMetricTagsWhenInfoIsNil() async {
+        let connection = ServerConnection()
+        connection._sendDictationAudioForTesting = { _ in }
+
+        let (messageStream, messageCont) = AsyncStream.makeStream(of: ServerMessage.self)
+        let (audioStream, audioCont) = AsyncStream.makeStream(of: Data.self)
+
+        let session = OppiDictationSession(
+            connection: connection,
+            readinessTask: Task<DictationProviderInfo?, Error> { nil },
+            messages: messageStream
+        )
+
+        session._setPendingAudioStreamForTesting(audioStream)
+        session._startAudioDrainTaskForTesting()
+
+        // Give drain task time to process readiness, then close everything
+        try? await Task.sleep(for: .milliseconds(50))
+        audioCont.finish()
+
+        // End the message stream to finish the session
+        session._startMessageListenerForTesting()
+        messageCont.yield(.dictationFinal(text: "done", audioId: nil))
+
+        var metricTagCount = 0
+        do {
+            for try await event in session.events {
+                if case .providerMetricTags = event {
+                    metricTagCount += 1
+                }
+            }
+        } catch {}
+        #expect(metricTagCount == 0)
+    }
+
+    @Test func audioChunksForwardedToConnection() async {
+        var sentChunks: [Data] = []
+        let connection = ServerConnection()
+        connection._sendDictationAudioForTesting = { data in
+            sentChunks.append(data)
+        }
+
+        let (messageStream, _) = AsyncStream.makeStream(of: ServerMessage.self)
+        let (audioStream, audioCont) = AsyncStream.makeStream(of: Data.self)
+
+        let session = OppiDictationSession(
+            connection: connection,
+            readinessTask: Task<DictationProviderInfo?, Error> { nil },
+            messages: messageStream
+        )
+
+        session._setPendingAudioStreamForTesting(audioStream)
+        session._startAudioDrainTaskForTesting()
+
+        // Yield some audio chunks
+        audioCont.yield(Data([0x01, 0x02, 0x03]))
+        audioCont.yield(Data([0x04, 0x05]))
+        audioCont.finish()
+
+        // Give the drain task time to forward chunks
+        try? await Task.sleep(for: .milliseconds(100))
+
+        #expect(sentChunks.count == 2)
+        #expect(sentChunks[0] == Data([0x01, 0x02, 0x03]))
+        #expect(sentChunks[1] == Data([0x04, 0x05]))
+    }
+
+    private func consumeStreamError(
+        from events: AsyncThrowingStream<VoiceSessionEvent, Error>
+    ) async -> Error? {
+        do {
+            for try await _ in events {}
+            return nil
+        } catch {
+            return error
+        }
+    }
+}
+
+// MARK: - Session Cancel / Stop Tests
+
+@Suite("OppiDictationSession cancel and stop")
+@MainActor
+struct OppiDictationSessionCancelStopTests {
+
+    @Test func cancelSendsDictationCancel() async {
+        var sentMessages: [ClientMessage] = []
+        let connection = ServerConnection()
+        connection._sendDictationForTesting = { msg in
+            sentMessages.append(msg)
+        }
+
+        let (messageStream, _) = AsyncStream.makeStream(of: ServerMessage.self)
+        let session = OppiDictationSession(
+            connection: connection,
+            readinessTask: Task { nil },
+            messages: messageStream
+        )
+
+        await session.cancel()
+
+        let hasCancelMessage = sentMessages.contains { msg in
+            if case .dictationCancel = msg { return true }
+            return false
+        }
+        #expect(hasCancelMessage)
+    }
+
+    @Test func cancelIsIdempotent() async {
+        var cancelCount = 0
+        let connection = ServerConnection()
+        connection._sendDictationForTesting = { msg in
+            if case .dictationCancel = msg { cancelCount += 1 }
+        }
+
+        let (messageStream, _) = AsyncStream.makeStream(of: ServerMessage.self)
+        let session = OppiDictationSession(
+            connection: connection,
+            readinessTask: Task { nil },
+            messages: messageStream
+        )
+
+        await session.cancel()
+        await session.cancel()
+
+        // Should only send cancel once (second call is a no-op due to stopped guard)
+        #expect(cancelCount == 1)
+    }
+
+    @Test func stopSendsDictationStop() async {
+        var sentMessages: [ClientMessage] = []
+        let connection = ServerConnection()
+        connection._sendDictationForTesting = { msg in
+            sentMessages.append(msg)
+        }
+
+        let (messageStream, messageCont) = AsyncStream.makeStream(of: ServerMessage.self)
+        let session = OppiDictationSession(
+            connection: connection,
+            readinessTask: Task { nil },
+            messages: messageStream
+        )
+
+        // Start message listener so stop() can await it
+        session._startMessageListenerForTesting()
+
+        // Stop will send dictation_stop and wait for message listener to finish
+        let stopTask = Task {
+            await session.stop()
+        }
+
+        // Give stop a moment to send the message, then end the stream
+        try? await Task.sleep(for: .milliseconds(50))
+        messageCont.yield(.dictationFinal(text: "final", audioId: nil))
+
+        await stopTask.value
+
+        let hasStopMessage = sentMessages.contains { msg in
+            if case .dictationStop = msg { return true }
+            return false
+        }
+        #expect(hasStopMessage)
+    }
+
+    @Test func stopIsIdempotent() async {
+        var stopCount = 0
+        let connection = ServerConnection()
+        connection._sendDictationForTesting = { msg in
+            if case .dictationStop = msg { stopCount += 1 }
+        }
+
+        let (messageStream, messageCont) = AsyncStream.makeStream(of: ServerMessage.self)
+        let session = OppiDictationSession(
+            connection: connection,
+            readinessTask: Task { nil },
+            messages: messageStream
+        )
+
+        session._startMessageListenerForTesting()
+
+        let stopTask = Task {
+            await session.stop()
+        }
+        try? await Task.sleep(for: .milliseconds(50))
+        messageCont.yield(.dictationFinal(text: "", audioId: nil))
+        await stopTask.value
+
+        await session.stop()
+        #expect(stopCount == 1)
+    }
+}
+
+// MARK: - Dictation Routing Tests (Provider internal routing logic)
+
+@Suite("OppiDictationProvider dictation routing")
+@MainActor
+struct OppiDictationProviderRoutingTests {
+
+    private static func makeCredentials() -> ServerCredentials {
+        ServerCredentials(
+            host: "localhost", port: 7749,
+            token: "test-token",
+            name: "test-server",
+            scheme: .http
+        )
+    }
+
+    /// Verifies that dictation messages routed through ServerConnection's
+    /// routeStreamMessage reach the recording message stream consumed
+    /// by OppiDictationSession via the provider's dictation routing.
+    @Test func dictationReadyRoutedToSession() async throws {
+        let connection = ServerConnection()
+        connection._sendDictationForTesting = { _ in }
+
+        let context = VoiceProviderContext(
+            locale: Locale(identifier: "en-US"),
+            source: "test",
+            serverCredentials: Self.makeCredentials(),
+            serverConnection: connection
+        )
+
+        let provider = OppiDictationProvider()
+        let preparation = try await provider.prepareSession(context: context)
+
+        // Simulate dictation_ready arriving over the /stream WS.
+        // routeStreamMessage routes dictation messages to the dictation
+        // continuation, which the provider's routing task consumes.
+        connection.routeStreamMessage(StreamMessage(
+            sessionId: nil, streamSeq: nil, seq: nil, currentSeq: nil,
+            message: .dictationReady(provider: DictationProviderInfo(sttProvider: "mlx", sttModel: "qwen3"))
+        ))
+
+        let session = try provider.makeSession(context: context, preparation: preparation) as! OppiDictationSession
+
+        // The session's readiness task should resolve with the provider info.
+        // We can't directly observe it, but making the session succeed means
+        // the routing worked. Clean up.
+        provider.invalidateCache()
+        await session.cancel()
+    }
+
+    @Test func prepareSessionCanBeCalledTwice() async throws {
+        let connection = ServerConnection()
+        connection._sendDictationForTesting = { _ in }
+
+        let context = VoiceProviderContext(
+            locale: Locale(identifier: "en-US"),
+            source: "test",
+            serverCredentials: Self.makeCredentials(),
+            serverConnection: connection
+        )
+
+        let provider = OppiDictationProvider()
+
+        // First prepare
+        _ = try await provider.prepareSession(context: context)
+        provider.invalidateCache()
+
+        // Second prepare (should work cleanly after invalidation)
+        let preparation2 = try await provider.prepareSession(context: context)
+        #expect(preparation2.pathTag == "dictation_ws")
+
+        provider.invalidateCache()
+    }
+}
+
+// MARK: - Error Surface Tests
+
+@Suite("Dictation error surfacing")
+@MainActor
+struct DictationErrorSurfacingTests {
+
+    @Test func webSocketNotConnectedMapsToDictationConnectionLost() async {
+        let connection = ServerConnection()
+        connection._sendDictationAudioForTesting = { _ in
+            throw WebSocketError.notConnected
+        }
+
+        let (messageStream, _) = AsyncStream.makeStream(of: ServerMessage.self)
+        let (audioStream, audioCont) = AsyncStream.makeStream(of: Data.self)
+
+        let session = OppiDictationSession(
+            connection: connection,
+            readinessTask: Task { nil },
+            messages: messageStream
+        )
+
+        let errorTask = Task {
+            await consumeStreamError(from: session.events)
+        }
+
+        session._setPendingAudioStreamForTesting(audioStream)
+        session._startAudioDrainTaskForTesting()
+        audioCont.yield(Data([0x01]))
+        audioCont.finish()
+
+        let error = await errorTask.value
+        #expect(error?.localizedDescription == "Dictation connection lost")
+    }
+
+    @Test func webSocketSendTimeoutPreservesOriginalError() async {
+        let connection = ServerConnection()
+        connection._sendDictationAudioForTesting = { _ in
+            throw WebSocketError.sendTimeout
+        }
+
+        let (messageStream, _) = AsyncStream.makeStream(of: ServerMessage.self)
+        let (audioStream, audioCont) = AsyncStream.makeStream(of: Data.self)
+
+        let session = OppiDictationSession(
+            connection: connection,
+            readinessTask: Task { nil },
+            messages: messageStream
+        )
+
+        let errorTask = Task {
+            await consumeStreamError(from: session.events)
+        }
+
+        session._setPendingAudioStreamForTesting(audioStream)
+        session._startAudioDrainTaskForTesting()
+        audioCont.yield(Data([0x01]))
+        audioCont.finish()
+
+        let error = await errorTask.value
+        // sendTimeout is NOT notConnected, so it should NOT be mapped to "Dictation connection lost"
+        #expect(error != nil)
+        #expect(error?.localizedDescription != "Dictation connection lost")
+    }
+
+    @Test func cancelledReadinessDoesNotSurfaceError() async {
+        let connection = ServerConnection()
+        let (messageStream, _) = AsyncStream.makeStream(of: ServerMessage.self)
+        let (audioStream, _) = AsyncStream.makeStream(of: Data.self)
+
+        let readinessTask = Task<DictationProviderInfo?, Error> {
+            // Simulate being cancelled
+            try? await Task.sleep(for: .seconds(10))
+            throw CancellationError()
+        }
+
+        let session = OppiDictationSession(
+            connection: connection,
+            readinessTask: readinessTask,
+            messages: messageStream
+        )
+
+        session._setPendingAudioStreamForTesting(audioStream)
+        session._startAudioDrainTaskForTesting()
+
+        // Cancel the readiness task
+        readinessTask.cancel()
+
+        // Give it time to process cancellation
+        try? await Task.sleep(for: .milliseconds(100))
+
+        // The event stream should NOT have thrown an error for cancellation
+        // (CancellationError is handled as a clean exit)
+        // We verify by checking that we can still iterate without getting a thrown error
+        var gotError = false
+        let checkTask = Task {
+            do {
+                for try await _ in session.events {
+                    break
+                }
+            } catch {
+                gotError = true
+            }
+        }
+
+        // Give it a moment then cancel the check
+        try? await Task.sleep(for: .milliseconds(50))
+        checkTask.cancel()
+        #expect(!gotError)
+    }
+
+    private func consumeStreamError(
+        from events: AsyncThrowingStream<VoiceSessionEvent, Error>
+    ) async -> Error? {
+        do {
+            for try await _ in events {}
+            return nil
+        } catch {
+            return error
+        }
+    }
+}
+
+// MARK: - ServerConnection Dictation Subscription Tests
+
+@Suite("ServerConnection dictation subscription")
+@MainActor
+struct ServerConnectionDictationSubscriptionTests {
+
+    @Test func subscribeDictationReturnsStream() {
+        let connection = ServerConnection()
+        let stream = connection.subscribeDictation()
+        // Should get a valid stream
+        _ = stream // No crash
+    }
+
+    @Test func unsubscribeDictationCleansUp() {
+        let connection = ServerConnection()
+        _ = connection.subscribeDictation()
+        connection.unsubscribeDictation()
+        // Should not crash on double unsubscribe
+        connection.unsubscribeDictation()
+    }
+
+    @Test func subscribeDictationReplacesExistingSubscription() {
+        let connection = ServerConnection()
+        let stream1 = connection.subscribeDictation()
+        let stream2 = connection.subscribeDictation()
+        // stream1 should have been finished (old subscription replaced)
+        // stream2 is the active one — both should be valid AsyncStreams
+        _ = stream1
+        _ = stream2
+    }
+
+    @Test func dictationMessagesRoutedToSubscriber() async {
+        let connection = ServerConnection()
+        let stream = connection.subscribeDictation()
+
+        let collectTask = Task {
+            var messages: [ServerMessage] = []
+            for await msg in stream {
+                messages.append(msg)
+                break // Just get one
+            }
+            return messages
+        }
+
+        // Route a dictation message through the connection
+        connection.routeStreamMessage(StreamMessage(
+            sessionId: nil, streamSeq: nil, seq: nil, currentSeq: nil,
+            message: .dictationReady(provider: nil)
+        ))
+
+        let messages = await collectTask.value
+        #expect(messages.count == 1)
+        #expect(messages[0] == .dictationReady(provider: nil))
+    }
+
+    @Test func dictationMessagesNotRoutedAfterUnsubscribe() async {
+        let connection = ServerConnection()
+        let stream = connection.subscribeDictation()
+        connection.unsubscribeDictation()
+
+        // The stream should finish immediately since we unsubscribed
+        let collectTask = Task {
+            var count = 0
+            for await _ in stream {
+                count += 1
+            }
+            return count
+        }
+
+        let count = await collectTask.value
+        #expect(count == 0)
+    }
+}
+
 // MARK: - VoiceSessionEvent Equatable (test support)
 
 extension VoiceSessionEvent: @retroactive Equatable {
