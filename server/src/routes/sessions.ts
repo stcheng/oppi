@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { createReadStream } from "node:fs";
-import { access, readFile, realpath, stat } from "node:fs/promises";
+import { access, readFile, realpath, rm, stat } from "node:fs/promises";
 import { extname, join, resolve } from "node:path";
 import { homedir } from "node:os";
 
@@ -884,6 +884,28 @@ export function createSessionRoutes(ctx: RouteContext, helpers: RouteHelpers): R
     }
 
     await ctx.sessions.stopSession(sessionId);
+
+    const jsonlPaths = await collectExistingSessionJsonlPaths(session);
+    const deleteResults = await Promise.allSettled(
+      jsonlPaths.map(async (jsonlPath) => {
+        await rm(jsonlPath, { force: true });
+      }),
+    );
+
+    for (const [index, result] of deleteResults.entries()) {
+      if (result.status === "rejected") {
+        console.warn("[sessions] Failed to delete pi session file", {
+          sessionId,
+          jsonlPath: jsonlPaths[index],
+          error: safeErrorMessage(result.reason),
+        });
+      }
+    }
+
+    if (jsonlPaths.length > 0) {
+      invalidateLocalSessionsCache();
+    }
+
     ctx.storage.deleteSession(sessionId);
     ctx.searchIndex?.deleteSession(sessionId);
 

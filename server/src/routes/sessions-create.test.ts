@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { PassThrough } from "node:stream";
 
 import { createSessionRoutes } from "./sessions.js";
@@ -48,12 +51,15 @@ interface MockRouteContext {
     isActive: ReturnType<typeof vi.fn>;
     getActiveSession: ReturnType<typeof vi.fn>;
     forwardClientCommand: ReturnType<typeof vi.fn>;
+    stopSession: ReturnType<typeof vi.fn>;
   };
   storage: {
     getWorkspace: ReturnType<typeof vi.fn>;
     createSession: ReturnType<typeof vi.fn>;
     saveSession: ReturnType<typeof vi.fn>;
     getSession: ReturnType<typeof vi.fn>;
+    deleteSession: ReturnType<typeof vi.fn>;
+    listSessions: ReturnType<typeof vi.fn>;
   };
 }
 
@@ -73,6 +79,7 @@ function createMockContext(workspace?: Workspace): MockRouteContext {
     ),
     saveSession: vi.fn(),
     getSession: vi.fn(),
+    deleteSession: vi.fn().mockReturnValue(true),
     listSessions: vi.fn().mockReturnValue([]),
   };
 
@@ -379,5 +386,53 @@ describe("POST /workspaces/:id/sessions", () => {
     // Should NOT start or prompt
     expect(mock.sessions.startSession).not.toHaveBeenCalled();
     expect(mock.sessions.sendPrompt).not.toHaveBeenCalled();
+  });
+});
+
+describe("DELETE /workspaces/:id/sessions/:sessionId", () => {
+  async function dispatchDelete(mock: MockRouteContext, sessionId = "sess-1"): Promise<boolean> {
+    const dispatcher = createSessionRoutes(mock.ctx, mock.helpers);
+    const req = new PassThrough() as unknown as IncomingMessage;
+    const res = {} as ServerResponse;
+    const url = new URL(`https://localhost/workspaces/ws-1/sessions/${sessionId}`);
+    return dispatcher({
+      method: "DELETE",
+      path: `/workspaces/ws-1/sessions/${sessionId}`,
+      url,
+      req,
+      res,
+    });
+  }
+
+  it("deletes the tracked pi jsonl files along with the Oppi session", async () => {
+    const mock = createMockContext();
+    const dir = mkdtempSync(join(tmpdir(), "oppi-session-delete-"));
+    const jsonlA = join(dir, "a.jsonl");
+    const jsonlB = join(dir, "b.jsonl");
+    writeFileSync(jsonlA, '{"role":"user","content":"hello"}\n');
+    writeFileSync(jsonlB, '{"role":"assistant","content":"hi"}\n');
+
+    mock.storage.getSession.mockReturnValue(
+      makeSession({
+        id: "sess-1",
+        piSessionFile: jsonlA,
+        piSessionFiles: [jsonlA, jsonlB],
+      }),
+    );
+    mock.storage.deleteSession = vi.fn().mockReturnValue(true);
+    (mock.ctx as unknown as Record<string, unknown>).searchIndex = {
+      deleteSession: vi.fn(),
+    };
+    (mock.ctx as unknown as Record<string, unknown>).streamMux = {
+      recordUserStreamEvent: vi.fn(),
+    };
+
+    await dispatchDelete(mock);
+
+    expect(mock.sessions.stopSession).toHaveBeenCalledWith("sess-1");
+    expect(mock.storage.deleteSession).toHaveBeenCalledWith("sess-1");
+    expect(existsSync(jsonlA)).toBe(false);
+    expect(existsSync(jsonlB)).toBe(false);
+    expect(mock.responses).toEqual([{ data: { ok: true }, status: 200 }]);
   });
 });
