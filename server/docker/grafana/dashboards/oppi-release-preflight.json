@@ -3502,7 +3502,7 @@
             "properties": [
               {
                 "id": "displayName",
-                "value": "flush_events"
+                "value": "avg_events_per_flush"
               },
               {
                 "id": "color",
@@ -3521,7 +3521,7 @@
             "properties": [
               {
                 "id": "displayName",
-                "value": "flush_bytes"
+                "value": "avg_kib_per_flush"
               },
               {
                 "id": "color",
@@ -3529,6 +3529,10 @@
                   "mode": "fixed",
                   "fixedColor": "purple"
                 }
+              },
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
               }
             ]
           },
@@ -3540,7 +3544,7 @@
             "properties": [
               {
                 "id": "displayName",
-                "value": "inbound_queue_depth"
+                "value": "queue_high_water"
               },
               {
                 "id": "color",
@@ -3564,8 +3568,8 @@
         "legend": {
           "calcs": [
             "lastNotNull",
-            "max",
-            "count"
+            "mean",
+            "max"
           ],
           "displayMode": "table",
           "placement": "bottom"
@@ -3582,8 +3586,8 @@
             "uid": "oppi-telemetry-sqlite"
           },
           "queryType": "time series",
-          "rawQueryText": "SELECT CAST(ts_ms / 1000 AS INTEGER) AS time, value\nFROM chat_metric_samples\nWHERE metric = 'chat.coalescer_flush_events'\n  AND ts_ms BETWEEN $__from AND $__to\nORDER BY ts_ms",
-          "queryText": "SELECT CAST(ts_ms / 1000 AS INTEGER) AS time, value\nFROM chat_metric_samples\nWHERE metric = 'chat.coalescer_flush_events'\n  AND ts_ms BETWEEN $__from AND $__to\nORDER BY ts_ms",
+          "rawQueryText": "SELECT CAST(ts_ms / 1000 AS INTEGER) AS time,\n       ROUND(value / MAX(1, CAST(COALESCE(json_extract(tags_json, '$.flushes'), 1) AS REAL)), 2) AS value\nFROM chat_metric_samples\nWHERE metric = 'chat.coalescer_flush_events'\n  AND ts_ms BETWEEN $__from AND $__to\nORDER BY ts_ms",
+          "queryText": "SELECT CAST(ts_ms / 1000 AS INTEGER) AS time,\n       ROUND(value / MAX(1, CAST(COALESCE(json_extract(tags_json, '$.flushes'), 1) AS REAL)), 2) AS value\nFROM chat_metric_samples\nWHERE metric = 'chat.coalescer_flush_events'\n  AND ts_ms BETWEEN $__from AND $__to\nORDER BY ts_ms",
           "timeColumns": [
             "time"
           ],
@@ -3595,8 +3599,8 @@
             "uid": "oppi-telemetry-sqlite"
           },
           "queryType": "time series",
-          "rawQueryText": "SELECT CAST(ts_ms / 1000 AS INTEGER) AS time, value\nFROM chat_metric_samples\nWHERE metric = 'chat.coalescer_flush_bytes'\n  AND ts_ms BETWEEN $__from AND $__to\nORDER BY ts_ms",
-          "queryText": "SELECT CAST(ts_ms / 1000 AS INTEGER) AS time, value\nFROM chat_metric_samples\nWHERE metric = 'chat.coalescer_flush_bytes'\n  AND ts_ms BETWEEN $__from AND $__to\nORDER BY ts_ms",
+          "rawQueryText": "SELECT CAST(ts_ms / 1000 AS INTEGER) AS time,\n       ROUND((value / MAX(1, CAST(COALESCE(json_extract(tags_json, '$.flushes'), 1) AS REAL))) / 1024.0, 2) AS value\nFROM chat_metric_samples\nWHERE metric = 'chat.coalescer_flush_bytes'\n  AND ts_ms BETWEEN $__from AND $__to\nORDER BY ts_ms",
+          "queryText": "SELECT CAST(ts_ms / 1000 AS INTEGER) AS time,\n       ROUND((value / MAX(1, CAST(COALESCE(json_extract(tags_json, '$.flushes'), 1) AS REAL))) / 1024.0, 2) AS value\nFROM chat_metric_samples\nWHERE metric = 'chat.coalescer_flush_bytes'\n  AND ts_ms BETWEEN $__from AND $__to\nORDER BY ts_ms",
           "timeColumns": [
             "time"
           ],
@@ -3616,7 +3620,8 @@
           "refId": "C"
         }
       ],
-      "title": "Coalescer + Queue Depth",
+      "title": "Coalescer Load + Queue High-Water",
+      "description": "Coalescer metrics are emitted as ~1s windows (`tags.flushes` is usually about 30), so this panel normalizes them back to per-flush averages. `queue_high_water` is not a live queue gauge; it only records when a session reaches a new max.",
       "type": "timeseries"
     },
     {
@@ -4841,6 +4846,6 @@
   "timezone": "browser",
   "title": "Oppi Release Preflight",
   "uid": "oppi-release-preflight",
-  "version": 8,
+  "version": 9,
   "weekStart": ""
 }
