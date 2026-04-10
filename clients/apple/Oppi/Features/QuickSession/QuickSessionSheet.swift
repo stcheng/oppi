@@ -80,12 +80,11 @@ struct QuickSessionSheet: View {
                     continue
                 }
 
-                let sorted = wsSessions.sorted { lhs, rhs in
-                    let lhsScore = sessionUrgencyScore(lhs, connection: conn)
-                    let rhsScore = sessionUrgencyScore(rhs, connection: conn)
-                    if lhsScore != rhsScore { return lhsScore > rhsScore }
-                    return lhs.lastActivity > rhs.lastActivity
-                }
+                let sorted = quickSessionSorted(
+                    wsSessions,
+                    hasPermission: { !conn.permissionStore.pending(for: $0).isEmpty },
+                    hasAsk: { conn.askRequestStore.hasPending(for: $0) }
+                )
 
                 groups.append((workspace: ws, serverId: serverId, sessions: sorted))
             }
@@ -105,16 +104,11 @@ struct QuickSessionSheet: View {
 
     /// Urgency score for sorting — higher = more urgent.
     private func sessionUrgencyScore(_ session: Session, connection conn: ServerConnection) -> Int {
-        let hasPerm = !conn.permissionStore.pending(for: session.id).isEmpty
-        let hasAsk = conn.askRequestStore.hasPending(for: session.id)
-        if hasPerm { return 30 }
-        if hasAsk { return 20 }
-        switch session.status {
-        case .error: return 15
-        case .busy, .starting, .stopping: return 10
-        case .ready: return 5
-        case .stopped: return 0
-        }
+        quickSessionUrgencyScore(
+            status: session.status,
+            hasPermission: !conn.permissionStore.pending(for: session.id).isEmpty,
+            hasAsk: conn.askRequestStore.hasPending(for: session.id)
+        )
     }
 
     /// Whether there are active sessions to display.
@@ -479,5 +473,52 @@ enum QuickSessionError: LocalizedError {
         switch self {
         case .noConnection: return "Server is offline"
         }
+    }
+}
+
+// MARK: - Urgency scoring (extracted for testability)
+
+/// Urgency score for session sorting — higher = more urgent.
+///
+/// Priority order: permissions (30) > asks (20) > error (15) > busy/starting/stopping (10) > ready (5) > stopped (0).
+/// Used by `QuickSessionSheet.activeSessionsByWorkspace` to rank sessions and workspace groups.
+func quickSessionUrgencyScore(
+    status: SessionStatus,
+    hasPermission: Bool,
+    hasAsk: Bool
+) -> Int {
+    if hasPermission { return 30 }
+    if hasAsk { return 20 }
+    switch status {
+    case .error: return 15
+    case .busy, .starting, .stopping: return 10
+    case .ready: return 5
+    case .stopped: return 0
+    }
+}
+
+/// Sort sessions by urgency (descending), then by last activity (descending).
+///
+/// Each session's urgency is determined by `quickSessionUrgencyScore`.
+/// Callers provide closures to resolve permission/ask state per session
+/// so sorting stays decoupled from store types.
+func quickSessionSorted(
+    _ sessions: [Session],
+    hasPermission: (String) -> Bool,
+    hasAsk: (String) -> Bool
+) -> [Session] {
+    sessions.sorted { lhs, rhs in
+        let lhsScore = quickSessionUrgencyScore(
+            status: lhs.status,
+            hasPermission: hasPermission(lhs.id),
+            hasAsk: hasAsk(lhs.id)
+        )
+        let rhsScore = quickSessionUrgencyScore(
+            status: rhs.status,
+            hasPermission: hasPermission(rhs.id),
+            hasAsk: hasAsk(rhs.id)
+        )
+        if lhsScore != rhsScore { return lhsScore > rhsScore }
+        return lhs.lastActivity > rhs.lastActivity
     }
 }
