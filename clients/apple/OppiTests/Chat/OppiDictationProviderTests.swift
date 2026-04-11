@@ -626,6 +626,33 @@ struct OppiDictationSessionMessageListenerTests {
         #expect(events[0] == .replaceFinalTranscript("Snapped text", snap: true))
     }
 
+    @Test func identicalDictationFinalDoesNotYieldDuplicateTranscriptEvent() async {
+        let connection = ServerConnection()
+        let (messageStream, messageCont) = AsyncStream.makeStream(of: ServerMessage.self)
+        let session = OppiDictationSession(
+            connection: connection,
+            readinessTask: Task { nil },
+            messages: messageStream
+        )
+
+        let collectTask = Task {
+            await collectAllEvents(from: session.events)
+        }
+
+        session._startMessageListenerForTesting()
+        messageCont.yield(.dictationResult(text: "Hello world", snap: false))
+        messageCont.yield(.dictationFinal(text: "Hello world", audioId: nil))
+
+        let (events, error) = await collectTask.value
+        #expect(error == nil)
+        let transcriptEvents = events.filter {
+            if case .replaceFinalTranscript = $0 { return true }
+            return false
+        }
+        #expect(transcriptEvents.count == 1)
+        #expect(transcriptEvents.first == .replaceFinalTranscript("Hello world"))
+    }
+
     @Test func dictationFinalYieldsTranscriptAndFinishes() async {
         let connection = ServerConnection()
         let (messageStream, messageCont) = AsyncStream.makeStream(of: ServerMessage.self)

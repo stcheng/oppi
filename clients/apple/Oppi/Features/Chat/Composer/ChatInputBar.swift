@@ -536,7 +536,7 @@ struct ChatInputBar<ActionRow: View>: View {
                     let prefix = textBeforeRecording ?? ""
                     let transcript = await manager.stopRecording()
                     textBeforeRecording = nil
-                    // Explicitly sync the batch-corrected transcript.
+                    // Explicitly sync the finalized transcript.
                     // Cannot rely on onChange — teardown clears
                     // currentTranscript, so the observation path is dead.
                     if !transcript.isEmpty {
@@ -663,8 +663,8 @@ struct ChatInputBar<ActionRow: View>: View {
         guard !isSending else { return }
 
         // Stop voice recording before sending. We await the stop so the final
-        // batch-corrected transcript (dictation_final) updates the text field
-        // before onSend() captures it.
+        // transcript (including any last active tail from dictation_final)
+        // updates the text field before onSend() captures it.
         if let manager = voiceInputManager, manager.isRecording || manager.isPreparing {
             textBeforeRecording = nil
             suppressKeyboard = Self.suppressKeyboardAfterSend(

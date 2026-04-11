@@ -11,7 +11,7 @@ private let logger = Logger(subsystem: AppIdentifiers.subsystem, category: "Dict
 /// Streams raw PCM continuously — no client-side chunk timing.
 /// Binary frames carry audio; dictation results arrive as `ServerMessage` text frames.
 /// - `dictation_result` maps to `.replaceFinalTranscript`
-/// - `dictation_final` maps to `.replaceFinalTranscript` + stream completion
+/// - `dictation_final` updates the transcript only when it changes, then completes the stream
 ///
 /// **Optimistic recording:** Audio capture starts immediately on `start()`. A background
 /// drain task blocks on `readinessTask` (WS `dictation_ready`) before forwarding audio,
@@ -39,6 +39,10 @@ final class OppiDictationSession: VoiceTranscriptionSession {
     private var audioConverter: AVAudioConverter?
     private var targetFormat: AVAudioFormat?
     private var stopped = false
+    /// Last transcript replacement yielded to the UI. Used to suppress
+    /// duplicate `dictation_final` replacements when the final text matches
+    /// the latest streaming result.
+    private var lastTranscriptText = ""
 
     init(
         connection: ServerConnection,
@@ -260,13 +264,11 @@ final class OppiDictationSession: VoiceTranscriptionSession {
 
                 case .dictationResult(let text, let snap):
                     logger.debug("Dictation result: \(text.count) chars\(snap ? " (snap)" : "")")
-                    eventContinuation.yield(.replaceFinalTranscript(text, snap: snap))
+                    yieldTranscriptIfChanged(text, snap: snap)
 
                 case .dictationFinal(let text, _):
                     logger.info("Dictation final: \(text.count) chars")
-                    if !text.isEmpty {
-                        eventContinuation.yield(.replaceFinalTranscript(text))
-                    }
+                    yieldTranscriptIfChanged(text)
                     eventContinuation.finish()
                     return
 
@@ -295,6 +297,12 @@ final class OppiDictationSession: VoiceTranscriptionSession {
         }
     }
 
+    private func yieldTranscriptIfChanged(_ text: String, snap: Bool = false) {
+        guard !text.isEmpty, text != lastTranscriptText else { return }
+        lastTranscriptText = text
+        eventContinuation.yield(.replaceFinalTranscript(text, snap: snap))
+    }
+
     private nonisolated static func disconnectError() -> VoiceInputError {
         .internalError("Dictation connection lost")
     }
@@ -312,6 +320,7 @@ final class OppiDictationSession: VoiceTranscriptionSession {
         audioContinuation = nil
         pendingAudioStream = nil
         messageListenTask = nil
+        lastTranscriptText = ""
         eventContinuation.finish()
         audioLevelContinuation.finish()
     }

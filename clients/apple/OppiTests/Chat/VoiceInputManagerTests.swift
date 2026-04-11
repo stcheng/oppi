@@ -795,7 +795,7 @@ struct VoiceInputManagerTests {
             manager.finalizedTranscript == "switching back to and we'll see"
         })
 
-        // Stop yields batch-corrected final (replace overwrites the append)
+        // Stop yields the final transcript (replace overwrites the append)
         session.stopHandler = { @MainActor [weak session] in
             guard let session else { return }
             session.yieldEvent(.replaceFinalTranscript(
@@ -888,7 +888,7 @@ struct VoiceInputManagerTests {
         session.yieldEvent(.replaceFinalTranscript("hello world"))
         #expect(await waitForMainActorCondition { manager.finalizedTranscript.contains("hello") })
 
-        // Stop yields batch-corrected final transcript (like dictation_final)
+        // Stop yields the final transcript (like dictation_final)
         session.stopHandler = { @MainActor [weak session] in
             guard let session else { return }
             session.yieldEvent(.replaceFinalTranscript("Hello, world!"))
