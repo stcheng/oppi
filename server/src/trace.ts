@@ -100,15 +100,9 @@ interface SessionEntry {
  *
  * This produces the same view the user sees in pi TUI.
  */
-export function buildSessionContext(
-  entries: SessionEntry[],
-  options: TraceReadOptions = {},
-): TraceEvent[] {
+function buildEntryPath(entries: SessionEntry[]): SessionEntry[] {
   if (entries.length === 0) return [];
 
-  const view = options.view ?? "context";
-
-  // Build id → entry index
   const byId = new Map<string, SessionEntry>();
   for (const entry of entries) {
     if (entry.id) {
@@ -116,7 +110,6 @@ export function buildSessionContext(
     }
   }
 
-  // Find leaf (last entry with an id, excluding the session header)
   let leaf: SessionEntry | undefined;
   for (let i = entries.length - 1; i >= 0; i--) {
     const entry = entries[i];
@@ -128,13 +121,50 @@ export function buildSessionContext(
 
   if (!leaf) return [];
 
-  // Walk parentId chain from leaf to root, collecting the path
   const path: SessionEntry[] = [];
   let current: SessionEntry | undefined = leaf;
   while (current) {
     path.unshift(current);
     current = current.parentId ? byId.get(current.parentId) : undefined;
   }
+
+  return path;
+}
+
+export function findLatestForkableUserEntryId(entries: SessionEntry[]): string | undefined {
+  const path = buildEntryPath(entries);
+  for (let i = path.length - 1; i >= 0; i--) {
+    const entry = path[i];
+    if (entry.type === "message" && entry.id && entry.message?.role === "user") {
+      return entry.id;
+    }
+  }
+  return undefined;
+}
+
+export function findLatestForkableUserEntryIdFromContent(content: string): string | undefined {
+  return findLatestForkableUserEntryId(parseEntries(content));
+}
+
+export function findLatestForkableUserEntryIdFromFile(filePath: string): string | undefined {
+  if (!existsSync(filePath)) return undefined;
+  try {
+    return findLatestForkableUserEntryIdFromContent(readFileSync(filePath, "utf8"));
+  } catch {
+    return undefined;
+  }
+}
+
+export function buildSessionContext(
+  entries: SessionEntry[],
+  options: TraceReadOptions = {},
+): TraceEvent[] {
+  if (entries.length === 0) return [];
+
+  const view = options.view ?? "context";
+  const path = buildEntryPath(entries);
+
+  if (path.length === 0) return [];
 
   // Find the LAST compaction in the path (most recent takes precedence)
   let compaction: SessionEntry | null = null;

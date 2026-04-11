@@ -406,6 +406,11 @@ export function createSessionRoutes(ctx: RouteContext, helpers: RouteHelpers): R
     forkSession.piSessionFiles = Array.from(
       new Set([...(latestSource.piSessionFiles || []), sourceSessionFile]),
     );
+    forkSession.rootSessionId = latestSource.rootSessionId || latestSource.id;
+    forkSession.knowledgeFamilyId =
+      latestSource.knowledgeFamilyId || latestSource.rootSessionId || latestSource.id;
+    forkSession.forkedFromSessionId = latestSource.id;
+    forkSession.forkPointEntryId = entryId;
 
     if (latestSource.thinkingLevel) forkSession.thinkingLevel = latestSource.thinkingLevel;
     if (latestSource.contextWindow) forkSession.contextWindow = latestSource.contextWindow;

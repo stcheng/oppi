@@ -1,5 +1,11 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { buildSessionContext, parseJsonl, findToolOutput } from "../src/trace.js";
+import {
+  buildSessionContext,
+  parseJsonl,
+  findToolOutput,
+  findLatestForkableUserEntryIdFromContent,
+  findLatestForkableUserEntryIdFromFile,
+} from "../src/trace.js";
 import { writeFileSync, mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -30,6 +36,35 @@ function toJsonl(entries: Record<string, unknown>[]): string {
 }
 
 // ─── buildSessionContext ───
+
+describe("findLatestForkableUserEntryId", () => {
+  it("returns the latest user entry on the active branch", () => {
+    const content = toJsonl([
+      msg("u1", null, "user", "root"),
+      msg("a1", "u1", "assistant", "ack"),
+      msg("u2", "a1", "user", "kept branch"),
+      msg("u-side", "a1", "user", "stale branch"),
+      msg("a2", "u2", "assistant", "done"),
+    ]);
+
+    expect(findLatestForkableUserEntryIdFromContent(content)).toBe("u2");
+  });
+
+  it("reads the latest forkable user entry from a session file", () => {
+    const path = join(tmpdir(), `fork-entry-${Date.now()}.jsonl`);
+    writeFileSync(
+      path,
+      toJsonl([
+        msg("u1", null, "user", "hello"),
+        msg("a1", "u1", "assistant", "hi"),
+        msg("u2", "a1", "user", "fork here"),
+      ]),
+    );
+
+    expect(findLatestForkableUserEntryIdFromFile(path)).toBe("u2");
+    rmSync(path, { force: true });
+  });
+});
 
 describe("buildSessionContext", () => {
   it("builds linear chain of user + assistant messages", () => {

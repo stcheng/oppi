@@ -75,12 +75,14 @@ function setup(
   }
 
   const subscriberCallbacks = opts.subscribers ?? new Map<string, (msg: ServerMessage) => void>();
+  const spawnChildCalls: Array<Record<string, unknown>> = [];
 
   const ctx: SpawnAgentContext = {
     workspaceId: "ws-1",
     sessionId: parentId,
 
     async spawnChild(params) {
+      spawnChildCalls.push({ ...params });
       const child = makeSession({
         id: `child-${nextSessionId++}`,
         name: params.name,
@@ -143,6 +145,7 @@ function setup(
     ctx,
     sessions,
     subscriberCallbacks,
+    spawnChildCalls,
     spawn: tools.get("spawn_agent")!,
     check: tools.get("check_agents")!,
     inspect: tools.get("inspect_agent")!,
@@ -222,6 +225,25 @@ describe("spawn_agent", () => {
     });
 
     expect(result.details.model).toBe("openai/gpt-4o");
+  });
+
+  it("passes fork entryId and sessionRole to child spawn params", async () => {
+    const { spawn, spawnChildCalls } = setup();
+
+    await spawn.execute("tc-1", {
+      message: "Continue from this branch",
+      fork: true,
+      entryId: "msg-user-123",
+      sessionRole: "implementation",
+    });
+
+    expect(spawnChildCalls).toHaveLength(1);
+    expect(spawnChildCalls[0]).toMatchObject({
+      fork: true,
+      entryId: "msg-user-123",
+      sessionRole: "implementation",
+      prompt: "Continue from this branch",
+    });
   });
 
   it("rejects unknown model with available list", async () => {

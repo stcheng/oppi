@@ -32,6 +32,8 @@ export interface SpawnAgentContext {
     thinking?: string;
     prompt: string;
     fork?: boolean;
+    entryId?: string;
+    sessionRole?: Session["sessionRole"];
   }): Promise<Session>;
   /** Create an independent session in the same workspace — no parent-child relationship. */
   spawnDetached(params: {
@@ -169,6 +171,28 @@ const spawnAgentParams = Type.Object({
         "Use for side tasks where the child needs context you already have. " +
         "Default: false (fresh context).",
     }),
+  ),
+  entryId: Type.Optional(
+    Type.String({
+      description:
+        "Optional parent user-message entry ID to fork from. If omitted and fork=true, Oppi auto-selects the latest forkable user entry.",
+    }),
+  ),
+  sessionRole: Type.Optional(
+    Type.Union(
+      [
+        Type.Literal("primary"),
+        Type.Literal("implementation"),
+        Type.Literal("research"),
+        Type.Literal("review"),
+        Type.Literal("planning"),
+        Type.Literal("consolidation"),
+      ],
+      {
+        description:
+          "Optional semantic role for the child session. Useful for downstream lineage-aware indexing or extraction.",
+      },
+    ),
   ),
   name: Type.Optional(
     Type.String({
@@ -893,7 +917,7 @@ export function createSpawnAgentFactory(
           "that benefits from a fresh context. Set wait=true to block until the child " +
           "finishes and get its result inline.",
         promptSnippet:
-          "spawn_agent(message, fork?, name?, model?, thinking?, detached?, wait?, timeout_seconds?) — spawn a child agent session",
+          "spawn_agent(message, fork?, entryId?, sessionRole?, name?, model?, thinking?, detached?, wait?, timeout_seconds?) — spawn a child agent session",
         promptGuidelines: [
           "Spawning starts a fresh context by default — the child must rediscover files and context you already have. Don't spawn when you already know the exact changes and could do them faster inline.",
           "Use fork=true when the child needs context you already have (files read, code analyzed, decisions made). The child inherits your full conversation and gets prompt cache hits (~90% cheaper input tokens). Ideal for side tasks, small edits, and parallel work that branches from your current understanding.",
@@ -973,6 +997,11 @@ export function createSpawnAgentFactory(
               thinking: params.thinking,
               prompt: params.message,
               fork: params.fork,
+              entryId: typeof params.entryId === "string" ? params.entryId : undefined,
+              sessionRole:
+                typeof params.sessionRole === "string"
+                  ? (params.sessionRole as Session["sessionRole"])
+                  : undefined,
             };
             const session = params.detached
               ? await ctx.spawnDetached(spawnParams)
