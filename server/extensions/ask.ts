@@ -1,5 +1,16 @@
 import type { ExtensionFactory } from "@mariozechner/pi-coding-agent";
+import { Text } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
+
+import {
+  buildAskToolResult,
+  buildFallbackAnswers,
+  mapDeferredSelectResults,
+  singleLine,
+  type AskAnswer,
+  type AskQuestion,
+} from "./ask-shared.js";
+import { runTerminalAskDialog, type AskCustomRunner } from "./ask-terminal.js";
 
 const AskOptionSchema = Type.Object({
   value: Type.String({ description: "Return value when selected" }),
@@ -33,6 +44,10 @@ const AskParams = Type.Object({
  * Oppi intercepts ask tool execution and renders it as a native AskCard on iOS.
  * Keeping the tool definition server-owned ensures the mobile UI contract and
  * prompt guidance stay in sync even if the host's ~/.pi/agent/extensions changes.
+ *
+ * The flow now has a clean split:
+ * - ask.ts: shared tool contract + Oppi/iOS path
+ * - ask-terminal.ts: terminal-only custom dialog
  */
 export function createAskFactory(): ExtensionFactory {
   return (pi) => {
@@ -80,12 +95,7 @@ export function createAskFactory(): ExtensionFactory {
         askedThisTurn = true;
 
         if (!ctx.hasUI) {
-          const fallback: Record<string, string | string[]> = {};
-          for (const q of params.questions) {
-            if (q.options.length > 0) {
-              fallback[q.id] = q.multiSelect ? [q.options[0].value] : q.options[0].value;
-            }
-          }
+          const fallback = buildFallbackAnswers(params.questions);
           return {
             content: [
               {
@@ -97,78 +107,81 @@ export function createAskFactory(): ExtensionFactory {
           };
         }
 
-        // Oppi renders ask as a single native card, so all select() calls must
-        // be issued concurrently. The server defers them, sends one AskCard to
-        // iOS, then resolves the batch from the user's response.
-        const results = await Promise.all(
-          params.questions.map((q) => {
-            const options = q.options.map((o) => o.label);
-            return ctx.ui.select(q.question, options);
+        const terminalResult = await runTerminalAskDialog(
+          ctx.ui.custom.bind(ctx.ui) as unknown as AskCustomRunner,
+          params.questions,
+          params.allowCustom ?? true,
+        );
+        if (terminalResult !== undefined) {
+          return buildAskToolResult(params.questions, terminalResult.answers);
+        }
+
+        // Oppi/iOS path: all selects must fire concurrently so the server can
+        // batch them into a single native ask card and resolve them together.
+        const selectResults = await Promise.all(
+          params.questions.map((question) => {
+            const options = question.options.map((option) => option.label);
+            return ctx.ui.select(question.question, options);
           }),
         );
 
-        const answers: Record<string, string | string[]> = {};
-        let allIgnored = true;
+        const answers = mapDeferredSelectResults(params.questions, selectResults);
+        return buildAskToolResult(params.questions, answers);
+      },
 
-        for (let i = 0; i < params.questions.length; i++) {
-          const q = params.questions[i];
-          const selected = results[i];
+      renderCall(args, theme) {
+        const questions = Array.isArray(args.questions) ? (args.questions as AskQuestion[]) : [];
+        let text = theme.fg("toolTitle", theme.bold("ask "));
 
-          if (selected === undefined) {
-            continue;
+        if (questions.length === 1) {
+          text += theme.fg("muted", singleLine(questions[0].question || questions[0].id));
+          const labels = questions[0].options.map((option) => option.label);
+          if (labels.length > 0) {
+            text += `\n${theme.fg("dim", `  ${labels.join(" · ")}`)}`;
           }
+        } else if (questions.length > 1) {
+          text += theme.fg("muted", `${questions.length} questions`);
+          for (const question of questions) {
+            text += `\n${theme.fg("dim", `  ${question.id}: ${singleLine(question.question || question.id)}`)}`;
+          }
+        }
 
-          allIgnored = false;
+        return new Text(text, 0, 0);
+      },
 
-          if (q.multiSelect) {
-            // Multi-select: server sends JSON array of labels.
-            // Decode and map each label back to its option value.
-            let labels: string[];
-            try {
-              const parsed = JSON.parse(selected);
-              labels = Array.isArray(parsed) ? parsed : [selected];
-            } catch {
-              labels = [selected];
+      renderResult(result, _options, theme) {
+        const details = result.details as
+          | {
+              allIgnored?: boolean;
+              answers?: Record<string, AskAnswer>;
+              questions?: AskQuestion[];
             }
-            answers[q.id] = labels.map((label) => {
-              const matched = q.options.find((o) => o.label === label);
-              return matched?.value ?? label;
-            });
-          } else {
-            const matched = q.options.find((o) => o.label === selected);
-            answers[q.id] = matched?.value ?? selected;
-          }
+          | undefined;
+
+        if (details?.allIgnored) {
+          return new Text(
+            theme.fg("dim", "All skipped — agent proceeds using best judgment"),
+            0,
+            0,
+          );
         }
 
-        if (allIgnored) {
-          return {
-            content: [
-              {
-                type: "text",
-                text: "The user chose not to answer any questions. Proceed using your best judgment.",
-              },
-            ],
-            details: { questions: params.questions, answers: {}, allIgnored: true },
-          };
+        const answers = details?.answers ?? {};
+        const questions = details?.questions ?? [];
+        const questionById = new Map(questions.map((question) => [question.id, question]));
+        const keys = Object.keys(answers);
+        if (keys.length === 0) {
+          return new Text(theme.fg("warning", "No answers"), 0, 0);
         }
 
-        const lines: string[] = [];
-        for (const q of params.questions) {
-          const answer = answers[q.id];
-          const label = q.question || q.id;
-          if (answer === undefined) {
-            lines.push(`${label}: (ignored)`);
-          } else if (Array.isArray(answer)) {
-            lines.push(`${label}: ${answer.join(", ")}`);
-          } else {
-            lines.push(`${label}: ${answer}`);
-          }
-        }
+        const lines = keys.map((key) => {
+          const value = answers[key];
+          const display = Array.isArray(value) ? value.join(", ") : value;
+          const label = questionById.get(key)?.question ?? key;
+          return `${theme.fg("success", "✓ ")}${theme.fg("muted", `${singleLine(label)}: `)}${theme.fg("accent", display)}`;
+        });
 
-        return {
-          content: [{ type: "text", text: lines.join("\n") }],
-          details: { questions: params.questions, answers, allIgnored: false },
-        };
+        return new Text(lines.join("\n"), 0, 0);
       },
     });
   };
