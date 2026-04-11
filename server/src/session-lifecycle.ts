@@ -22,6 +22,7 @@ export interface SessionLifecycleCoordinatorDeps {
   destroySessionGuard: (sessionId: string) => void;
   releaseSession: (identity: { workspaceId: string; sessionId: string }) => void;
   stopSession: (sessionId: string) => Promise<void>;
+  onSessionDisposed?: (sessionId: string) => void;
   getSessionIdleTimeoutMs: () => number;
   /** Whether children automatically stop after completing work. */
   getChildAutoStopWhenDone: () => boolean;
@@ -74,6 +75,8 @@ export class SessionLifecycleCoordinator {
     if (!active.sdkBackend.isDisposed) {
       await active.sdkBackend.dispose();
     }
+
+    this.deps.onSessionDisposed?.(active.session.id);
 
     this.deps.broadcast(key, { type: "session_ended", reason });
     this.clearIdleTimer(key);

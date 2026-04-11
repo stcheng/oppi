@@ -59,6 +59,32 @@ function makeDeps(
 
 // ─── Tests ───
 
+describe("SessionLifecycleCoordinator.handleSessionEnd", () => {
+  it("reindexes only after shutdown cleanup finishes", async () => {
+    const order: string[] = [];
+    const active = makeActiveSession();
+    active.sdkBackend.dispose = vi.fn(async () => {
+      order.push("dispose");
+    }) as never;
+
+    const deps = makeDeps(active, {
+      onSessionDisposed: vi.fn(() => {
+        order.push("reindex");
+      }),
+      broadcast: vi.fn(() => {
+        order.push("broadcast");
+      }),
+    });
+    const coordinator = new SessionLifecycleCoordinator(deps);
+
+    await coordinator.handleSessionEnd("key", "agent_end");
+
+    expect(active.sdkBackend.dispose).toHaveBeenCalledTimes(1);
+    expect(deps.onSessionDisposed).toHaveBeenCalledWith("child-1");
+    expect(order).toEqual(["dispose", "reindex", "broadcast"]);
+  });
+});
+
 describe("SessionLifecycleCoordinator.resetIdleTimer", () => {
   beforeEach(() => {
     vi.useFakeTimers();

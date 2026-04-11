@@ -86,6 +86,7 @@ export class SessionManager extends EventEmitter {
   searchIndex: {
     markForReindex(sessionId: string): void;
     flushForSession(sessionId: string): void;
+    indexSession(sessionId: string): void;
     deleteSession(sessionId: string): void;
   } | null = null;
 
@@ -139,6 +140,7 @@ export class SessionManager extends EventEmitter {
       broadcast: (key, message) => this.broadcast(key, message),
       stopSession: (sessionId) => this.stopSession(sessionId),
       resumeSession: (sessionId) => this.startSession(sessionId),
+      onSessionDisposed: (sessionId) => this.searchIndex?.indexSession(sessionId),
       spawnChildSession: (parentSessionId, params) =>
         this.spawnChildSession(parentSessionId, params),
       spawnDetachedSession: (originSessionId, params) =>

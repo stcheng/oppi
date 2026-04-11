@@ -12,8 +12,9 @@
  */
 
 import { openDatabase, type SqliteDatabase, type SqliteStatement } from "./sqlite-compat.js";
-import { readFileSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, readFileSync, statSync } from "node:fs";
+import { homedir } from "node:os";
+import { basename, join } from "node:path";
 
 import type { Session } from "./types.js";
 
@@ -35,6 +36,7 @@ export interface SearchResult {
 
 /** Text block types we extract from message content arrays. */
 const TEXT_BLOCK_TYPES = new Set(["text", "output_text"]);
+const CONTINUATION_SUMMARY_DIR = join(homedir(), ".pi", "agent", "continuation", "sessions");
 
 function extractTextFromContent(content: unknown): string {
   if (typeof content === "string") return content;
@@ -66,15 +68,126 @@ function extractToolNames(content: unknown): Set<string> {
 
 const USER_MESSAGE_CAP = 50_000;
 const ASSISTANT_MESSAGE_CAP = 100_000;
+const SUMMARY_TEXT_CAP = 16_000;
 
-interface ExtractedContent {
-  title: string;
+interface TranscriptContent {
   userMessages: string;
   assistantMessages: string;
   toolNames: string;
 }
 
-function extractContentFromJsonl(session: Session, jsonlPath: string): ExtractedContent | null {
+interface ContinuationSummaryRecord {
+  title?: unknown;
+  thread?: unknown;
+  goal?: unknown;
+  status?: unknown;
+  completed?: unknown;
+  remaining?: unknown;
+  blockers?: unknown;
+  learnings?: unknown;
+}
+
+interface ContinuationSummaryContent {
+  path: string;
+  mtimeMs: number;
+  size: number;
+  title: string;
+  text: string;
+}
+
+interface ExtractedContent {
+  title: string;
+  summaryText: string;
+  userMessages: string;
+  assistantMessages: string;
+  toolNames: string;
+  summaryPath: string | null;
+  summaryMtimeMs: number;
+  summarySize: number;
+}
+
+function cleanSummaryText(value: unknown, max = 240): string {
+  if (typeof value !== "string") return "";
+  return value.replace(/\s+/g, " ").trim().slice(0, max);
+}
+
+function formatSummaryList(label: string, values: unknown, maxItems = 6): string | null {
+  if (!Array.isArray(values)) return null;
+  const items = values
+    .map((value) => cleanSummaryText(value, 220))
+    .filter(Boolean)
+    .slice(0, maxItems);
+  if (items.length === 0) return null;
+  return `${label}: ${items.join(" ; ")}`;
+}
+
+function parsePiSessionIdFromJsonlPath(jsonlPath: string | undefined): string | null {
+  if (!jsonlPath) return null;
+  const base = basename(jsonlPath, ".jsonl");
+  const underscore = base.lastIndexOf("_");
+  const candidate = underscore >= 0 ? base.slice(underscore + 1) : base;
+  return /^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(candidate) ? candidate : null;
+}
+
+function candidatePiSessionIds(session: Session): string[] {
+  const ids = new Set<string>();
+  if (session.piSessionId) ids.add(session.piSessionId);
+
+  const primaryFromPath = parsePiSessionIdFromJsonlPath(session.piSessionFile);
+  if (primaryFromPath) ids.add(primaryFromPath);
+
+  for (const file of session.piSessionFiles ?? []) {
+    const id = parsePiSessionIdFromJsonlPath(file);
+    if (id) ids.add(id);
+  }
+
+  return [...ids];
+}
+
+function readContinuationSummary(session: Session): ContinuationSummaryContent | null {
+  for (const piSessionId of candidatePiSessionIds(session)) {
+    const path = join(CONTINUATION_SUMMARY_DIR, `${piSessionId}.json`);
+    if (!existsSync(path)) continue;
+
+    try {
+      const stat = statSync(path);
+      const raw = readFileSync(path, "utf-8");
+      const summary = JSON.parse(raw) as ContinuationSummaryRecord;
+      const lines = [
+        cleanSummaryText(summary.title, 160)
+          ? `Title: ${cleanSummaryText(summary.title, 160)}`
+          : null,
+        cleanSummaryText(summary.thread, 120)
+          ? `Thread: ${cleanSummaryText(summary.thread, 120)}`
+          : null,
+        cleanSummaryText(summary.goal, 400) ? `Goal: ${cleanSummaryText(summary.goal, 400)}` : null,
+        cleanSummaryText(summary.status, 40)
+          ? `Status: ${cleanSummaryText(summary.status, 40)}`
+          : null,
+        formatSummaryList("Completed", summary.completed),
+        formatSummaryList("Remaining", summary.remaining),
+        formatSummaryList("Blockers", summary.blockers),
+        formatSummaryList("Learnings", summary.learnings),
+      ].filter(Boolean);
+
+      const title = cleanSummaryText(summary.title, 160);
+      const text = lines.join("\n").slice(0, SUMMARY_TEXT_CAP);
+      return {
+        path,
+        mtimeMs: stat.mtimeMs,
+        size: stat.size,
+        title,
+        text,
+      };
+    } catch {
+      continue;
+    }
+  }
+
+  return null;
+}
+
+function extractTranscriptContent(jsonlPath: string): TranscriptContent | null {
   let raw: string;
   try {
     raw = readFileSync(jsonlPath, "utf-8");
@@ -82,7 +195,6 @@ function extractContentFromJsonl(session: Session, jsonlPath: string): Extracted
     return null;
   }
 
-  const title = [session.name, session.firstMessage].filter(Boolean).join(" ").slice(0, 500);
   const userParts: string[] = [];
   const assistantParts: string[] = [];
   const toolNameSet = new Set<string>();
@@ -117,10 +229,29 @@ function extractContentFromJsonl(session: Session, jsonlPath: string): Extracted
   }
 
   return {
-    title,
     userMessages: userParts.join("\n").slice(0, USER_MESSAGE_CAP),
     assistantMessages: assistantParts.join("\n").slice(0, ASSISTANT_MESSAGE_CAP),
     toolNames: [...toolNameSet].join(" "),
+  };
+}
+
+function extractIndexedContent(session: Session, jsonlPath?: string): ExtractedContent {
+  const transcript = jsonlPath ? extractTranscriptContent(jsonlPath) : null;
+  const summary = readContinuationSummary(session);
+  const title = [session.name, summary?.title, session.firstMessage]
+    .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+    .join(" ")
+    .slice(0, 500);
+
+  return {
+    title,
+    summaryText: summary?.text ?? "",
+    userMessages: transcript?.userMessages ?? "",
+    assistantMessages: transcript?.assistantMessages ?? "",
+    toolNames: transcript?.toolNames ?? "",
+    summaryPath: summary?.path ?? null,
+    summaryMtimeMs: summary ? Math.floor(summary.mtimeMs) : 0,
+    summarySize: summary?.size ?? 0,
   };
 }
 
@@ -192,7 +323,7 @@ export class SearchIndex {
       const row = this.db.prepare("SELECT value FROM fts_schema WHERE key = 'version'").get() as
         | { value: string }
         | undefined;
-      if (row?.value === "1") return; // Schema up to date
+      if (row?.value === "2") return; // Schema up to date
 
       // Version mismatch — drop and recreate
       this.db.exec("DROP TABLE IF EXISTS session_fts");
@@ -205,6 +336,7 @@ export class SearchIndex {
         session_id UNINDEXED,
         workspace_id UNINDEXED,
         title,
+        summary_text,
         user_messages,
         assistant_messages,
         tool_names,
@@ -216,6 +348,9 @@ export class SearchIndex {
         jsonl_path TEXT,
         jsonl_mtime_ms INTEGER,
         jsonl_size INTEGER,
+        summary_path TEXT,
+        summary_mtime_ms INTEGER,
+        summary_size INTEGER,
         indexed_at INTEGER
       );
 
@@ -224,7 +359,7 @@ export class SearchIndex {
         value TEXT
       );
 
-      INSERT OR REPLACE INTO fts_schema VALUES ('version', '1');
+      INSERT OR REPLACE INTO fts_schema VALUES ('version', '2');
     `);
   }
 
@@ -235,21 +370,38 @@ export class SearchIndex {
     this.stmtDeleteMeta = this.db.prepare("DELETE FROM fts_meta WHERE session_id = ?");
 
     this.stmtUpsert = this.db.prepare(`
-      INSERT INTO session_fts (session_id, workspace_id, title, user_messages, assistant_messages, tool_names)
-      VALUES (?, ?, ?, ?, ?, ?)
+      INSERT INTO session_fts (
+        session_id,
+        workspace_id,
+        title,
+        summary_text,
+        user_messages,
+        assistant_messages,
+        tool_names
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?)
     `);
 
     this.stmtUpsertMeta = this.db.prepare(`
-      INSERT OR REPLACE INTO fts_meta (session_id, jsonl_path, jsonl_mtime_ms, jsonl_size, indexed_at)
-      VALUES (?, ?, ?, ?, ?)
+      INSERT OR REPLACE INTO fts_meta (
+        session_id,
+        jsonl_path,
+        jsonl_mtime_ms,
+        jsonl_size,
+        summary_path,
+        summary_mtime_ms,
+        summary_size,
+        indexed_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     this.stmtGetMeta = this.db.prepare(
-      "SELECT jsonl_mtime_ms, jsonl_size FROM fts_meta WHERE session_id = ?",
+      "SELECT jsonl_mtime_ms, jsonl_size, summary_mtime_ms, summary_size FROM fts_meta WHERE session_id = ?",
     );
 
     // Search across all workspaces
-    // Column weights: title=10, user_messages=5, assistant_messages=1, tool_names=2
+    // Column weights: title=10, summary_text=6, user_messages=5, assistant_messages=1, tool_names=2
     this.stmtSearch = this.db.prepare(`
       SELECT
         session_id AS sessionId,
@@ -257,9 +409,11 @@ export class SearchIndex {
         title,
         COALESCE(
           NULLIF(snippet(session_fts, 3, '<b>', '</b>', '...', 40), ''),
-          snippet(session_fts, 4, '<b>', '</b>', '...', 40)
+          NULLIF(snippet(session_fts, 4, '<b>', '</b>', '...', 40), ''),
+          NULLIF(snippet(session_fts, 5, '<b>', '</b>', '...', 40), ''),
+          snippet(session_fts, 6, '<b>', '</b>', '...', 40)
         ) as snippet,
-        bm25(session_fts, 0.0, 0.0, 10.0, 5.0, 1.0, 2.0) as rank
+        bm25(session_fts, 0.0, 0.0, 10.0, 6.0, 5.0, 1.0, 2.0) as rank
       FROM session_fts
       WHERE session_fts MATCH ?
       ORDER BY rank
@@ -274,9 +428,11 @@ export class SearchIndex {
         title,
         COALESCE(
           NULLIF(snippet(session_fts, 3, '<b>', '</b>', '...', 40), ''),
-          snippet(session_fts, 4, '<b>', '</b>', '...', 40)
+          NULLIF(snippet(session_fts, 4, '<b>', '</b>', '...', 40), ''),
+          NULLIF(snippet(session_fts, 5, '<b>', '</b>', '...', 40), ''),
+          snippet(session_fts, 6, '<b>', '</b>', '...', 40)
         ) as snippet,
-        bm25(session_fts, 0.0, 0.0, 10.0, 5.0, 1.0, 2.0) as rank
+        bm25(session_fts, 0.0, 0.0, 10.0, 6.0, 5.0, 1.0, 2.0) as rank
       FROM session_fts
       WHERE session_fts MATCH ? AND workspace_id = ?
       ORDER BY rank
@@ -332,43 +488,24 @@ export class SearchIndex {
       const jsonlPath = (session as unknown as Record<string, unknown>).piSessionFile as
         | string
         | undefined;
-      if (!jsonlPath) {
-        // No JSONL yet — index title only
-        this.upsertRow(
-          sessionId,
-          session.workspaceId ?? "",
-          session.name ?? session.firstMessage ?? "",
-          "",
-          "",
-          "",
-        );
-        return;
+
+      let fileStat: { mtimeMs: number; size: number } | null = null;
+      if (jsonlPath) {
+        try {
+          const st = statSync(jsonlPath);
+          fileStat = { mtimeMs: st.mtimeMs, size: st.size };
+        } catch {
+          fileStat = null;
+        }
       }
 
-      let fileStat: { mtimeMs: number; size: number };
-      try {
-        const st = statSync(jsonlPath);
-        fileStat = { mtimeMs: st.mtimeMs, size: st.size };
-      } catch {
-        // File doesn't exist — index title only
-        this.upsertRow(
-          sessionId,
-          session.workspaceId ?? "",
-          session.name ?? session.firstMessage ?? "",
-          "",
-          "",
-          "",
-        );
-        return;
-      }
-
-      const content = extractContentFromJsonl(session, jsonlPath);
-      if (!content) return;
+      const content = extractIndexedContent(session, fileStat ? jsonlPath : undefined);
 
       this.upsertRow(
         sessionId,
         session.workspaceId ?? "",
         content.title,
+        content.summaryText,
         content.userMessages,
         content.assistantMessages,
         content.toolNames,
@@ -376,9 +513,12 @@ export class SearchIndex {
 
       this.stmtUpsertMeta.run(
         sessionId,
-        jsonlPath,
-        Math.floor(fileStat.mtimeMs),
-        fileStat.size,
+        fileStat ? (jsonlPath ?? null) : null,
+        fileStat ? Math.floor(fileStat.mtimeMs) : 0,
+        fileStat?.size ?? 0,
+        content.summaryPath,
+        content.summaryMtimeMs,
+        content.summarySize,
         Date.now(),
       );
     })();
@@ -388,12 +528,21 @@ export class SearchIndex {
     sessionId: string,
     workspaceId: string,
     title: string,
+    summaryText: string,
     userMessages: string,
     assistantMessages: string,
     toolNames: string,
   ): void {
     this.stmtDelete.run(sessionId);
-    this.stmtUpsert.run(sessionId, workspaceId, title, userMessages, assistantMessages, toolNames);
+    this.stmtUpsert.run(
+      sessionId,
+      workspaceId,
+      title,
+      summaryText,
+      userMessages,
+      assistantMessages,
+      toolNames,
+    );
   }
 
   /** Remove a session from the index. */
@@ -467,52 +616,38 @@ export class SearchIndex {
           | string
           | undefined;
 
-        if (!jsonlPath) {
-          // No JSONL — check if already indexed
-          const meta = this.stmtGetMeta.get(session.id);
-          if (!meta) {
-            this.upsertRow(
-              session.id,
-              session.workspaceId ?? "",
-              session.name ?? session.firstMessage ?? "",
-              "",
-              "",
-              "",
-            );
-            this.stmtUpsertMeta.run(session.id, null, 0, 0, Date.now());
-            added++;
-          } else {
-            skipped++;
+        let fileStat: { mtimeMs: number; size: number } | null = null;
+        if (jsonlPath) {
+          try {
+            const st = statSync(jsonlPath);
+            fileStat = { mtimeMs: st.mtimeMs, size: st.size };
+          } catch {
+            fileStat = null;
           }
-          continue;
         }
 
-        let fileStat: { mtimeMs: number; size: number };
-        try {
-          const st = statSync(jsonlPath);
-          fileStat = { mtimeMs: st.mtimeMs, size: st.size };
-        } catch {
-          skipped++;
-          continue;
-        }
+        const content = extractIndexedContent(session, fileStat ? jsonlPath : undefined);
 
-        // Check if already indexed with same mtime/size
+        // Check if already indexed with same transcript + summary state
         const meta = this.stmtGetMeta.get(session.id) as
-          | { jsonl_mtime_ms: number; jsonl_size: number }
+          | {
+              jsonl_mtime_ms: number;
+              jsonl_size: number;
+              summary_mtime_ms: number;
+              summary_size: number;
+            }
           | undefined;
+
+        const jsonlMtimeMs = fileStat ? Math.floor(fileStat.mtimeMs) : 0;
+        const jsonlSize = fileStat?.size ?? 0;
 
         if (
           meta &&
-          meta.jsonl_mtime_ms === Math.floor(fileStat.mtimeMs) &&
-          meta.jsonl_size === fileStat.size
+          meta.jsonl_mtime_ms === jsonlMtimeMs &&
+          meta.jsonl_size === jsonlSize &&
+          meta.summary_mtime_ms === content.summaryMtimeMs &&
+          meta.summary_size === content.summarySize
         ) {
-          skipped++;
-          continue;
-        }
-
-        // Need to (re-)index
-        const content = extractContentFromJsonl(session, jsonlPath);
-        if (!content) {
           skipped++;
           continue;
         }
@@ -521,15 +656,19 @@ export class SearchIndex {
           session.id,
           session.workspaceId ?? "",
           content.title,
+          content.summaryText,
           content.userMessages,
           content.assistantMessages,
           content.toolNames,
         );
         this.stmtUpsertMeta.run(
           session.id,
-          jsonlPath,
-          Math.floor(fileStat.mtimeMs),
-          fileStat.size,
+          fileStat ? (jsonlPath ?? null) : null,
+          jsonlMtimeMs,
+          jsonlSize,
+          content.summaryPath,
+          content.summaryMtimeMs,
+          content.summarySize,
           Date.now(),
         );
 
