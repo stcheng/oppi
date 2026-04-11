@@ -22,8 +22,6 @@ function testConfig(overrides: Partial<DictationConfig> = {}): DictationConfig {
     sttEndpoint: "http://localhost:9847",
     sttModel: "test-model",
     preserveAudio: false,
-    maxDurationSec: 300,
-    llmEndpoint: "http://localhost:8400",
     ...overrides,
   };
 }
@@ -97,7 +95,6 @@ function failingSttProvider(error: string) {
   };
   return Object.assign(provider, { start: startFn, feedAudio: feedAudioFn, stop: stopFn });
 }
-
 
 // ─── Unit tests for standalone utilities ───
 

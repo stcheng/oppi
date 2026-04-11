@@ -698,19 +698,7 @@ function normalizeConfig(
   // ASR / dictation pipeline config
   if ("asr" in obj && isRecord(obj.asr)) {
     const asr = obj.asr;
-    const allowedAsrKeys = new Set([
-      "sttEndpoint",
-      "sttModel",
-      "sttLanguage",
-      "preserveAudio",
-      "maxDurationSec",
-      "llmEndpoint",
-      "termSheetEnabled",
-      "termSheetExtraFiles",
-      "termSheetExtraDirs",
-      "termSheetManualTerms",
-      "termSheetLlmCurationEnabled",
-    ]);
+    const allowedAsrKeys = new Set(["sttEndpoint", "sttModel", "preserveAudio"]);
 
     if (strictUnknown) {
       for (const key of Object.keys(asr)) {
@@ -728,42 +716,8 @@ function normalizeConfig(
     if (typeof asr.sttModel === "string" && asr.sttModel.trim().length > 0) {
       asrConfig.sttModel = asr.sttModel.trim();
     }
-    if (typeof asr.sttLanguage === "string") {
-      asrConfig.sttLanguage = asr.sttLanguage.trim() || undefined;
-    }
     if (typeof asr.preserveAudio === "boolean") {
       asrConfig.preserveAudio = asr.preserveAudio;
-    }
-    if (
-      typeof asr.maxDurationSec === "number" &&
-      Number.isInteger(asr.maxDurationSec) &&
-      asr.maxDurationSec >= 0
-    ) {
-      asrConfig.maxDurationSec = asr.maxDurationSec;
-    }
-    if (typeof asr.llmEndpoint === "string" && asr.llmEndpoint.trim().length > 0) {
-      asrConfig.llmEndpoint = asr.llmEndpoint.trim();
-    }
-    if (typeof asr.termSheetEnabled === "boolean") {
-      asrConfig.termSheetEnabled = asr.termSheetEnabled;
-    }
-    if (Array.isArray(asr.termSheetExtraFiles)) {
-      asrConfig.termSheetExtraFiles = (asr.termSheetExtraFiles as unknown[]).filter(
-        (v): v is string => typeof v === "string" && v.trim().length > 0,
-      );
-    }
-    if (Array.isArray(asr.termSheetExtraDirs)) {
-      asrConfig.termSheetExtraDirs = (asr.termSheetExtraDirs as unknown[]).filter(
-        (v): v is string => typeof v === "string" && v.trim().length > 0,
-      );
-    }
-    if (Array.isArray(asr.termSheetManualTerms)) {
-      asrConfig.termSheetManualTerms = (asr.termSheetManualTerms as unknown[]).filter(
-        (v): v is string => typeof v === "string" && v.trim().length > 0,
-      );
-    }
-    if (typeof asr.termSheetLlmCurationEnabled === "boolean") {
-      asrConfig.termSheetLlmCurationEnabled = asr.termSheetLlmCurationEnabled;
     }
 
     if (Object.keys(asrConfig).length > 0) {

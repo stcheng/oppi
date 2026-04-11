@@ -1,8 +1,8 @@
 /**
  * Dictation pipeline types.
  *
- * Defines the WS protocol messages (client/server) and configuration
- * for the /dictation WebSocket endpoint.
+ * Defines the WS protocol messages (client/server) and server-side
+ * configuration for dictation routed through the main /stream WebSocket.
  */
 
 // ─── Config ───
@@ -14,51 +14,14 @@ export interface DictationConfig {
   /** Model to request from the STT backend. */
   sttModel: string;
 
-  /** Language hint for providers that support it (ISO-639-1). */
-  sttLanguage?: string;
-
-  /**
-   * Auto-generate a domain term sheet from workspace context and inject
-   * it into the ASR model's system prompt. Improves accuracy for project-
-   * specific proper nouns and technical terms at zero latency cost.
-   * Default: true.
-   */
-  termSheetEnabled?: boolean;
-
-  /** Extra file paths to include in term sheet extraction. */
-  termSheetExtraFiles?: string[];
-
-  /** Extra directories to scan for JSONL/text files containing terms. */
-  termSheetExtraDirs?: string[];
-
-  /** Manually-specified terms (always included when term sheet is enabled). */
-  termSheetManualTerms?: string[];
-
   /** Save audio as FLAC on finalize. */
   preserveAudio: boolean;
-
-  /** Max dictation session duration in seconds (0 = unlimited). */
-  maxDurationSec: number;
-
-  /** LLM endpoint (OpenAI-compatible /v1/chat/completions). Used by term sheet curation. */
-  llmEndpoint: string;
-
-  /**
-   * Run regex-extracted term sheet candidates through a local LLM to
-   * filter noise (generic English, formatting artifacts, well-known
-   * acronyms). Uses the same llmEndpoint. Default: false.
-   */
-  termSheetLlmCurationEnabled?: boolean;
 }
 
 export const DEFAULT_DICTATION_CONFIG: DictationConfig = {
   sttEndpoint: "http://localhost:9748",
   sttModel: "mlx-community/Qwen3-ASR-1.7B-bf16",
   preserveAudio: true,
-  maxDurationSec: 0,
-  llmEndpoint: "http://localhost:8400",
-  termSheetEnabled: true,
-  termSheetLlmCurationEnabled: false,
 };
 
 // ─── Client -> Server messages ───

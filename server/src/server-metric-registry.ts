@@ -194,8 +194,7 @@ export const SERVER_METRIC_REGISTRY = {
   },
   "server.dictation_stt_ms": {
     unit: "ms",
-    description:
-      "Final STT latency on session stop. Tagged by phase (finalize), audio_seconds.",
+    description: "Final STT latency on session stop. Tagged by phase (finalize), audio_seconds.",
   },
   "server.dictation_stt_audio_ratio": {
     unit: "ratio",

@@ -507,16 +507,13 @@ describe("StreamingSttProvider", () => {
     await expect(provider.dispose()).resolves.toBeUndefined();
   });
 
-
   // ─── Hallucination filter (isPromptLeak) ───
 
   describe("hallucination filter (system prompt leak suppression)", () => {
     const SYSTEM_PROMPT = "Domain terms and proper nouns: Oppi, StreamingSttProvider, PCM audio";
 
     /** Create a provider with the system prompt set. */
-    function makeProviderWithPrompt(
-      fetchFn: typeof globalThis.fetch,
-    ): StreamingSttProvider {
+    function makeProviderWithPrompt(fetchFn: typeof globalThis.fetch): StreamingSttProvider {
       return new StreamingSttProvider(
         { endpoint: BASE, model: "test-model", systemPrompt: SYSTEM_PROMPT },
         fetchFn,

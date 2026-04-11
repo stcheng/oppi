@@ -299,32 +299,6 @@ export function createIdentityRoutes(ctx: RouteContext, helpers: RouteHelpers): 
       return true;
     }
 
-    // ── ASR / dictation config ──
-
-    if (path === "/server/asr" && method === "GET") {
-      const config = ctx.storage.getConfig();
-      helpers.json(res, {
-        termSheetLlmCurationEnabled: config.asr?.termSheetLlmCurationEnabled ?? false,
-      });
-      return true;
-    }
-    if (path === "/server/asr" && method === "PUT") {
-      const body = await helpers.parseBody<{ termSheetLlmCurationEnabled?: boolean }>(req);
-      const current = ctx.storage.getConfig().asr ?? {};
-      const updated = {
-        ...current,
-        termSheetLlmCurationEnabled:
-          typeof body.termSheetLlmCurationEnabled === "boolean"
-            ? body.termSheetLlmCurationEnabled
-            : (current.termSheetLlmCurationEnabled ?? false),
-      };
-      ctx.storage.updateConfig({ asr: updated });
-      helpers.json(res, {
-        termSheetLlmCurationEnabled: updated.termSheetLlmCurationEnabled ?? false,
-      });
-      return true;
-    }
-
     return false;
   };
 }

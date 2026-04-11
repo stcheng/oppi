@@ -62,8 +62,7 @@ import { RuntimeUpdateManager } from "./runtime-update.js";
 import { SessionTitleGenerator } from "./session-title-generator.js";
 import { DictationManager } from "./dictation-manager.js";
 import { DEFAULT_DICTATION_CONFIG, type DictationConfig } from "./dictation-types.js";
-import { buildTermSheet, defaultSources, discoverWorkspaceDirs } from "./termsheet-builder.js";
-import { StreamingSttProvider, type SttProvider } from "./stt-provider.js";
+import { StreamingSttProvider } from "./stt-provider.js";
 
 function hasAuthHeader(header: string | string[] | undefined): boolean {
   if (typeof header === "string") {
@@ -417,7 +416,7 @@ export class Server {
       resolveWorkspaceForSession: (session) => this.resolveWorkspaceForSession(session),
     });
 
-    // Dictation pipeline (streaming STT via Yuwp / asr-server)
+    // Dictation pipeline (remote streaming STT over the shared /stream socket)
     // Must be created BEFORE the stream mux so it's available for /stream routing.
     const asrEnabled = !!config.asr?.sttEndpoint;
     if (asrEnabled) {
@@ -432,11 +431,6 @@ export class Server {
         sttProvider,
         this.opsMetrics,
       );
-
-      // Build ASR term sheet (async, non-blocking)
-      if (asrConfig.termSheetEnabled !== false) {
-        void this.refreshTermSheet(dataDir, asrConfig, sttProvider);
-      }
     }
 
     // Create the user stream mux (handles /stream WS, event rings, replay)
@@ -784,47 +778,6 @@ export class Server {
     this.closeActiveConnections(WS_CLOSE_GOING_AWAY, "Server shutting down");
     this.wss.close();
     this.httpServer.close();
-  }
-
-  /** Build/refresh the ASR domain term sheet and inject into the STT provider. */
-  private async refreshTermSheet(
-    dataDir: string,
-    asrConfig: DictationConfig,
-    sttProvider: SttProvider,
-  ): Promise<void> {
-    try {
-      const workspaceDirs = await discoverWorkspaceDirs(dataDir);
-      const sources = defaultSources({
-        workspaceDirs,
-        extraDirs: asrConfig.termSheetExtraDirs,
-      });
-      const termSheet = await buildTermSheet(sources, {
-        manualTerms: asrConfig.termSheetManualTerms,
-        extraFiles: asrConfig.termSheetExtraFiles,
-        llmCuration: asrConfig.termSheetLlmCurationEnabled
-          ? { endpoint: asrConfig.llmEndpoint, model: "Qwen3.5-27B-8bit" }
-          : undefined,
-      });
-      if (termSheet && sttProvider.setSystemPrompt) {
-        sttProvider.setSystemPrompt(termSheet);
-        // Persist to disk for inspection
-        const termSheetDir = join(dataDir, "dictation");
-        await import("node:fs/promises").then((fs) =>
-          fs
-            .mkdir(termSheetDir, { recursive: true })
-            .then(() => fs.writeFile(join(termSheetDir, "termsheet.txt"), termSheet)),
-        );
-        console.log("[dictation] Term sheet loaded", {
-          terms: termSheet.split(",").length,
-          chars: termSheet.length,
-        });
-      }
-    } catch (err) {
-      console.warn(
-        "[dictation] Failed to build term sheet:",
-        err instanceof Error ? err.message : err,
-      );
-    }
   }
 
   private startBonjourAdvertisement(): void {

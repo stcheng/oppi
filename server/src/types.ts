@@ -267,22 +267,13 @@ export interface ServerConfig {
   subagents?: SubagentConfig;
 
   /**
-   * ASR / dictation pipeline configuration. Controls the /dictation WS endpoint,
-   * STT backend, batch retranscription, and audio preservation.
+   * ASR / dictation pipeline configuration. Controls remote dictation routing,
+   * the STT backend endpoint/model, and optional audio preservation.
    */
   asr?: {
     sttEndpoint?: string;
     sttModel?: string;
-    sttLanguage?: string;
     preserveAudio?: boolean;
-    maxDurationSec?: number;
-    llmEndpoint?: string;
-    termSheetEnabled?: boolean;
-    termSheetExtraFiles?: string[];
-    termSheetExtraDirs?: string[];
-    termSheetManualTerms?: string[];
-    /** Run regex-extracted term candidates through a local LLM to filter noise. */
-    termSheetLlmCurationEnabled?: boolean;
   };
 }
 

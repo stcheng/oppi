@@ -57,7 +57,9 @@ describe("Storage config validation", () => {
 
     const result = Storage.validateConfig(raw, dir, true);
     expect(result.valid).toBe(false);
-    expect(result.errors.some((e) => e.includes("config.approvalTimeoutMs: expected >= 0"))).toBe(true);
+    expect(result.errors.some((e) => e.includes("config.approvalTimeoutMs: expected >= 0"))).toBe(
+      true,
+    );
   });
 
   it("accepts tls self-signed config", () => {
@@ -96,12 +98,12 @@ describe("Storage config validation", () => {
 
     const result = Storage.validateConfig(raw, dir, true);
     expect(result.valid).toBe(false);
-    expect(result.errors.some((e) => e.includes("config.tls.certPath: required when mode=manual"))).toBe(
-      true,
-    );
-    expect(result.errors.some((e) => e.includes("config.tls.keyPath: required when mode=manual"))).toBe(
-      true,
-    );
+    expect(
+      result.errors.some((e) => e.includes("config.tls.certPath: required when mode=manual")),
+    ).toBe(true);
+    expect(
+      result.errors.some((e) => e.includes("config.tls.keyPath: required when mode=manual")),
+    ).toBe(true);
   });
 
   it("backfills defaults for minimal config in non-strict normalization", () => {
@@ -182,7 +184,9 @@ describe("Storage config validation", () => {
 
     const result = Storage.validateConfig(raw, dir, true);
     expect(result.valid).toBe(false);
-    expect(result.errors.some((e) => e.includes("config.policy.unknownKey: unknown key"))).toBe(true);
+    expect(result.errors.some((e) => e.includes("config.policy.unknownKey: unknown key"))).toBe(
+      true,
+    );
   });
 
   it("accepts subagents config with all fields", () => {
@@ -223,7 +227,9 @@ describe("Storage config validation", () => {
 
     const result = Storage.validateConfig(raw, dir, true);
     expect(result.valid).toBe(false);
-    expect(result.errors.some((e) => e.includes("config.subagents.unknownField: unknown key"))).toBe(true);
+    expect(
+      result.errors.some((e) => e.includes("config.subagents.unknownField: unknown key")),
+    ).toBe(true);
   });
 
   it("backfills subagents defaults when partially specified", () => {
@@ -261,24 +267,21 @@ describe("Storage config validation", () => {
     expect(result.config?.asr?.sttModel).toBe("Qwen3-ASR-1.7B");
   });
 
-  it("preserves full asr config with all fields", () => {
+  it("preserves asr config with supported fields", () => {
     const raw = {
       ...Storage.getDefaultConfig(dir),
       asr: {
         sttEndpoint: "http://localhost:9847",
         sttModel: "Qwen3-ASR-1.7B-bf16",
         preserveAudio: false,
-        maxDurationSec: 120,
-        llmEndpoint: "http://localhost:8400",
       },
     };
 
     const result = Storage.validateConfig(raw, dir, true);
     expect(result.valid).toBe(true);
     expect(result.config?.asr?.sttEndpoint).toBe("http://localhost:9847");
+    expect(result.config?.asr?.sttModel).toBe("Qwen3-ASR-1.7B-bf16");
     expect(result.config?.asr?.preserveAudio).toBe(false);
-    expect(result.config?.asr?.maxDurationSec).toBe(120);
-    expect(result.config?.asr?.llmEndpoint).toBe("http://localhost:8400");
   });
 
   it("omits asr when not present in config", () => {
@@ -298,6 +301,20 @@ describe("Storage config validation", () => {
     expect(result.valid).toBe(true);
     // Empty endpoint means no valid fields → asr omitted entirely
     expect(result.config?.asr).toBeUndefined();
+  });
+
+  it("rejects unknown asr config keys in strict mode", () => {
+    const raw = {
+      ...Storage.getDefaultConfig(dir),
+      asr: {
+        sttEndpoint: "http://localhost:9847",
+        termSheetEnabled: true,
+      },
+    };
+
+    const result = Storage.validateConfig(raw, dir, true);
+    expect(result.valid).toBe(false);
+    expect(result.errors).toContain("config.asr.termSheetEnabled: unknown key");
   });
 
   it("survives round-trip through Storage constructor with asr config", () => {
