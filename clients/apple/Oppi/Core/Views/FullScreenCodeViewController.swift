@@ -37,6 +37,20 @@ final class FullScreenCodeViewController: UIViewController {
         }
     }
 
+    private final class LiveSourceObserverCleanup: @unchecked Sendable {
+        private let cancelImpl: @MainActor @Sendable () -> Void
+
+        init(cancelImpl: @escaping @MainActor @Sendable () -> Void) {
+            self.cancelImpl = cancelImpl
+        }
+
+        func cancel() {
+            Task { @MainActor in
+                cancelImpl()
+            }
+        }
+    }
+
     private let content: FullScreenCodeContent
     private let presentationMode: PresentationMode
     private let selectedTextPiRouter: SelectedTextPiActionRouter?
@@ -47,7 +61,7 @@ final class FullScreenCodeViewController: UIViewController {
     private weak var contentHostController: UIViewController?
     private var installedBodyView: UIView?
     private var liveSourceBodyView: NativeFullScreenSourceBody?
-    private var liveSourceObserverID: UUID?
+    private var liveSourceObserverCleanup: LiveSourceObserverCleanup?
     private var liveSourceCurrentSnapshot: SourceTraceStream.Snapshot?
     private var lastNavigationPresentation: NavigationPresentation?
 
@@ -106,12 +120,7 @@ final class FullScreenCodeViewController: UIViewController {
     }
 
     deinit {
-        if let liveSourceObserverID,
-           case .liveSource(_, let stream) = content {
-            Task { @MainActor in
-                stream.removeObserver(liveSourceObserverID)
-            }
-        }
+        liveSourceObserverCleanup?.cancel()
     }
 
     override func viewDidLoad() {
@@ -175,8 +184,11 @@ final class FullScreenCodeViewController: UIViewController {
             liveSourceCurrentSnapshot = snapshot
             let body = makeLiveSourceBody(snapshot: snapshot, palette: palette)
             installBodyView(body, on: viewController)
-            liveSourceObserverID = stream.addObserver(deliverImmediately: false) { [weak self] snapshot in
+            let observerID = stream.addObserver(deliverImmediately: false) { [weak self] snapshot in
                 self?.handleLiveSourceUpdate(snapshot)
+            }
+            liveSourceObserverCleanup = LiveSourceObserverCleanup {
+                stream.removeObserver(observerID)
             }
 
         default:
