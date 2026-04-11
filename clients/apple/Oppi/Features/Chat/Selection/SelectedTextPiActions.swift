@@ -108,6 +108,7 @@ struct SelectedTextPiRequest: Equatable {
 }
 
 enum SelectedTextPiTextViewSupport {
+    @MainActor
     static func selectedText(in textView: UITextView, range: NSRange) -> String? {
         guard range.location != NSNotFound,
               range.length > 0 else {

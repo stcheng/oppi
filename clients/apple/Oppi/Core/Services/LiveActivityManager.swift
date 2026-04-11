@@ -356,14 +356,15 @@ final class LiveActivityManager {
 
         cleanupTimers()
 
+        nonisolated(unsafe) let detachedActivity = activity
         let finalState = Self.emptyState
         let policy: ActivityUIDismissalPolicy = immediate
             ? .immediate
             : .after(Date().addingTimeInterval(lockScreenDismissDelaySeconds))
 
         Task {
-            await activity.end(
-                .init(state: finalState, staleDate: nil),
+            await detachedActivity.end(
+                ActivityContent(state: finalState, staleDate: nil),
                 dismissalPolicy: policy
             )
         }
@@ -440,9 +441,10 @@ final class LiveActivityManager {
 
         let finalState = Self.emptyState
         for activity in activitiesToEnd {
+            nonisolated(unsafe) let detachedActivity = activity
             Task {
-                await activity.end(
-                    .init(state: finalState, staleDate: nil),
+                await detachedActivity.end(
+                    ActivityContent(state: finalState, staleDate: nil),
                     dismissalPolicy: .immediate
                 )
             }
@@ -716,6 +718,7 @@ final class LiveActivityManager {
         lastPushedApprovalCount = state.pendingApprovalCount
         lastDeliveredSnapshot = deliveredSnapshot
 
+        nonisolated(unsafe) let detachedActivity = activity
         let alertConfiguration: AlertConfiguration? = shouldAlertNow
             ? AlertConfiguration(
                 title: "Approval required",
@@ -725,8 +728,8 @@ final class LiveActivityManager {
             : nil
 
         Task {
-            await activity.update(
-                .init(
+            await detachedActivity.update(
+                ActivityContent(
                     state: state,
                     staleDate: deliveredSnapshot.staleDate,
                     relevanceScore: deliveredSnapshot.relevanceScore

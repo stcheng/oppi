@@ -1,6 +1,7 @@
 import UIKit
 
 /// Shared image renderer for assistant avatars.
+@MainActor
 enum AssistantAvatarRenderer {
     static func render(avatar: AssistantAvatar, sessionId: String, size: CGFloat) -> UIImage {
         switch avatar {

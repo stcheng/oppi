@@ -80,6 +80,7 @@ extension UnifiedDiffView {
 /// Layout manager that draws full-width backgrounds for added/removed lines.
 /// `NSAttributedString.backgroundColor` only paints behind characters; this
 /// extends the tint to cover the entire line fragment rect edge-to-edge.
+@MainActor
 private final class UnifiedDiffLayoutManager: NSLayoutManager {
     /// Scroll view reference used to ensure backgrounds extend at least to the
     /// visible width when content is narrower than the viewport.
