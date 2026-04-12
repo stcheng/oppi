@@ -146,13 +146,13 @@ Add to `OppiPerfTests/TreeSitterPerfTests.swift`:
 
 ```bash
 # Conformance tests
-sim-pool.sh run -- xcodebuild ... test -only-testing:OppiTests/TreeSitter<Lang>Tests
+sim-pool.sh run -- xcodebuild ... -scheme OppiUnitTests test -only-testing:OppiTests/TreeSitter<Lang>Tests
 
 # Perf tests
 sim-pool.sh run -- xcodebuild ... test -only-testing:OppiPerfTests/TreeSitterPerfTests
 
 # Full regression
-sim-pool.sh run -- xcodebuild ... test -only-testing:OppiTests
+sim-pool.sh run -- xcodebuild ... -scheme OppiUnitTests test -only-testing:OppiTests
 ```
 
 ## tree-sitter Capture Name Mapping

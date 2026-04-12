@@ -7,11 +7,17 @@
     ],
     "nightly-deep": {
       "server": ["check", "test:coverage", "test:e2e:linux"],
-      "apple": ["xcodebuild build", "xcodebuild test -only-testing:OppiTests"]
+      "apple": [
+        "xcodebuild -scheme Oppi build",
+        "xcodebuild -scheme OppiUnitTests test -only-testing:OppiTests"
+      ]
     },
     "release-preflight": {
       "server": ["check", "test:coverage", "telemetry:review:gate"],
-      "apple": ["xcodebuild build", "xcodebuild test -only-testing:OppiTests"]
+      "apple": [
+        "xcodebuild -scheme Oppi build",
+        "xcodebuild -scheme OppiUnitTests test -only-testing:OppiTests"
+      ]
     }
   },
   "ci": {

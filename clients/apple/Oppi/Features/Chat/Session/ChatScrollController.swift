@@ -45,6 +45,14 @@ final class ChatScrollController: NSObject {
     /// Set by outline view to scroll to a specific item.
     var scrollTargetID: String?
 
+    /// Next timeline item that should receive a transient visual emphasis after
+    /// programmatic navigation lands on it.
+    private(set) var pendingNavigationHighlightItemID: String?
+
+    /// Monotonic token for navigation highlight requests. Lets the collection
+    /// view treat repeated jumps to the same row as distinct highlight events.
+    private(set) var pendingNavigationHighlightNonce: UInt = 0
+
     /// Shows a subtle "live updates" hint while streaming continues off-screen.
     var isDetachedStreamingHintVisible = false
 
@@ -286,7 +294,19 @@ final class ChatScrollController: NSObject {
     func handleScrollTarget(performScrollToTop: @escaping (String) -> Void) {
         guard let target = scrollTargetID else { return }
         scrollTargetID = nil
+        requestNavigationHighlight(for: target)
         performScrollToTop(target)
+    }
+
+    func requestNavigationHighlight(for itemID: String) {
+        pendingNavigationHighlightItemID = itemID
+        pendingNavigationHighlightNonce &+= 1
+    }
+
+    func consumeNavigationHighlightIfNeeded(for itemID: String) -> UInt? {
+        guard pendingNavigationHighlightItemID == itemID else { return nil }
+        pendingNavigationHighlightItemID = nil
+        return pendingNavigationHighlightNonce
     }
 
     // MARK: - Imperative Scroll
@@ -314,6 +334,7 @@ final class ChatScrollController: NSObject {
         anchor.contentOffsetY = 0
         isDetachedStreamingHintVisible = false
         isJumpToBottomHintVisible = false
+        pendingNavigationHighlightItemID = nil
     }
 }
 

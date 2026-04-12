@@ -19,7 +19,7 @@ import UIKit
 /// of `systemLayoutSizeFitting`. By overriding it, we compute the size
 /// ourselves (via `contentView.systemLayoutSizeFitting`) and clamp the result,
 /// completely bypassing the assertion path in `UICollectionViewCell`.
-private final class SafeSizingCell: UICollectionViewCell {
+final class SafeSizingCell: UICollectionViewCell {
     /// High ceiling that still protects against bogus/non-finite layout output
     /// while allowing legitimately massive timeline rows (for example, a very
     /// long assistant markdown reply) to self-size correctly.
@@ -43,6 +43,9 @@ private final class SafeSizingCell: UICollectionViewCell {
     /// (≤2 lines per 100ms at typical token rates).
     private static let streamingSizeThrottleNs: UInt64 = 100_000_000 // 100ms
 
+    private let navigationHighlightOverlay = UIView()
+    private var navigationHighlightToken: UInt = 0
+
     override init(frame: CGRect) {
         super.init(frame: frame)
         // Cell-level clipping: UIKit resets contentView.clipsToBounds when
@@ -53,10 +56,57 @@ private final class SafeSizingCell: UICollectionViewCell {
         // estimated heights from the compositional layout).
         clipsToBounds = true
         contentView.clipsToBounds = true
+        configureNavigationHighlightOverlay()
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { nil }
+
+    private func configureNavigationHighlightOverlay() {
+        navigationHighlightOverlay.isUserInteractionEnabled = false
+        navigationHighlightOverlay.alpha = 0
+        navigationHighlightOverlay.backgroundColor = UIColor(Color.themeBlue).withAlphaComponent(0.12)
+        navigationHighlightOverlay.layer.borderColor = UIColor(Color.themeBlue).withAlphaComponent(0.7).cgColor
+        navigationHighlightOverlay.layer.borderWidth = 1.5
+        navigationHighlightOverlay.layer.cornerRadius = 14
+        navigationHighlightOverlay.translatesAutoresizingMaskIntoConstraints = false
+        contentView.addSubview(navigationHighlightOverlay)
+        NSLayoutConstraint.activate([
+            navigationHighlightOverlay.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 2),
+            navigationHighlightOverlay.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -2),
+            navigationHighlightOverlay.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 2),
+            navigationHighlightOverlay.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -2),
+        ])
+    }
+
+    func performNavigationHighlight(token: UInt) {
+        navigationHighlightToken = token
+        navigationHighlightOverlay.layer.removeAllAnimations()
+        navigationHighlightOverlay.alpha = 0
+
+        UIView.animate(
+            withDuration: 0.16,
+            delay: 0,
+            options: [.allowUserInteraction, .curveEaseOut]
+        ) {
+            self.navigationHighlightOverlay.alpha = 1
+        } completion: { _ in
+            guard self.navigationHighlightToken == token else { return }
+            UIView.animate(
+                withDuration: 0.9,
+                delay: 0.2,
+                options: [.allowUserInteraction, .curveEaseOut]
+            ) {
+                self.navigationHighlightOverlay.alpha = 0
+            }
+        }
+    }
+
+    #if DEBUG
+        var isShowingNavigationHighlightForTesting: Bool {
+            navigationHighlightOverlay.alpha > 0.01
+        }
+    #endif
 
     /// Safety net: re-enforce contentView clipping after UIKit resets it
     /// during content configuration changes.

@@ -305,6 +305,12 @@ struct ChatScrollControllerTests {
         try? await Task.sleep(for: .milliseconds(220))
         #expect(targets == ["target-1"])
         #expect(controller.scrollTargetID == nil)
+        #expect(controller.pendingNavigationHighlightItemID == "target-1")
+
+        let token = controller.consumeNavigationHighlightIfNeeded(for: "target-1")
+        #expect(token != nil)
+        #expect(controller.pendingNavigationHighlightItemID == nil)
+        #expect(controller.consumeNavigationHighlightIfNeeded(for: "target-1") == nil)
     }
 
     // MARK: - requestScrollToBottom

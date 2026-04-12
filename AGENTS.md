@@ -25,7 +25,7 @@ cd clients/apple && xcodegen generate
 cd clients/apple && bash ~/.pi/agent/skills/oppi-dev/scripts/sim-pool.sh \
   run -- xcodebuild -project Oppi.xcodeproj -scheme Oppi build
 cd clients/apple && bash ~/.pi/agent/skills/oppi-dev/scripts/sim-pool.sh \
-  run -- xcodebuild -project Oppi.xcodeproj -scheme Oppi test -only-testing:OppiTests
+  run -- xcodebuild -project Oppi.xcodeproj -scheme OppiUnitTests test -only-testing:OppiTests
 ```
 
 The Xcode project file is generated — never edit `Oppi.xcodeproj` directly. Change `project.yml` and run `xcodegen generate`.
@@ -90,6 +90,7 @@ No partial protocol updates.
 - Use `@Suite("Name")` to group related tests in a struct.
 - Use `@MainActor` on the struct (not individual tests) when all tests need main actor isolation.
 - Use `Issue.record()` instead of `XCTFail()`. Use `#expect()` instead of `XCTAssert*`.
+- **Use `OppiUnitTests` for `OppiTests`.** The full `Oppi` scheme also builds UI/E2E/perf bundles, which makes a focused unit-test run look hung.
 - **xcodebuild `-only-testing` with Swift Testing**: xcodebuild strips one trailing `()` from identifiers. Add double parentheses `()()` for function-level filters:
   - Suite: `-only-testing:OppiTests/MySuiteStruct` (use struct name, not `@Suite` display name)
   - Function: `-only-testing:'OppiTests/MySuiteStruct/myTestFunc()()'`

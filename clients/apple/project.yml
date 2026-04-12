@@ -365,6 +365,18 @@ targets:
           NSAllowsLocalNetworking: true
 
 schemes:
+  OppiUnitTests:
+    build:
+      targets:
+        Oppi: all
+        OppiActivityExtension: all
+        OppiControlWidget: all
+        OppiTests: [test]
+    test:
+      targets:
+        - name: OppiTests
+          randomExecutionOrder: true
+
   Oppi:
     build:
       targets:

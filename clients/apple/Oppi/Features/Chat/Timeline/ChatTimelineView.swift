@@ -159,7 +159,7 @@ struct ChatTimelineView: View {
                 renderWindow = reducer.items.count
             }
             scrollController.handleScrollTarget { target in
-                issueScrollCommand(id: target, anchor: .top, animated: true)
+                issueScrollCommand(id: target, anchor: .top, animated: false)
             }
         }
         .onChange(of: scrollController.scrollToBottomNonce) { _, _ in

@@ -1134,8 +1134,73 @@ struct ChatTimelineCollectionHost: UIViewRepresentable {
                 // Re-sample scroll state asynchronously so diagnostics (near-bottom,
                 // top visible id) converge deterministically for harness assertions.
                 collectionView.layoutIfNeeded()
+                self.correctProgrammaticScrollAlignmentIfNeeded(command, in: collectionView)
+                self.triggerNavigationHighlightIfNeeded(for: command, in: collectionView)
                 self.updateScrollState(collectionView)
                 self.updateDetachedStreamingHintVisibility()
+            }
+        }
+
+        private func triggerNavigationHighlightIfNeeded(
+            for command: ChatTimelineScrollCommand,
+            in collectionView: UICollectionView
+        ) {
+            guard command.anchor == .top,
+                  let token = scrollController?.consumeNavigationHighlightIfNeeded(for: command.id),
+                  let itemIndex = currentIDs.firstIndex(of: command.id) else {
+                return
+            }
+
+            let indexPath = IndexPath(item: itemIndex, section: 0)
+            let applyHighlight = { [weak collectionView] in
+                guard let collectionView,
+                      let cell = collectionView.cellForItem(at: indexPath) as? SafeSizingCell else {
+                    return
+                }
+                cell.performNavigationHighlight(token: token)
+            }
+
+            applyHighlight()
+            DispatchQueue.main.async(execute: applyHighlight)
+        }
+
+        private func correctProgrammaticScrollAlignmentIfNeeded(
+            _ command: ChatTimelineScrollCommand,
+            in collectionView: UICollectionView
+        ) {
+            guard command.anchor == .top,
+                  let itemIndex = currentIDs.firstIndex(of: command.id) else {
+                return
+            }
+
+            let indexPath = IndexPath(item: itemIndex, section: 0)
+            collectionView.layoutIfNeeded()
+            guard let attrs = collectionView.layoutAttributesForItem(at: indexPath) else {
+                return
+            }
+
+            let insets = collectionView.adjustedContentInset
+            let minOffsetY = -insets.top
+            let maxOffsetY = max(
+                minOffsetY,
+                collectionView.contentSize.height - collectionView.bounds.height + insets.bottom
+            )
+            let desiredOffsetY = min(max(attrs.frame.minY - insets.top, minOffsetY), maxOffsetY)
+            guard abs(collectionView.contentOffset.y - desiredOffsetY) > 0.5 else {
+                if let anchoredCV = collectionView as? AnchoredCollectionView,
+                   anchoredCV.isDetachedFromBottom {
+                    anchoredCV.captureDetachedAnchor()
+                }
+                return
+            }
+
+            if let anchoredCV = collectionView as? AnchoredCollectionView {
+                anchoredCV.applyOffsetCorrection(desiredOffsetY)
+                if anchoredCV.isDetachedFromBottom {
+                    anchoredCV.captureDetachedAnchor()
+                }
+            } else {
+                collectionView.contentOffset.y = desiredOffsetY
             }
         }
 
