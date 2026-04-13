@@ -33,6 +33,46 @@ BUILD_DIR="$APPLE_DIR/build/release-mac-${VERSION}"
 SIGNING_IDENTITY="Developer ID Application: Da Chen (AZAQMY4SPZ)"
 DMG_NAME="Oppi-${VERSION}-mac.dmg"
 
+clean_npm_env() {
+    env \
+        -u npm_config_before \
+        -u NPM_CONFIG_BEFORE \
+        -u npm_config_min_release_age \
+        -u NPM_CONFIG_MIN_RELEASE_AGE \
+        "$@"
+}
+
+create_dmg() {
+    local source_dir="$1"
+    local output_path="$2"
+    local log_path="$BUILD_DIR/dmg-create.log"
+    local attempt rc volume_name
+
+    : > "$log_path"
+
+    for attempt in 1 2; do
+        volume_name="Oppi-${VERSION//./-}-${attempt}-$$"
+        echo "Attempt $attempt: hdiutil create -volname $volume_name" | tee -a "$log_path"
+
+        if hdiutil create \
+            -volname "$volume_name" \
+            -srcfolder "$source_dir" \
+            -ov -format UDZO \
+            "$output_path" >>"$log_path" 2>&1; then
+            tail -5 "$log_path"
+            return 0
+        fi
+
+        rc=$?
+        echo "warning: DMG creation failed on attempt $attempt (exit $rc)" | tee -a "$log_path"
+        sleep 1
+    done
+
+    echo "Error: DMG creation failed after 2 attempts. See $log_path"
+    tail -20 "$log_path"
+    exit 1
+}
+
 # ── Argument parsing ──
 
 PUBLISH=false
@@ -57,14 +97,14 @@ echo ""
 
 echo "--- Step 1: Building server ---"
 cd "$SERVER_DIR"
-npm ci --ignore-scripts
-npm run build
+clean_npm_env npm ci --ignore-scripts
+clean_npm_env npm run build
 echo "Server built."
 
 # ── Step 1b: Audit production dependencies ──
 
 echo "--- Step 1b: Auditing production dependencies ---"
-AUDIT_OUTPUT=$(npm audit --production --audit-level=high 2>&1) || true
+AUDIT_OUTPUT=$(clean_npm_env npm audit --production --audit-level=high 2>&1) || true
 AUDIT_EXIT=$?
 
 # npm audit exits 1 if any vuln at or above audit-level is found
@@ -371,12 +411,7 @@ mkdir -p "$DMG_STAGING"
 cp -R "$APP_PATH" "$DMG_STAGING/"
 ln -s /Applications "$DMG_STAGING/Applications"
 
-hdiutil create \
-    -volname "Oppi" \
-    -srcfolder "$DMG_STAGING" \
-    -ov -format UDZO \
-    "$DMG_PATH" \
-    2>&1 | tail -3
+create_dmg "$DMG_STAGING" "$DMG_PATH"
 
 rm -rf "$DMG_STAGING"
 

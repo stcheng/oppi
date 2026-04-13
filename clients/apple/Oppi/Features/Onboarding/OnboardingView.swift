@@ -284,7 +284,7 @@ enum InviteBootstrapService {
                 let pairResult = try await bootstrapAPI.pairDevice(pairingToken: pairingToken)
                 effectiveToken = pairResult.deviceToken
             } catch {
-                throw InviteBootstrapError.message("Pairing failed. Request a fresh invite and try again.")
+                throw InviteBootstrapError.message(pairingFailureMessage(for: error, host: credentials.host))
             }
         } else {
             effectiveToken = credentials.token
@@ -335,6 +335,52 @@ enum InviteBootstrapService {
             effectiveCredentials: effectiveCredentials,
             sessions: sessions
         )
+    }
+
+    static func pairingFailureMessage(for error: Error, host: String) -> String {
+        if let apiError = error as? APIError {
+            switch apiError {
+            case .invalidResponse:
+                return "Server returned an invalid pairing response. Request a fresh invite and try again."
+            case .server(401, let message)
+                where message.localizedCaseInsensitiveContains("invalid or expired pairing token"):
+                return "Invite link expired or was already used. Request a fresh invite."
+            case .server(429, _):
+                return "Too many invalid pairing attempts. Wait a moment, request a fresh invite, and try again."
+            case .server(let status, let message):
+                return "Pairing failed with server error (\(status)): \(message)"
+            }
+        }
+
+        if let urlError = error as? URLError {
+            switch urlError.code {
+            case .timedOut,
+                    .cannotFindHost,
+                    .cannotConnectToHost,
+                    .networkConnectionLost,
+                    .notConnectedToInternet,
+                    .dnsLookupFailed,
+                    .cannotLoadFromNetwork:
+                return "Could not reach \(host). Check the address, VPN, or network and try again."
+            case .secureConnectionFailed,
+                    .serverCertificateHasBadDate,
+                    .serverCertificateHasUnknownRoot,
+                    .serverCertificateNotYetValid,
+                    .serverCertificateUntrusted,
+                    .clientCertificateRejected,
+                    .clientCertificateRequired:
+                return "Secure connection to \(host) failed. Verify the invite host and certificate, then try again."
+            default:
+                break
+            }
+        }
+
+        let message = error.localizedDescription.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !message.isEmpty {
+            return "Pairing failed: \(message)"
+        }
+
+        return "Pairing failed. Request a fresh invite and try again."
     }
 
     private static func isSameServer(_ lhs: ServerCredentials?, _ rhs: ServerCredentials) -> Bool {
