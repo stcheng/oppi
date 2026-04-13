@@ -1,9 +1,8 @@
 /**
  * spawn_agent extension tests — mock context, no real LLM.
  *
- * Exercises all three tools (spawn_agent, check_agents, inspect_agent)
- * and the internal utility functions (depth, tree cost, trace parsing)
- * through the public createSpawnAgentFactory API with a mock context.
+ * Exercises the tool surface and utility helpers exposed by
+ * createSpawnAgentFactory with a mock context.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -227,23 +226,18 @@ describe("spawn_agent", () => {
     expect(result.details.model).toBe("openai/gpt-4o");
   });
 
-  it("passes fork entryId and sessionRole to child spawn params", async () => {
+  it("rejects unsupported fork params", async () => {
     const { spawn, spawnChildCalls } = setup();
 
-    await spawn.execute("tc-1", {
+    const result = await spawn.execute("tc-1", {
       message: "Continue from this branch",
       fork: true,
       entryId: "msg-user-123",
-      sessionRole: "implementation",
     });
 
-    expect(spawnChildCalls).toHaveLength(1);
-    expect(spawnChildCalls[0]).toMatchObject({
-      fork: true,
-      entryId: "msg-user-123",
-      sessionRole: "implementation",
-      prompt: "Continue from this branch",
-    });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("does not support fork");
+    expect(spawnChildCalls).toHaveLength(0);
   });
 
   it("rejects unknown model with available list", async () => {

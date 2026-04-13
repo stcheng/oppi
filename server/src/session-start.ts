@@ -62,9 +62,6 @@ export interface SessionStartCoordinatorDeps {
       model?: string;
       thinking?: string;
       prompt: string;
-      fork?: boolean;
-      entryId?: string;
-      sessionRole?: Session["sessionRole"];
     },
   ) => Promise<Session>;
   spawnDetachedSession: (
@@ -123,9 +120,6 @@ export class SessionStartCoordinator {
               model?: string;
               thinking?: string;
               prompt: string;
-              fork?: boolean;
-              entryId?: string;
-              sessionRole?: Session["sessionRole"];
             }) => this.deps.spawnChildSession(session.id, params),
             spawnDetached: (params: {
               name?: string;

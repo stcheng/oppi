@@ -12,10 +12,7 @@
 
 import { EventEmitter } from "node:events";
 
-import {
-  type ExtensionFactory,
-  SessionManager as PiSessionManager,
-} from "@mariozechner/pi-coding-agent";
+import { type ExtensionFactory } from "@mariozechner/pi-coding-agent";
 
 import type {
   MessageQueueDraftItem,
@@ -28,7 +25,6 @@ import type { Storage } from "./storage.js";
 import type { GateServer } from "./gate.js";
 
 import { WorkspaceRuntime, resolveRuntimeLimits } from "./workspace-runtime.js";
-import { findLatestForkableUserEntryIdFromFile } from "./trace.js";
 import { type PiStateSnapshot, type SessionBackendEvent } from "./pi-events.js";
 import { MobileRendererRegistry } from "./mobile-renderer.js";
 import type { ServerMetricCollector } from "./server-metric-collector.js";
@@ -634,9 +630,6 @@ export class SessionManager extends EventEmitter {
       model?: string;
       thinking?: string;
       prompt: string;
-      fork?: boolean;
-      entryId?: string;
-      sessionRole?: Session["sessionRole"];
     },
   ): Promise<Session> {
     const parentSession = this.storage.getSession(parentSessionId);
@@ -657,64 +650,11 @@ export class SessionManager extends EventEmitter {
     session.workspaceId = workspace.id;
     session.workspaceName = workspace.name;
     session.parentSessionId = parentSessionId;
-    session.rootSessionId = latestParentSession.rootSessionId || latestParentSession.id;
-    session.knowledgeFamilyId =
-      latestParentSession.knowledgeFamilyId ||
-      latestParentSession.rootSessionId ||
-      latestParentSession.id;
-    if (params.fork) session.forkedFromSessionId = parentSessionId;
-    if (params.sessionRole) session.sessionRole = params.sessionRole;
-
-    const sourceSessionFile =
-      latestParentSession.piSessionFile ||
-      latestParentSession.piSessionFiles?.[latestParentSession.piSessionFiles.length - 1];
-    const requestedEntryId = params.entryId?.trim();
-    const forkPointEntryId =
-      requestedEntryId && requestedEntryId.length > 0
-        ? requestedEntryId
-        : sourceSessionFile
-          ? findLatestForkableUserEntryIdFromFile(sourceSessionFile)
-          : undefined;
-
-    // Fork mode: open the parent's session file, then ask pi to create a native
-    // fork at a specific entry boundary. This preserves the inherited context
-    // while giving us an explicit fork point for lineage-aware indexing.
-    if (params.fork && sourceSessionFile && forkPointEntryId) {
-      session.piSessionFile = sourceSessionFile;
-      session.piSessionFiles = Array.from(
-        new Set([...(latestParentSession.piSessionFiles || []), sourceSessionFile]),
-      );
-      session.forkPointEntryId = forkPointEntryId;
-      console.log("[sessions] Prepared native fork for child", {
-        sessionId: session.id,
-        parentSessionId,
-        forkPointEntryId,
-      });
-    } else if (params.fork && sourceSessionFile) {
-      try {
-        const cwd = workspace.hostMount || process.cwd();
-        const forkedSm = PiSessionManager.forkFrom(sourceSessionFile, cwd);
-        session.piSessionFile = forkedSm.getSessionFile();
-        console.warn("[sessions] No fork entry id found, falling back to whole-file fork", {
-          sessionId: session.id,
-          parentSessionId,
-        });
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        console.warn(`[sessions] Fork failed, falling back to fresh session: ${msg}`);
-        // Fall through to fresh session behavior
-      }
-    }
 
     this.storage.saveSession(session);
 
     try {
       await this.startSession(session.id, workspace);
-
-      if (params.fork && session.forkPointEntryId) {
-        await this.runCommand(session.id, { type: "fork", entryId: session.forkPointEntryId });
-        await this.refreshSessionState(session.id);
-      }
 
       if (params.thinking) {
         await this.forwardClientCommand(session.id, {

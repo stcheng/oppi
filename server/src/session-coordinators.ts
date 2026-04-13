@@ -93,9 +93,6 @@ export interface SessionCoordinatorBundleDeps {
       model?: string;
       thinking?: string;
       prompt: string;
-      fork?: boolean;
-      entryId?: string;
-      sessionRole?: Session["sessionRole"];
     },
   ) => Promise<Session>;
   spawnDetachedSession: (

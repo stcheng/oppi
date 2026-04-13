@@ -1,10 +1,11 @@
 /**
- * spawn_agent — first-party extension for spawning child sessions.
+ * spawn_agent — first-party extension for managing child sessions.
  *
- * Registers three LLM-callable tools:
- *   spawn_agent    — create a new session in the current workspace
- *   check_agents   — poll child session status
- *   inspect_agent  — progressive-disclosure trace inspection
+ * Root and detached sessions get:
+ *   spawn_agent, stop_agent, send_message, check_agents, inspect_agent
+ *
+ * Child sessions get the non-spawning subset:
+ *   send_message, check_agents, inspect_agent
  *
  * Injected as an in-process first-party factory extension.
  * Uses direct SessionManager methods — no HTTP round-trip needed.
@@ -31,9 +32,6 @@ export interface SpawnAgentContext {
     model?: string;
     thinking?: string;
     prompt: string;
-    fork?: boolean;
-    entryId?: string;
-    sessionRole?: Session["sessionRole"];
   }): Promise<Session>;
   /** Create an independent session in the same workspace — no parent-child relationship. */
   spawnDetached(params: {
@@ -162,38 +160,6 @@ const spawnAgentParams = Type.Object({
   message: Type.String({
     description: "The task prompt for the child agent.",
   }),
-  fork: Type.Optional(
-    Type.Boolean({
-      description:
-        "If true, fork the parent's conversation history into the child. " +
-        "The child inherits all context (files read, analysis done) and gets " +
-        "Anthropic prompt cache hits on the shared prefix (~90% cheaper). " +
-        "Use for side tasks where the child needs context you already have. " +
-        "Default: false (fresh context).",
-    }),
-  ),
-  entryId: Type.Optional(
-    Type.String({
-      description:
-        "Optional parent user-message entry ID to fork from. If omitted and fork=true, Oppi auto-selects the latest forkable user entry.",
-    }),
-  ),
-  sessionRole: Type.Optional(
-    Type.Union(
-      [
-        Type.Literal("primary"),
-        Type.Literal("implementation"),
-        Type.Literal("research"),
-        Type.Literal("review"),
-        Type.Literal("planning"),
-        Type.Literal("consolidation"),
-      ],
-      {
-        description:
-          "Optional semantic role for the child session. Useful for downstream lineage-aware indexing or extraction.",
-      },
-    ),
-  ),
   name: Type.Optional(
     Type.String({
       description:
@@ -917,10 +883,9 @@ export function createSpawnAgentFactory(
           "that benefits from a fresh context. Set wait=true to block until the child " +
           "finishes and get its result inline.",
         promptSnippet:
-          "spawn_agent(message, fork?, entryId?, sessionRole?, name?, model?, thinking?, detached?, wait?, timeout_seconds?) — spawn a child agent session",
+          "spawn_agent(message, name?, model?, thinking?, detached?, wait?, timeout_seconds?) — spawn a child agent session",
         promptGuidelines: [
-          "Spawning starts a fresh context by default — the child must rediscover files and context you already have. Don't spawn when you already know the exact changes and could do them faster inline.",
-          "Use fork=true when the child needs context you already have (files read, code analyzed, decisions made). The child inherits your full conversation and gets prompt cache hits (~90% cheaper input tokens). Ideal for side tasks, small edits, and parallel work that branches from your current understanding.",
+          "Spawning starts a fresh context — the child must rediscover files and context you already have. Don't spawn when you already know the exact changes and could do them faster inline.",
           "Use spawn_agent for tasks that can run independently without blocking the current conversation.",
           "Give each spawned agent a clear, self-contained task description with all needed context.",
           "The child agent cannot see the parent's conversation history — include relevant context in the message.",
@@ -991,17 +956,26 @@ export function createSpawnAgentFactory(
           });
 
           try {
+            if ("fork" in params || "entryId" in params) {
+              return {
+                content: [
+                  {
+                    type: "text" as const,
+                    text:
+                      "spawn_agent does not support fork. " +
+                      "Start a fresh child and include the needed context in the message instead.",
+                  },
+                ],
+                details: { agentId: "", name, status: "error" },
+                isError: true,
+              };
+            }
+
             const spawnParams = {
               name,
               model: params.model,
               thinking: params.thinking,
               prompt: params.message,
-              fork: params.fork,
-              entryId: typeof params.entryId === "string" ? params.entryId : undefined,
-              sessionRole:
-                typeof params.sessionRole === "string"
-                  ? (params.sessionRole as Session["sessionRole"])
-                  : undefined,
             };
             const session = params.detached
               ? await ctx.spawnDetached(spawnParams)
@@ -1248,9 +1222,7 @@ export function createSpawnAgentFactory(
         "behavior='followUp': queued until the agent finishes its current turn. " +
           "Use for non-urgent additions like 'when you're done, also check Z'.",
         "If the target is idle (not busy), the message starts a new turn regardless of behavior.",
-        "If the target is stopped, it is automatically resumed and the message is delivered as a new prompt. " +
-          "Resume quickly (within ~5 minutes of the child stopping) to benefit from prompt cache hits (90% cheaper). " +
-          "After 5 minutes the cache expires and resume costs the same as a fresh spawn.",
+        "If the target is stopped, it is automatically resumed and the message is delivered as a new prompt.",
         "Use check_agents first to find the session ID.",
       ],
       parameters: sendMessageParams,

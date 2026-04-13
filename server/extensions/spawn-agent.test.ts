@@ -412,6 +412,20 @@ describe("spawn-agent-extension", () => {
       expect(result.content[0].text).toContain("workspace is locked");
     });
 
+    it("rejects unsupported fork parameters", async () => {
+      const { ctx, tool } = setup();
+
+      const result = await tool("spawn_agent").execute("tc1", {
+        message: "should error",
+        fork: true,
+        entryId: "entry-123",
+      });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain("does not support fork");
+      expect(ctx.spawnChildCalls.length).toBe(0);
+    });
+
     // --- Detached mode ---
 
     it("detached: calls spawnDetached instead of spawnChild", async () => {

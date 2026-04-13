@@ -121,13 +121,6 @@ export interface Session {
 
   // Parent-child tree (spawn_agent)
   parentSessionId?: string; // set when spawned by another session
-
-  // Session lineage for knowledge extraction / fork-aware indexing
-  rootSessionId?: string; // root of the parent/child/fork family
-  knowledgeFamilyId?: string; // stable family id for merge/dedup across related sessions
-  forkedFromSessionId?: string; // direct source session when created from a fork
-  forkPointEntryId?: string; // pi entry id used as the native fork boundary
-  sessionRole?: "primary" | "implementation" | "research" | "review" | "planning" | "consolidation";
 }
 
 export interface SessionMessage {
