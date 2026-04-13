@@ -19,6 +19,7 @@ type AskEntry =
   | { kind: "option"; option: AskOption }
   | { kind: "custom" }
   | { kind: "skip" }
+  | { kind: "back" }
   | { kind: "continue" };
 
 type AskDialogTheme = {
@@ -71,6 +72,7 @@ export async function runTerminalAskDialog(
     const pageCount = (): number => (questions.length > 1 ? questions.length + 1 : 1);
     const isReviewPage = (): boolean => questions.length > 1 && currentPage === questions.length;
     const currentQuestion = (): AskQuestion | undefined => questions[currentPage];
+    const canGoBack = (): boolean => questions.length > 1 && currentPage > 0;
 
     const refresh = (): void => {
       cachedLines = undefined;
@@ -83,6 +85,9 @@ export async function runTerminalAskDialog(
         entries.push({ kind: "custom" });
       }
       entries.push({ kind: "skip" });
+      if (canGoBack()) {
+        entries.push({ kind: "back" });
+      }
       if (question.multiSelect) {
         entries.push({ kind: "continue" });
       }
@@ -112,6 +117,40 @@ export async function runTerminalAskDialog(
         multiDrafts.set(question.id, draft);
       }
       return draft;
+    };
+
+    const answerSummary = (question: AskQuestion): string => {
+      const state = states.get(question.id);
+      if (state?.value !== undefined) {
+        return state.display ?? "(answered)";
+      }
+      if (state?.skipped) {
+        return "(skipped)";
+      }
+      return "(pending)";
+    };
+
+    const renderProgressSummary = (width: number, lines: string[]): void => {
+      if (questions.length <= 1) {
+        return;
+      }
+
+      lines.push("");
+      lines.push(truncateToWidth(theme.fg("accent", theme.bold(" Answers so far")), width));
+      for (let i = 0; i < questions.length; i++) {
+        const question = questions[i];
+        const status = getStatus(question.id);
+        const badge = status === "answered" ? "✓" : status === "skipped" ? "–" : "○";
+        const badgeColor =
+          status === "answered" ? "success" : status === "skipped" ? "warning" : "dim";
+        const summaryColor = status === "answered" ? "text" : "dim";
+        lines.push(
+          truncateToWidth(
+            `${theme.fg(badgeColor, `${badge} `)}${theme.fg("muted", `${i + 1}. `)}${theme.fg(summaryColor, `${singleLine(question.question || question.id)}: ${answerSummary(question)}`)}`,
+            width,
+          ),
+        );
+      }
     };
 
     const buildDialogResult = (): AskDialogResult => {
@@ -192,7 +231,12 @@ export async function runTerminalAskDialog(
     };
 
     const movePage = (delta: number): void => {
-      currentPage = (currentPage + delta + pageCount()) % pageCount();
+      const nextPage = Math.max(0, Math.min(pageCount() - 1, currentPage + delta));
+      if (nextPage === currentPage) {
+        refresh();
+        return;
+      }
+      currentPage = nextPage;
       resetPage();
     };
 
@@ -302,16 +346,18 @@ export async function runTerminalAskDialog(
           width,
         ),
       );
+      const affordances = [question.multiSelect ? "multi-select" : "single-select"];
+      if (allowCustom) {
+        affordances.push("custom answer");
+      }
+      if (canGoBack()) {
+        affordances.push("go back");
+      }
+      const instructions = question.multiSelect
+        ? " Toggle options, then Continue when you're happy."
+        : " Pick one option, type your own answer, or skip.";
       lines.push(
-        truncateToWidth(
-          theme.fg(
-            "muted",
-            question.multiSelect
-              ? " Toggle options, then choose Continue when you're happy."
-              : " Pick one option, write your own answer, or skip.",
-          ),
-          width,
-        ),
+        truncateToWidth(theme.fg("muted", `${instructions} ${affordances.join(" • ")}`), width),
       );
 
       if (state?.display) {
@@ -327,10 +373,16 @@ export async function runTerminalAskDialog(
 
       lines.push("");
 
+      let actionHeaderRendered = false;
       for (let i = 0; i < entries.length; i++) {
         const entry = entries[i];
         const selected = i === optionIndex;
         const prefix = selected ? theme.fg("accent", " › ") : "   ";
+
+        if (entry.kind !== "option" && !actionHeaderRendered) {
+          lines.push(truncateToWidth(theme.fg("muted", " Actions"), width));
+          actionHeaderRendered = true;
+        }
 
         if (entry.kind === "option") {
           const chosen = question.multiSelect
@@ -376,6 +428,14 @@ export async function runTerminalAskDialog(
           continue;
         }
 
+        if (entry.kind === "back") {
+          const color = selected ? "accent" : "text";
+          lines.push(
+            truncateToWidth(`${prefix}${theme.fg(color, "← Back to previous question")}`, width),
+          );
+          continue;
+        }
+
         const selectedCount = multiDraft?.size ?? 0;
         const label =
           selectedCount > 0
@@ -384,6 +444,8 @@ export async function runTerminalAskDialog(
         const color = selected ? "accent" : selectedCount > 0 ? "success" : "dim";
         lines.push(truncateToWidth(`${prefix}${theme.fg(color, label)}`, width));
       }
+
+      renderProgressSummary(width, lines);
     };
 
     const renderInput = (width: number, lines: string[], question: AskQuestion): void => {
@@ -474,11 +536,11 @@ export async function runTerminalAskDialog(
 
       lines.push("");
       const help = inputQuestionId
-        ? " Enter save • Esc back"
+        ? " Enter save custom answer • Esc cancel editing"
         : isReviewPage()
-          ? " Enter submit • Tab/←→ revisit • Esc cancel"
+          ? " Enter submit • ←/Shift-Tab revisit • Esc cancel"
           : questions.length > 1
-            ? " ↑↓ navigate • Enter select/toggle • Tab/←→ move • Esc cancel"
+            ? " ↑↓ navigate • Enter select/toggle • ←/Shift-Tab back • →/Tab next • Esc cancel"
             : " ↑↓ navigate • Enter select/toggle • Esc cancel";
       lines.push(truncateToWidth(theme.fg("dim", help), width));
       lines.push(border);
@@ -575,6 +637,11 @@ export async function runTerminalAskDialog(
 
         if (entry.kind === "skip") {
           skipQuestion(question);
+          return;
+        }
+
+        if (entry.kind === "back") {
+          movePage(-1);
           return;
         }
 

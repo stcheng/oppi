@@ -27,6 +27,15 @@ type RegisteredTool = {
       };
     },
   ) => Promise<{ content: Array<{ type: string; text: string }>; details?: unknown }>;
+  renderCall?: (
+    args: Record<string, unknown>,
+    theme: { fg: (token: string, text: string) => string; bold: (text: string) => string },
+  ) => { render: (width: number) => string[] };
+  renderResult?: (
+    result: { details?: unknown },
+    options: unknown,
+    theme: { fg: (token: string, text: string) => string; bold: (text: string) => string },
+  ) => { render: (width: number) => string[] };
 };
 
 function createMockAPI(): {
@@ -222,5 +231,94 @@ describe("createAskFactory", () => {
     const details = result.details as { answers: Record<string, string | string[]> };
     // Falls back to wrapping single value in array
     expect(details.answers["tools"]).toEqual(["ruff"]);
+  });
+
+  it("renders human-friendly question modes and answer labels in the TUI", () => {
+    const api = createMockAPI();
+    createAskFactory()(api as never);
+    const tool = api.tools.get("ask")!;
+    const theme = {
+      fg: (_token: string, text: string) => text,
+      bold: (text: string) => text,
+    };
+
+    const callText = tool
+      .renderCall?.(
+        {
+          questions: [
+            {
+              id: "ups_rule",
+              question: "How should I handle UPS mail?",
+              options: [
+                { value: "ups_split_recommended", label: "Split recommended" },
+                { value: "ups_archive_all", label: "Archive all" },
+              ],
+            },
+            {
+              id: "mail_tags",
+              question: "Which tags should I apply?",
+              options: [
+                { value: "bills", label: "Bills" },
+                { value: "receipts", label: "Receipts" },
+              ],
+              multiSelect: true,
+            },
+          ],
+          allowCustom: true,
+        },
+        theme,
+      )
+      .render(160)
+      .join("\n");
+
+    expect(callText).toContain("single-select + custom");
+    expect(callText).toContain("multi-select + custom");
+    expect(callText).toContain("Split recommended · Archive all");
+
+    const resultText = tool
+      .renderResult?.(
+        {
+          details: {
+            questions: [
+              {
+                id: "ups_rule",
+                question: "How should I handle UPS mail?",
+                options: [
+                  { value: "ups_split_recommended", label: "Split recommended" },
+                  { value: "ups_archive_all", label: "Archive all" },
+                ],
+              },
+              {
+                id: "mail_tags",
+                question: "Which tags should I apply?",
+                options: [
+                  { value: "bills", label: "Bills" },
+                  { value: "receipts", label: "Receipts" },
+                ],
+                multiSelect: true,
+              },
+              {
+                id: "notes",
+                question: "Anything else?",
+                options: [{ value: "none", label: "Nothing else" }],
+              },
+            ],
+            answers: {
+              ups_rule: "ups_split_recommended",
+              mail_tags: ["bills", "receipts"],
+              notes: "Keep tax paperwork only",
+            },
+          },
+        },
+        undefined,
+        theme,
+      )
+      .render(160)
+      .join("\n");
+
+    expect(resultText).toContain("Split recommended");
+    expect(resultText).toContain("Bills, Receipts");
+    expect(resultText).toContain('"Keep tax paperwork only"');
+    expect(resultText).not.toContain("ups_split_recommended");
   });
 });

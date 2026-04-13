@@ -38,6 +38,34 @@ const AskParams = Type.Object({
   ),
 });
 
+function questionModeLabel(question: AskQuestion, allowCustom: boolean): string {
+  const parts = [question.multiSelect ? "multi-select" : "single-select"];
+  if (allowCustom) {
+    parts.push("custom");
+  }
+  return parts.join(" + ");
+}
+
+function displayAnswerValue(question: AskQuestion | undefined, value: string): string {
+  if (!question) {
+    return value;
+  }
+
+  const matched = question.options.find((option) => option.value === value);
+  if (matched) {
+    return matched.label;
+  }
+
+  return `"${singleLine(value)}"`;
+}
+
+function displayAnswer(question: AskQuestion | undefined, answer: AskAnswer): string {
+  if (Array.isArray(answer)) {
+    return answer.map((value) => displayAnswerValue(question, value)).join(", ");
+  }
+  return displayAnswerValue(question, answer);
+}
+
 /**
  * First-party ask extension.
  *
@@ -131,18 +159,26 @@ export function createAskFactory(): ExtensionFactory {
 
       renderCall(args, theme) {
         const questions = Array.isArray(args.questions) ? (args.questions as AskQuestion[]) : [];
+        const allowCustom = args.allowCustom !== false;
         let text = theme.fg("toolTitle", theme.bold("ask "));
 
         if (questions.length === 1) {
-          text += theme.fg("muted", singleLine(questions[0].question || questions[0].id));
-          const labels = questions[0].options.map((option) => option.label);
+          const question = questions[0];
+          text += theme.fg("muted", singleLine(question.question || question.id));
+          text += `\n${theme.fg("dim", `  ${questionModeLabel(question, allowCustom)}`)}`;
+          const labels = question.options.map((option) => option.label);
           if (labels.length > 0) {
             text += `\n${theme.fg("dim", `  ${labels.join(" · ")}`)}`;
           }
         } else if (questions.length > 1) {
           text += theme.fg("muted", `${questions.length} questions`);
           for (const question of questions) {
-            text += `\n${theme.fg("dim", `  ${question.id}: ${singleLine(question.question || question.id)}`)}`;
+            text += `\n${theme.fg("dim", `  ${question.id} · ${questionModeLabel(question, allowCustom)}`)}`;
+            text += `\n${theme.fg("muted", `    ${singleLine(question.question || question.id)}`)}`;
+            const labels = question.options.map((option) => option.label);
+            if (labels.length > 0) {
+              text += `\n${theme.fg("dim", `    ${labels.join(" · ")}`)}`;
+            }
           }
         }
 
@@ -169,16 +205,22 @@ export function createAskFactory(): ExtensionFactory {
         const answers = details?.answers ?? {};
         const questions = details?.questions ?? [];
         const questionById = new Map(questions.map((question) => [question.id, question]));
-        const keys = Object.keys(answers);
-        if (keys.length === 0) {
+        const orderedKeys =
+          questions.length > 0 ? questions.map((question) => question.id) : Object.keys(answers);
+        if (orderedKeys.length === 0) {
           return new Text(theme.fg("warning", "No answers"), 0, 0);
         }
 
-        const lines = keys.map((key) => {
-          const value = answers[key];
-          const display = Array.isArray(value) ? value.join(", ") : value;
-          const label = questionById.get(key)?.question ?? key;
-          return `${theme.fg("success", "✓ ")}${theme.fg("muted", `${singleLine(label)}: `)}${theme.fg("accent", display)}`;
+        const extraKeys = Object.keys(answers).filter((key) => !orderedKeys.includes(key));
+        const lines = [...orderedKeys, ...extraKeys].map((key) => {
+          const question = questionById.get(key);
+          const label = singleLine(question?.question ?? key);
+          const answer = answers[key];
+          if (answer === undefined) {
+            return `${theme.fg("dim", "– ")}${theme.fg("muted", `${label}: `)}${theme.fg("dim", "(skipped)")}`;
+          }
+
+          return `${theme.fg("success", "✓ ")}${theme.fg("muted", `${label}: `)}${theme.fg("accent", displayAnswer(question, answer))}`;
         });
 
         return new Text(lines.join("\n"), 0, 0);
