@@ -158,6 +158,9 @@ export class SdkBackend {
   private readonly emitEvent: (event: SessionBackendEvent) => void;
   private readonly modelRegistry: ModelRegistry;
   private readonly pendingExtensionResponses = new Map<string, PendingExtensionUIResponse>();
+  private shutdownCleanupPromise: Promise<void> | null = null;
+  private shutdownCleanupCompleted = false;
+  private readonly shutdownCleanupListeners = new Set<() => void>();
   private disposed = false;
 
   private constructor(
@@ -722,6 +725,68 @@ export class SdkBackend {
     return this.piSession.sessionId;
   }
 
+  onShutdownCleanupComplete(listener: () => void): void {
+    if (this.shutdownCleanupCompleted) {
+      try {
+        listener();
+      } catch (err: unknown) {
+        console.error("[sdk] shutdown cleanup listener failed", {
+          sessionId: this.piSession.sessionId,
+          error: safeErrorMessage(err),
+        });
+      }
+      return;
+    }
+
+    this.shutdownCleanupListeners.add(listener);
+  }
+
+  private flushShutdownCleanupListeners(): void {
+    if (this.shutdownCleanupCompleted) {
+      return;
+    }
+
+    this.shutdownCleanupCompleted = true;
+    const listeners = [...this.shutdownCleanupListeners];
+    this.shutdownCleanupListeners.clear();
+
+    for (const listener of listeners) {
+      try {
+        listener();
+      } catch (err: unknown) {
+        console.error("[sdk] shutdown cleanup listener failed", {
+          sessionId: this.piSession.sessionId,
+          error: safeErrorMessage(err),
+        });
+      }
+    }
+  }
+
+  private startShutdownCleanup(): Promise<void> {
+    if (this.shutdownCleanupPromise) {
+      return this.shutdownCleanupPromise;
+    }
+
+    const extensionRunner = this.piSession.extensionRunner;
+    this.shutdownCleanupPromise = (async () => {
+      try {
+        // Emit session_shutdown so extensions can run cleanup (e.g. continuation
+        // summaries, knowledge indexing). Do this in the background so stopping a
+        // session does not block on slow shutdown hooks.
+        await extensionRunner?.emit({ type: "session_shutdown" });
+      } catch (err: unknown) {
+        console.error("[sdk] session_shutdown cleanup failed", {
+          sessionId: this.piSession.sessionId,
+          error: safeErrorMessage(err),
+        });
+      } finally {
+        this.flushShutdownCleanupListeners();
+      }
+    })();
+
+    return this.shutdownCleanupPromise;
+  }
+
   async dispose(): Promise<void> {
     if (this.disposed) return;
     this.disposed = true;
@@ -731,16 +796,12 @@ export class SdkBackend {
     }
     this.pendingExtensionResponses.clear();
 
-    // Emit session_shutdown so extensions can run cleanup (e.g. knowledge indexing).
-    // Must await — the knowledge extension makes an async oMLX call during shutdown.
-    try {
-      await this.piSession.extensionRunner?.emit({ type: "session_shutdown" });
-    } catch {
-      // Don't block teardown if an extension handler fails
-    }
+    const shutdownCleanup = this.startShutdownCleanup();
 
     this.unsub();
     this.piSession.dispose();
+
+    void shutdownCleanup;
   }
 }
 

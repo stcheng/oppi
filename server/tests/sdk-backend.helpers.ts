@@ -11,6 +11,7 @@ export function makeSdkBackendStub(): {
   prompt: ReturnType<typeof vi.fn>;
 } {
   const abort = vi.fn(async () => {});
+  const shutdownCleanupListeners = new Set<() => void>();
 
   const steeringMessages: string[] = [];
   const followUpMessages: string[] = [];
@@ -66,6 +67,13 @@ export function makeSdkBackendStub(): {
     })),
     session,
     respondToExtensionUIRequest: vi.fn(() => true),
+    onShutdownCleanupComplete: vi.fn((listener: () => void) => {
+      if ((sdkBackend as { isDisposed: boolean }).isDisposed) {
+        listener();
+        return;
+      }
+      shutdownCleanupListeners.add(listener);
+    }),
     isDisposed: false,
     isStreaming: false,
     sessionFile: undefined,
@@ -73,8 +81,12 @@ export function makeSdkBackendStub(): {
     dispose: vi.fn(),
   } as unknown as SdkBackend;
 
-  const dispose = vi.fn(() => {
+  const dispose = vi.fn(async () => {
     (sdkBackend as { isDisposed: boolean }).isDisposed = true;
+    for (const listener of shutdownCleanupListeners) {
+      listener();
+    }
+    shutdownCleanupListeners.clear();
   });
   (sdkBackend as { dispose: typeof dispose }).dispose = dispose;
 

@@ -69,14 +69,26 @@ export class SessionLifecycleCoordinator {
     active.session.status = "stopped";
     this.deps.persistSessionNow(key, active.session);
 
+    if (active.session.parentSessionId) {
+      this.deps.broadcast(active.session.parentSessionId, {
+        type: "state",
+        session: active.session,
+      });
+    }
+
     this.deps.destroySessionGuard(active.session.id);
     active.pendingUIRequests.clear();
+
+    // Shutdown cleanup can be slow (e.g. continuation summary extraction).
+    // Register the post-cleanup callback first, then dispose without blocking
+    // session teardown on the cleanup work itself.
+    active.sdkBackend.onShutdownCleanupComplete(() => {
+      this.deps.onSessionDisposed?.(active.session.id);
+    });
 
     if (!active.sdkBackend.isDisposed) {
       await active.sdkBackend.dispose();
     }
-
-    this.deps.onSessionDisposed?.(active.session.id);
 
     this.deps.broadcast(key, { type: "session_ended", reason });
     this.clearIdleTimer(key);

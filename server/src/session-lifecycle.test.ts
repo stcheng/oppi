@@ -28,7 +28,11 @@ function makeActiveSession(
   const session = makeSession(overrides);
   return {
     session,
-    sdkBackend: { isDisposed: false, dispose: vi.fn() } as never,
+    sdkBackend: {
+      isDisposed: false,
+      dispose: vi.fn(),
+      onShutdownCleanupComplete: vi.fn(),
+    } as never,
     workspaceId: "ws-1",
     pendingUIRequests: new Map(),
     outputTokensAtStart: extraState?.outputTokensAtStart ?? 0,
@@ -60,9 +64,14 @@ function makeDeps(
 // ─── Tests ───
 
 describe("SessionLifecycleCoordinator.handleSessionEnd", () => {
-  it("reindexes only after shutdown cleanup finishes", async () => {
+  it("tears down immediately and reindexes after shutdown cleanup completes", async () => {
     const order: string[] = [];
     const active = makeActiveSession();
+    let cleanupListener: (() => void) | undefined;
+
+    active.sdkBackend.onShutdownCleanupComplete = vi.fn((listener: () => void) => {
+      cleanupListener = listener;
+    }) as never;
     active.sdkBackend.dispose = vi.fn(async () => {
       order.push("dispose");
     }) as never;
@@ -79,9 +88,33 @@ describe("SessionLifecycleCoordinator.handleSessionEnd", () => {
 
     await coordinator.handleSessionEnd("key", "agent_end");
 
+    expect(active.sdkBackend.onShutdownCleanupComplete).toHaveBeenCalledTimes(1);
     expect(active.sdkBackend.dispose).toHaveBeenCalledTimes(1);
+    expect(deps.onSessionDisposed).not.toHaveBeenCalled();
+    expect(order).toEqual(["dispose", "broadcast"]);
+
+    cleanupListener?.();
+
     expect(deps.onSessionDisposed).toHaveBeenCalledWith("child-1");
-    expect(order).toEqual(["dispose", "reindex", "broadcast"]);
+    expect(order).toEqual(["dispose", "broadcast", "reindex"]);
+  });
+
+  it("mirrors a child stop to the parent session key", async () => {
+    const active = makeActiveSession({ parentSessionId: "parent-1", status: "ready" });
+    const deps = makeDeps(active);
+    const coordinator = new SessionLifecycleCoordinator(deps);
+
+    await coordinator.handleSessionEnd("child-1", "stopped");
+
+    expect(active.session.status).toBe("stopped");
+    expect(deps.broadcast).toHaveBeenCalledWith("parent-1", {
+      type: "state",
+      session: active.session,
+    });
+    expect(deps.broadcast).toHaveBeenCalledWith("child-1", {
+      type: "session_ended",
+      reason: "stopped",
+    });
   });
 });
 

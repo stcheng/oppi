@@ -160,6 +160,13 @@ export class SessionAgentEventCoordinator {
         status: active.session.status,
       });
       this.deps.broadcast(key, { type: "state", session: active.session });
+
+      if (active.session.parentSessionId) {
+        this.deps.broadcast(active.session.parentSessionId, {
+          type: "state",
+          session: active.session,
+        });
+      }
     }
 
     this.deps.resetIdleTimer(key);
