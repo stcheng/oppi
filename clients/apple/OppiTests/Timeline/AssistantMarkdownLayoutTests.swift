@@ -149,6 +149,241 @@ struct AssistantMarkdownLayoutTests {
         )
     }
 
+    @Test func streamingHeadingBelowThematicBreakStaysPinned() throws {
+        let markdownView = AssistantMarkdownContentView()
+        let container = UIView(frame: CGRect(x: 0, y: 0, width: 350, height: 1_400))
+        markdownView.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(markdownView)
+        NSLayoutConstraint.activate([
+            markdownView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            markdownView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            markdownView.topAnchor.constraint(equalTo: container.topAnchor),
+        ])
+
+        var content = """
+        Intro text.
+
+        ---
+
+        ## What to keep
+
+        These notes start short.
+        """
+        markdownView.apply(configuration: .make(
+            content: content,
+            isStreaming: true,
+            themeID: .dark
+        ))
+        container.setNeedsLayout()
+        container.layoutIfNeeded()
+
+        let initialTextView = try #require(timelineAllTextViews(in: markdownView).first {
+            timelineRenderedText(of: $0).contains("What to keep")
+        })
+        let initialHeadingY = try #require(visibleTextMinY(of: "What to keep", in: initialTextView))
+
+        let streamedChunks = Array(repeating:
+            " More streamed prose arrives underneath the heading and keeps wrapping across many lines so the paragraph grows substantially while the heading itself should remain visually pinned in place above it.",
+            count: 12
+        )
+
+        for chunk in streamedChunks {
+            content += chunk
+            markdownView.apply(configuration: .make(
+                content: content,
+                isStreaming: true,
+                themeID: .dark
+            ))
+            container.setNeedsLayout()
+            container.layoutIfNeeded()
+        }
+
+        let updatedTextView = try #require(timelineAllTextViews(in: markdownView).first {
+            timelineRenderedText(of: $0).contains("What to keep")
+        })
+        let updatedHeadingY = try #require(visibleTextMinY(of: "What to keep", in: updatedTextView))
+
+        #expect(
+            abs(updatedHeadingY - initialHeadingY) < 1,
+            "Heading shifted vertically during streaming (before: \(initialHeadingY), after: \(updatedHeadingY))"
+        )
+        #expect(
+            abs(updatedTextView.contentOffset.y + updatedTextView.adjustedContentInset.top) < 0.5,
+            "Non-scrollable markdown text view drifted to contentOffset.y=\(updatedTextView.contentOffset.y)"
+        )
+    }
+
+    @Test func streamingHeadingDoesNotScrollWithinStaleFrameBetweenRelayouts() throws {
+        let markdownView = AssistantMarkdownContentView()
+        let container = UIView(frame: CGRect(x: 0, y: 0, width: 350, height: 500))
+        markdownView.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(markdownView)
+        NSLayoutConstraint.activate([
+            markdownView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            markdownView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            markdownView.topAnchor.constraint(equalTo: container.topAnchor),
+        ])
+
+        var content = """
+        Intro text.
+
+        ---
+
+        ## What to keep
+
+        These notes start short.
+        """
+        markdownView.apply(configuration: .make(
+            content: content,
+            isStreaming: true,
+            themeID: .dark
+        ))
+        container.setNeedsLayout()
+        container.layoutIfNeeded()
+
+        let textView = try #require(timelineAllTextViews(in: markdownView).first {
+            timelineRenderedText(of: $0).contains("What to keep")
+        })
+        let initialHeadingY = try #require(visibleTextMinY(of: "What to keep", in: textView))
+        let initialFrameHeight = textView.frame.height
+
+        for _ in 0..<12 {
+            content += " More streamed prose arrives underneath the heading and keeps wrapping across many lines so the paragraph grows substantially while the cell is still using the old measured height."
+            markdownView.apply(configuration: .make(
+                content: content,
+                isStreaming: true,
+                themeID: .dark
+            ))
+            // Intentionally skip layout to mirror streaming ticks between
+            // collection-view self-sizing passes.
+        }
+
+        let updatedTextView = try #require(timelineAllTextViews(in: markdownView).first {
+            timelineRenderedText(of: $0).contains("What to keep")
+        })
+        let updatedHeadingY = try #require(visibleTextMinY(of: "What to keep", in: updatedTextView))
+
+        #expect(
+            updatedTextView.frame.height == initialFrameHeight,
+            "Fixture expects the text view frame to remain stale between relayouts"
+        )
+        #expect(
+            abs(updatedHeadingY - initialHeadingY) < 1,
+            "Heading shifted inside a stale text view frame (before: \(initialHeadingY), after: \(updatedHeadingY))"
+        )
+        #expect(
+            abs(updatedTextView.contentOffset.y + updatedTextView.adjustedContentInset.top) < 0.5,
+            "Non-scrollable markdown text view drifted to contentOffset.y=\(updatedTextView.contentOffset.y) before relayout"
+        )
+    }
+
+    @Test func detachedStreamingAssistantHeadingStaysStableOnScreen() throws {
+        let wh = makeWindowedTimelineHarness(
+            sessionId: "assistant-md-stability",
+            useAnchoredCollectionView: true
+        )
+        let streamingID = "assistant-stream"
+        let timestamp = Date(timeIntervalSince1970: 0)
+
+        var assistantText = """
+        Preface paragraph one keeps the assistant row tall enough to scroll while reading.
+
+        Preface paragraph two keeps the assistant row tall enough to scroll while reading.
+
+        Preface paragraph three keeps the assistant row tall enough to scroll while reading.
+
+        Preface paragraph four keeps the assistant row tall enough to scroll while reading.
+
+        ---
+
+        ## What to keep
+
+        These notes start short.
+        """
+
+        func render() {
+            wh.applyItems(
+                [
+                    .assistantMessage(id: streamingID, text: assistantText, timestamp: timestamp),
+                ],
+                isBusy: true,
+                streamingID: streamingID
+            )
+        }
+
+        render()
+
+        let initialMaxOffsetY = max(
+            -wh.collectionView.adjustedContentInset.top,
+            wh.collectionView.contentSize.height - wh.collectionView.bounds.height + wh.collectionView.adjustedContentInset.bottom
+        )
+        wh.collectionView.contentOffset.y = initialMaxOffsetY
+        wh.collectionView.layoutIfNeeded()
+
+        let initialTextView = try #require(assistantMarkdownTextView(containing: "What to keep", in: wh.collectionView))
+        let initialScreenY = try #require(screenY(of: "What to keep", in: initialTextView, relativeTo: wh.window))
+
+        let desiredY: CGFloat = 220
+        let delta = initialScreenY - desiredY
+        let maxOffsetY = max(
+            -wh.collectionView.adjustedContentInset.top,
+            wh.collectionView.contentSize.height - wh.collectionView.bounds.height + wh.collectionView.adjustedContentInset.bottom
+        )
+        let targetOffsetY = min(
+            max(wh.collectionView.contentOffset.y + delta, -wh.collectionView.adjustedContentInset.top),
+            maxOffsetY
+        )
+        wh.collectionView.contentOffset.y = targetOffsetY
+        wh.collectionView.layoutIfNeeded()
+
+        let anchoredCV = try #require(wh.collectionView as? AnchoredCollectionView)
+        anchoredCV.isDetachedFromBottom = true
+        anchoredCV.captureDetachedAnchor()
+        wh.scrollController.updateNearBottom(false)
+
+        let pinnedTextView = try #require(assistantMarkdownTextView(containing: "What to keep", in: wh.collectionView))
+        let pinnedScreenY = try #require(screenY(of: "What to keep", in: pinnedTextView, relativeTo: wh.window))
+
+        for _ in 0..<6 {
+            assistantText += " More streamed prose arrives underneath the heading and keeps wrapping across many lines so the paragraph grows substantially while the user is detached from bottom and reading this section."
+            render()
+
+            let textView = try #require(assistantMarkdownTextView(containing: "What to keep", in: wh.collectionView))
+            let currentScreenY = try #require(screenY(of: "What to keep", in: textView, relativeTo: wh.window))
+            #expect(
+                abs(currentScreenY - pinnedScreenY) < 4,
+                "Detached assistant heading drifted on screen (expected ~\(pinnedScreenY), got \(currentScreenY))"
+            )
+        }
+    }
+
+    @Test func baselineSafeTextViewPinsNonScrollableContentOffsetToTop() {
+        let textView = BaselineSafeTextView(frame: CGRect(x: 0, y: 0, width: 320, height: 140))
+        textView.isScrollEnabled = false
+        textView.font = AppFont.messageBody
+        textView.text = Array(repeating: "A long wrapped line of text for streaming.", count: 40).joined(separator: " ")
+
+        let container = UIView(frame: CGRect(x: 0, y: 0, width: 320, height: 200))
+        textView.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(textView)
+        NSLayoutConstraint.activate([
+            textView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            textView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            textView.topAnchor.constraint(equalTo: container.topAnchor),
+            textView.heightAnchor.constraint(equalToConstant: 140),
+        ])
+        container.layoutIfNeeded()
+
+        textView.contentOffset = CGPoint(x: 0, y: 42)
+        textView.setNeedsLayout()
+        textView.layoutIfNeeded()
+
+        #expect(
+            abs(textView.contentOffset.y + textView.adjustedContentInset.top) < 0.5,
+            "BaselineSafeTextView should re-pin non-scrollable content to top, got y=\(textView.contentOffset.y)"
+        )
+    }
+
     @Test func veryLongAssistantMessageDoesNotClampBelowMarkdownHeight() {
         let sections = (1...1_100).map { index in
             """
@@ -237,4 +472,54 @@ struct AssistantMarkdownLayoutTests {
         #expect(cell.contentView.clipsToBounds == true,
                 "Cell contentView.clipsToBounds must be true to prevent overflow during estimated-height layout")
     }
+}
+
+@MainActor
+private func visibleTextMinY(of needle: String, in textView: UITextView) -> CGFloat? {
+    let fullText = timelineRenderedText(of: textView) as NSString
+    let range = fullText.range(of: needle)
+    guard range.location != NSNotFound else { return nil }
+
+    textView.layoutManager.ensureLayout(for: textView.textContainer)
+    let glyphRange = textView.layoutManager.glyphRange(
+        forCharacterRange: range,
+        actualCharacterRange: nil
+    )
+    let rect = textView.layoutManager.boundingRect(
+        forGlyphRange: glyphRange,
+        in: textView.textContainer
+    )
+
+    return rect.minY + textView.textContainerInset.top - textView.contentOffset.y
+}
+
+@MainActor
+private func screenY(of needle: String, in textView: UITextView, relativeTo view: UIView) -> CGFloat? {
+    guard let localY = visibleTextMinY(of: needle, in: textView) else { return nil }
+    return textView.convert(CGPoint(x: 0, y: localY), to: view).y
+}
+
+@MainActor
+private func assistantMarkdownTextView(containing needle: String, in root: UIView) -> UITextView? {
+    if let collectionView = root as? UICollectionView {
+        for cell in collectionView.visibleCells {
+            if let textView = assistantMarkdownTextView(containing: needle, in: cell.contentView) {
+                return textView
+            }
+        }
+    }
+
+    if let assistantView = root as? AssistantTimelineRowContentView {
+        return timelineAllTextViews(in: assistantView).first {
+            timelineRenderedText(of: $0).contains(needle)
+        }
+    }
+
+    for child in root.subviews {
+        if let textView = assistantMarkdownTextView(containing: needle, in: child) {
+            return textView
+        }
+    }
+
+    return nil
 }

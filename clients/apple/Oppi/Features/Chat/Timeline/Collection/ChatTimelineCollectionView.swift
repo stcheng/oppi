@@ -1146,22 +1146,57 @@ struct ChatTimelineCollectionHost: UIViewRepresentable {
             in collectionView: UICollectionView
         ) {
             guard command.anchor == .top,
-                  let token = scrollController?.consumeNavigationHighlightIfNeeded(for: command.id),
-                  let itemIndex = currentIDs.firstIndex(of: command.id) else {
+                  currentIDs.contains(command.id) else {
                 return
             }
 
+            func tryApplyHighlight(attempt: Int) {
+                collectionView.layoutIfNeeded()
+
+                if applyPendingNavigationHighlightIfVisible(for: command.id, in: collectionView) {
+                    return
+                }
+
+                guard attempt < 20 else { return }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                    tryApplyHighlight(attempt: attempt + 1)
+                }
+            }
+
+            tryApplyHighlight(attempt: 0)
+        }
+
+        @discardableResult
+        func applyPendingNavigationHighlightIfVisible(
+            for itemID: String,
+            in collectionView: UICollectionView
+        ) -> Bool {
+            guard let scrollController,
+                  let token = scrollController.navigationHighlightTokenIfNeeded(for: itemID),
+                  let itemIndex = currentIDs.firstIndex(of: itemID) else {
+                return false
+            }
+
             let indexPath = IndexPath(item: itemIndex, section: 0)
-            let applyHighlight = { [weak collectionView] in
+            guard let cell = collectionView.cellForItem(at: indexPath) as? SafeSizingCell else {
+                return false
+            }
+
+            cell.performNavigationHighlight(token: token)
+            scrollController.clearNavigationHighlightIfNeeded(for: itemID, token: token)
+
+            let refreshZOrder = { [weak collectionView] in
                 guard let collectionView,
                       let cell = collectionView.cellForItem(at: indexPath) as? SafeSizingCell else {
                     return
                 }
-                cell.performNavigationHighlight(token: token)
+                cell.ensureNavigationHighlightOverlayFrontmost()
             }
 
-            applyHighlight()
-            DispatchQueue.main.async(execute: applyHighlight)
+            DispatchQueue.main.async(execute: refreshZOrder)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05, execute: refreshZOrder)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15, execute: refreshZOrder)
+            return true
         }
 
         private func correctProgrammaticScrollAlignmentIfNeeded(

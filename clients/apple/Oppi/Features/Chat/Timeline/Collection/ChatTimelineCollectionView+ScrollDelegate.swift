@@ -181,5 +181,9 @@ extension ChatTimelineCollectionHost.Controller {
         ) {
             lastDistanceFromBottom = distanceFromBottom
         }
+
+        if let targetID = scrollController?.pendingNavigationHighlightItemID {
+            _ = applyPendingNavigationHighlightIfVisible(for: targetID, in: collectionView)
+        }
     }
 }

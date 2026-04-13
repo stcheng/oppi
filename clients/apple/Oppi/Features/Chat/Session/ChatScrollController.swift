@@ -303,10 +303,23 @@ final class ChatScrollController: NSObject {
         pendingNavigationHighlightNonce &+= 1
     }
 
-    func consumeNavigationHighlightIfNeeded(for itemID: String) -> UInt? {
+    func navigationHighlightTokenIfNeeded(for itemID: String) -> UInt? {
         guard pendingNavigationHighlightItemID == itemID else { return nil }
-        pendingNavigationHighlightItemID = nil
         return pendingNavigationHighlightNonce
+    }
+
+    func clearNavigationHighlightIfNeeded(for itemID: String, token: UInt) {
+        guard pendingNavigationHighlightItemID == itemID,
+              pendingNavigationHighlightNonce == token else {
+            return
+        }
+        pendingNavigationHighlightItemID = nil
+    }
+
+    func consumeNavigationHighlightIfNeeded(for itemID: String) -> UInt? {
+        guard let token = navigationHighlightTokenIfNeeded(for: itemID) else { return nil }
+        pendingNavigationHighlightItemID = nil
+        return token
     }
 
     // MARK: - Imperative Scroll

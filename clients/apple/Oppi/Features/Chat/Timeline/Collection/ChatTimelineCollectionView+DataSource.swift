@@ -65,10 +65,11 @@ final class SafeSizingCell: UICollectionViewCell {
     private func configureNavigationHighlightOverlay() {
         navigationHighlightOverlay.isUserInteractionEnabled = false
         navigationHighlightOverlay.alpha = 0
-        navigationHighlightOverlay.backgroundColor = UIColor(Color.themeBlue).withAlphaComponent(0.12)
-        navigationHighlightOverlay.layer.borderColor = UIColor(Color.themeBlue).withAlphaComponent(0.7).cgColor
-        navigationHighlightOverlay.layer.borderWidth = 1.5
+        navigationHighlightOverlay.backgroundColor = UIColor(Color.themeBlue).withAlphaComponent(0.18)
+        navigationHighlightOverlay.layer.borderColor = UIColor(Color.themeBlue).withAlphaComponent(0.9).cgColor
+        navigationHighlightOverlay.layer.borderWidth = 2
         navigationHighlightOverlay.layer.cornerRadius = 14
+        navigationHighlightOverlay.layer.zPosition = 10_000
         navigationHighlightOverlay.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(navigationHighlightOverlay)
         NSLayoutConstraint.activate([
@@ -79,22 +80,21 @@ final class SafeSizingCell: UICollectionViewCell {
         ])
     }
 
+    func ensureNavigationHighlightOverlayFrontmost() {
+        contentView.bringSubviewToFront(navigationHighlightOverlay)
+    }
+
     func performNavigationHighlight(token: UInt) {
         navigationHighlightToken = token
+        ensureNavigationHighlightOverlayFrontmost()
         navigationHighlightOverlay.layer.removeAllAnimations()
-        navigationHighlightOverlay.alpha = 0
+        navigationHighlightOverlay.alpha = 1
 
-        UIView.animate(
-            withDuration: 0.16,
-            delay: 0,
-            options: [.allowUserInteraction, .curveEaseOut]
-        ) {
-            self.navigationHighlightOverlay.alpha = 1
-        } completion: { _ in
-            guard self.navigationHighlightToken == token else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { [weak self] in
+            guard let self, self.navigationHighlightToken == token else { return }
             UIView.animate(
-                withDuration: 0.9,
-                delay: 0.2,
+                withDuration: 1.2,
+                delay: 0,
                 options: [.allowUserInteraction, .curveEaseOut]
             ) {
                 self.navigationHighlightOverlay.alpha = 0
@@ -106,6 +106,15 @@ final class SafeSizingCell: UICollectionViewCell {
         var isShowingNavigationHighlightForTesting: Bool {
             navigationHighlightOverlay.alpha > 0.01
         }
+
+        var isNavigationHighlightOverlayFrontmostForTesting: Bool {
+            let maxOtherZ = contentView.subviews
+                .filter { $0 !== navigationHighlightOverlay }
+                .map(\.layer.zPosition)
+                .max() ?? -.greatestFiniteMagnitude
+            return contentView.subviews.last === navigationHighlightOverlay
+                || navigationHighlightOverlay.layer.zPosition > maxOtherZ
+        }
     #endif
 
     /// Safety net: re-enforce contentView clipping after UIKit resets it
@@ -115,6 +124,7 @@ final class SafeSizingCell: UICollectionViewCell {
         if !contentView.clipsToBounds {
             contentView.clipsToBounds = true
         }
+        ensureNavigationHighlightOverlayFrontmost()
     }
 
     override func preferredLayoutAttributesFitting(

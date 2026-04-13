@@ -15,6 +15,28 @@ import UIKit
 /// Sentry: APPLE-IOS-G (23 events, fatal crash in ChatTimelineCollectionView)
 final class BaselineSafeTextView: UITextView {
 
+    override func layoutSubviews() {
+        super.layoutSubviews()
+
+        guard !isScrollEnabled else { return }
+
+        let desiredOffset = CGPoint(
+            x: -adjustedContentInset.left,
+            y: -adjustedContentInset.top
+        )
+
+        guard abs(contentOffset.x - desiredOffset.x) > 0.5
+                || abs(contentOffset.y - desiredOffset.y) > 0.5 else {
+            return
+        }
+
+        // UITextView can retain an internal scroll position across attributed
+        // text updates even when scrolling is disabled. Streaming assistant
+        // markdown reuses these text views in place, so clamp them back to the
+        // visual top on each layout pass.
+        contentOffset = desiredOffset
+    }
+
     // MARK: - Baseline safety
 
     // periphery:ignore - @objc override of UIKit private baseline query; prevents assertion during detach

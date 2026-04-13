@@ -13,6 +13,7 @@ struct SessionTimelineNavigationTests {
             "Expected timeline navigation to land on msg-20; top=\(result.topVisible), visible=\(result.visibleIDs)"
         )
         #expect(result.didHighlightTarget, "Expected assistant target row to flash after navigation")
+        #expect(result.highlightOverlayFrontmost, "Expected assistant highlight overlay to render above row content")
     }
 
     @Test func detachedNavigationExpandsHistoryAndLandsOnSelectedToolRow() async throws {
@@ -22,12 +23,14 @@ struct SessionTimelineNavigationTests {
             "Expected timeline navigation to land on tool-21; top=\(result.topVisible), visible=\(result.visibleIDs)"
         )
         #expect(result.didHighlightTarget, "Expected tool target row to flash after navigation")
+        #expect(result.highlightOverlayFrontmost, "Expected tool highlight overlay to render above row content")
     }
 }
 
 private struct NavigationResult {
     let reachedTarget: Bool
     let didHighlightTarget: Bool
+    let highlightOverlayFrontmost: Bool
     let topVisible: String
     let visibleIDs: [String]
 }
@@ -53,6 +56,7 @@ private func navigateFromDetachedTail(to targetID: String) async -> NavigationRe
     harness.coordinator.updateScrollState(harness.collectionView)
     harness.scrollController.detachFromBottomForUserScroll()
 
+    harness.scrollController.requestNavigationHighlight(for: targetID)
     applyTimelineItems(
         allItems,
         hiddenCount: 0,
@@ -76,9 +80,14 @@ private func navigateFromDetachedTail(to targetID: String) async -> NavigationRe
         }
     }
 
+    let highlightOverlayFrontmost = await MainActor.run {
+        timelineCell(for: targetID, in: harness)?.isNavigationHighlightOverlayFrontmostForTesting ?? false
+    }
+
     return NavigationResult(
         reachedTarget: reachedTarget,
         didHighlightTarget: didHighlightTarget,
+        highlightOverlayFrontmost: highlightOverlayFrontmost,
         topVisible: harness.scrollController.currentTopVisibleItemId ?? "nil",
         visibleIDs: visibleTimelineIDs(in: harness)
     )
