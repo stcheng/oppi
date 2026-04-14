@@ -205,4 +205,122 @@ struct OrgToMarkdownConverterTests {
         #expect(sections[0].heading == nil) // zeroth has no heading
         #expect(!sections[0].bodyBlocks.isEmpty)
     }
+
+    // MARK: - Coverage: conversion branches
+
+    @Test func convertCoversListAndKeywordFallbackBranches() {
+        let blocks: [OrgBlock] = [
+            .list(kind: .unordered, items: [
+                .init(bullet: "-", checkbox: nil, content: [.text("alpha")]),
+            ]),
+            .list(kind: .unordered, items: [
+                .init(bullet: "-", checkbox: .checked, content: [.text("done")]),
+                .init(bullet: "-", checkbox: .partial, content: [.text("partial")]),
+            ]),
+            .list(kind: .ordered, items: [
+                .init(bullet: "1.", checkbox: nil, content: [.text("first")]),
+                .init(bullet: "2.", checkbox: nil, content: [.text("second")]),
+            ]),
+            .keyword(key: "EMAIL", value: "dev@example.com"),
+            .keyword(key: "FOO", value: "bar"),
+            .drawer(name: "PROPERTIES", properties: []), // skipped when empty
+            .comment("skip me"),
+        ]
+
+        let converted = OrgToMarkdownConverter.convert(blocks)
+        #expect(converted.count == 5)
+
+        guard case .unorderedList(let unorderedItems) = converted[0] else {
+            Issue.record("Expected unordered list")
+            return
+        }
+        #expect(unorderedItems.count == 1)
+
+        guard case .taskList(let taskItems) = converted[1] else {
+            Issue.record("Expected task list")
+            return
+        }
+        #expect(taskItems.count == 2)
+        #expect(taskItems[0].checked)
+        #expect(!taskItems[1].checked)
+
+        guard case .orderedList(let start, let orderedItems) = converted[2] else {
+            Issue.record("Expected ordered list")
+            return
+        }
+        #expect(start == 1)
+        #expect(orderedItems.count == 2)
+
+        guard case .paragraph(let emailInlines) = converted[3],
+              case .emphasis = emailInlines.first else {
+            Issue.record("Expected emphasized email metadata paragraph")
+            return
+        }
+
+        guard case .paragraph(let keywordInlines) = converted[4],
+              case .code(let keywordText) = keywordInlines.first else {
+            Issue.record("Expected fallback keyword paragraph as code")
+            return
+        }
+        #expect(keywordText == "#+FOO: bar")
+    }
+
+    @Test func serializeDirectlySkipsEmptyOrUnsupportedBlocks() {
+        let markdown = OrgToMarkdownConverter.serializeDirectly([
+            .paragraph([.text("Visible")]),
+            .keyword(key: "OPTIONS", value: "toc:nil"), // skipped
+            .table(headers: [], rows: []), // skipped by guard
+            .drawer(name: "PROPERTIES", properties: [.init(key: "ID", value: "123")]), // skipped
+            .comment("hidden"), // skipped
+        ])
+
+        #expect(markdown == "Visible")
+    }
+
+    @Test func serializeDirectlyIncludesNonEmptyTable() {
+        let markdown = OrgToMarkdownConverter.serializeDirectly([
+            .table(
+                headers: [[.text("Name")], [.text("Score")]],
+                rows: [
+                    [[.text("Alice")], [.text("10")]],
+                ]
+            ),
+        ])
+
+        #expect(markdown.contains("| Name | Score |"))
+        #expect(markdown.contains("| --- | --- |"))
+        #expect(markdown.contains("| Alice | 10 |"))
+    }
+
+    @Test func serializeInlinesAndConvertSingleInlineHandleAllInlineKinds() {
+        let inlines: [OrgInline] = [
+            .text("plain"),
+            .bold([.text("bold")]),
+            .italic([.text("italic")]),
+            .underline([.text("under")]),
+            .verbatim("tick`value"),
+            .code("code"),
+            .strikethrough([.text("gone")]),
+            .link(url: "https://example.com", description: [.text("site")]),
+            .link(url: "https://oppi.dev", description: nil),
+        ]
+
+        let serialized = OrgToMarkdownConverter.serializeInlines(inlines)
+        #expect(serialized.contains("plain"))
+        #expect(serialized.contains("**bold**"))
+        #expect(serialized.contains("*italic*"))
+        #expect(serialized.contains("*under*"))
+        #expect(serialized.contains("`` tick`value ``"))
+        #expect(serialized.contains("`code`"))
+        #expect(serialized.contains("~~gone~~"))
+        #expect(serialized.contains("[site](https://example.com)"))
+
+        let underline = OrgToMarkdownConverter.convertSingleInline(.underline([.text("u")]))
+        #expect(underline == .emphasis([.text("u")]))
+
+        let bareLink = OrgToMarkdownConverter.convertSingleInline(
+            .link(url: "https://example.com", description: nil)
+        )
+        #expect(bareLink == .link(children: [.text("https://example.com")], destination: "https://example.com"))
+    }
 }

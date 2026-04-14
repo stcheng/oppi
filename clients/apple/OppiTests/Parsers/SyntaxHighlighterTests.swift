@@ -411,6 +411,13 @@ struct XMLHighlightingTests {
         let result = SyntaxHighlighter.highlight(xml, language: .xml)
         #expect(result.string == xml)
     }
+
+    @Test func xmlCDataHighlightedAsString() {
+        let xml = "<![CDATA[some <raw> data]]>"
+        let ranges = SyntaxHighlighter.scanTokenRanges(xml, language: .xml)
+        let strings = ranges.filter { $0.kind == .string }
+        #expect(!strings.isEmpty, "CDATA sections should be highlighted as strings")
+    }
 }
 
 // MARK: - Diff Highlighting
@@ -455,6 +462,13 @@ struct DiffHighlightingTests {
         let diff = "--- a/old.txt\n+++ b/new.txt\n@@ -1 +1 @@\n-old\n+new"
         let result = SyntaxHighlighter.highlight(diff, language: .diff)
         #expect(result.string == diff)
+    }
+
+    @Test func diffMetadataHeadersHighlightedAsKeywords() {
+        let diff = "diff --git a/file b/file\nindex 123..456 100644\nnew file mode 100644\nrename from old\nrename to new"
+        let ranges = SyntaxHighlighter.scanTokenRanges(diff, language: .diff)
+        let keywords = ranges.filter { $0.kind == .keyword }
+        #expect(keywords.count >= 4, "diff/index/new/rename headers should be keywords")
     }
 }
 
@@ -597,6 +611,97 @@ struct CrossLineBoundaryTests {
                 tokenEnd <= newlinePos || token.location > newlinePos,
                 "Token at \(token.location) length \(token.length) crosses newline"
             )
+        }
+    }
+}
+
+// MARK: - UTF-8 Scanner Coverage
+
+@Suite("SyntaxHighlighter UTF8 scanner")
+struct SyntaxHighlighterUTF8ScannerTests {
+    @Test func utf8ScannerHighlightsCStyleTokensAndNumbers() {
+        let code = """
+        #define FEATURE_FLAG 1
+        @Decorator MyType value = 0xFF_AA + 1.25e-2 // trailing
+        let s = "escaped \"string\""
+        """
+
+        let ranges = SyntaxHighlighter.scanTokenRangesUTF8(code, language: .c)
+        #expect(ranges.contains { $0.kind == .keyword })
+        #expect(ranges.contains { $0.kind == .type })
+        #expect(ranges.contains { $0.kind == .number })
+        #expect(ranges.contains { $0.kind == .string })
+        #expect(ranges.contains { $0.kind == .comment })
+
+        let numberTexts = tokenTexts(kind: .number, in: code, ranges: ranges)
+        #expect(numberTexts.contains("0xFF_AA"))
+        #expect(numberTexts.contains("1.25e-2"))
+    }
+
+    @Test func utf8ScannerCarriesBlockCommentsAcrossLines() {
+        let code = "/* open\nstill open */\nint value = 1"
+        let ranges = SyntaxHighlighter.scanTokenRangesUTF8(code, language: .c)
+
+        let comments = tokenTexts(kind: .comment, in: code, ranges: ranges)
+        #expect(comments.contains { $0.contains("still open") })
+    }
+
+    @Test func utf8ScannerFallsBackForNonASCIIInput() {
+        let code = "let café = 42"
+        let ranges = SyntaxHighlighter.scanTokenRangesUTF8(code, language: .swift)
+
+        let numbers = tokenTexts(kind: .number, in: code, ranges: ranges)
+        #expect(numbers.contains("42"))
+    }
+
+    @Test func utf8ScannerReturnsNoTokensForUnknownLanguage() {
+        let ranges = SyntaxHighlighter.scanTokenRangesUTF8("whatever", language: .unknown)
+        #expect(ranges.isEmpty)
+    }
+
+    @Test func utf8ScannerUsesTreeSitterForShellWhenAvailable() {
+        let ranges = SyntaxHighlighter.scanTokenRangesUTF8("echo $HOME", language: .shell)
+        #expect(!ranges.isEmpty)
+    }
+
+    @Test func utf8ScannerJsonPathAndEscapes() {
+        let json = #"{"ok": false, "escaped": "a\"b", "notKeyword": truex}"#
+        let ranges = SyntaxHighlighter.scanTokenRangesUTF8(json, language: .json)
+
+        let keywords = tokenTexts(kind: .keyword, in: json, ranges: ranges)
+        #expect(keywords.contains("false"))
+        #expect(!keywords.contains("truex"))
+    }
+
+    @Test func utf8ScannerClosesSingleLineBlockComment() {
+        let code = "/* block */ let value = 1"
+        let ranges = SyntaxHighlighter.scanTokenRangesUTF8(code, language: .swift)
+        let comments = tokenTexts(kind: .comment, in: code, ranges: ranges)
+        #expect(comments.contains("/* block */"))
+    }
+
+    @Test func charScannerHandlesCppPreprocessorAndUnicodeIdentifiers() {
+        let cpp = "#include <stdio.h>"
+        let cppRanges = SyntaxHighlighter.scanTokenRanges(cpp, language: .cpp)
+        #expect(cppRanges.contains { $0.kind == .keyword })
+
+        let swift = "éclair = 1e+9"
+        let swiftRanges = SyntaxHighlighter.scanTokenRanges(swift, language: .swift)
+        let numbers = tokenTexts(kind: .number, in: swift, ranges: swiftRanges)
+        #expect(numbers.contains("1e+9"))
+    }
+
+    private func tokenTexts(
+        kind: SyntaxHighlighter.TokenKind,
+        in source: String,
+        ranges: [SyntaxHighlighter.TokenRange]
+    ) -> [String] {
+        let chars = Array(source)
+        return ranges.compactMap { range in
+            guard range.kind == kind else { return nil }
+            let end = min(range.location + range.length, chars.count)
+            guard range.location < end else { return nil }
+            return String(chars[range.location..<end])
         }
     }
 }
