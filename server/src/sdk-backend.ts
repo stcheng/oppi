@@ -13,12 +13,15 @@ import { basename, extname, join, resolve } from "node:path";
 
 import {
   createAgentSession,
+  createAgentSessionRuntime,
   createBashToolDefinition,
   createReadToolDefinition,
   createWriteToolDefinition,
   createEditToolDefinition,
   type AgentSession,
   type AgentSessionEvent,
+  type AgentSessionRuntime,
+  type CreateAgentSessionRuntimeFactory,
   type ExtensionFactory,
   type ExtensionUIDialogOptions,
   type ExtensionUIContext,
@@ -153,10 +156,9 @@ export class SdkBackend {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private static _gondolinManager: any;
 
-  private piSession: AgentSession;
-  private unsub: () => void;
+  private runtime: AgentSessionRuntime;
+  private unsub: (() => void) | null = null;
   private readonly emitEvent: (event: SessionBackendEvent) => void;
-  private readonly modelRegistry: ModelRegistry;
   private readonly pendingExtensionResponses = new Map<string, PendingExtensionUIResponse>();
   private shutdownCleanupPromise: Promise<void> | null = null;
   private shutdownCleanupCompleted = false;
@@ -164,15 +166,20 @@ export class SdkBackend {
   private disposed = false;
 
   private constructor(
-    piSession: AgentSession,
-    unsub: () => void,
+    runtime: AgentSessionRuntime,
     emitEvent: (event: SessionBackendEvent) => void,
-    modelRegistry: ModelRegistry,
   ) {
-    this.piSession = piSession;
-    this.unsub = unsub;
+    this.runtime = runtime;
     this.emitEvent = emitEvent;
-    this.modelRegistry = modelRegistry;
+    this.subscribeToCurrentSession();
+  }
+
+  private get piSession(): AgentSession {
+    return this.runtime.session;
+  }
+
+  private get modelRegistry(): ModelRegistry {
+    return this.runtime.services.modelRegistry;
   }
 
   private static createPiSessionManager(session: Session, cwd: string): PiSessionManager {
@@ -186,217 +193,238 @@ export class SdkBackend {
   static async create(config: SdkBackendConfig): Promise<SdkBackend> {
     const createStartMs = Date.now();
     const { session, workspace, onEvent, onEnd: _onEnd } = config;
-    const cwd = resolveSdkSessionCwd(workspace);
+    const initialCwd = resolveSdkSessionCwd(workspace);
     const agentDir = getAgentDir();
-    const authStorage = AuthStorage.create(join(agentDir, "auth.json"));
-    const modelRegistry = ModelRegistry.create(authStorage, join(agentDir, "models.json"));
-    const settingsManager = SettingsManager.create(cwd, agentDir);
+    const initialSessionManager = SdkBackend.createPiSessionManager(session, initialCwd);
 
-    // Resolve the model from the session's model ID.
-    // Use ModelRegistry so custom providers/models (e.g. LM Studio) work.
-    const model = session.model ? resolveRegistryModel(modelRegistry, session.model) : undefined;
-    if (session.model && !model) {
-      console.warn("[sdk] Failed to resolve model, using default", {
-        model: session.model,
-      });
-    }
-
-    const piSessionManager = SdkBackend.createPiSessionManager(session, cwd);
-
-    // Build extension factories for in-process tools
-    const extensionFactories: ExtensionFactory[] = [];
-    const useGate = config.gate && config.permissionGate !== false;
-    if (useGate && config.gate) {
-      extensionFactories.push(
-        createPermissionGateFactory(config.gate, session.id, config.workspaceId || "", cwd),
-      );
-    }
-    if (config.extraExtensionFactories) {
-      extensionFactories.push(...config.extraExtensionFactories);
-    }
-
-    // Resource loader — suppress auto-discovery, load only what we need.
-    // Extension factories (permission gate) are injected here.
-    // Pi's auto-discovered permission-gate extension is filtered out since
-    // oppi has its own policy engine (GateServer). Without this, both gates
-    // run and the pi extension blocks commands it considers "dangerous" with
-    // no UI to approve them (ctx.hasUI is false in oppi sessions).
-    const workspaceSystemPromptMode = workspace?.systemPromptMode ?? "append";
-    const loader = new DefaultResourceLoader({
+    const createRuntimeFactory: CreateAgentSessionRuntimeFactory = async ({
       cwd,
-      agentDir,
-      settingsManager,
-      additionalExtensionPaths: [],
-      additionalSkillPaths: config.skillPaths ?? [],
-      noSkills: true,
-      noPromptTemplates: true,
-      noThemes: true,
-      extensionFactories,
-      systemPrompt: workspaceSystemPromptMode === "replace" ? workspace?.systemPrompt : undefined,
-      appendSystemPrompt:
-        workspaceSystemPromptMode === "append" ? workspace?.systemPrompt : undefined,
-      extensionsOverride: (base) => {
-        // 1. Filter out extensions managed directly by oppi-server.
-        //    ask and spawn_agent are injected as first-party factory extensions,
-        //    and permission-gate is replaced by oppi's own policy engine.
-        let filtered = base.extensions.filter(
-          (ext) => !isManagedExtensionName(getExtensionName(ext)),
-        );
+      agentDir: runtimeAgentDir,
+      sessionManager,
+      sessionStartEvent,
+    }) => {
+      const authStorage = AuthStorage.create(join(runtimeAgentDir, "auth.json"));
+      const modelRegistry = ModelRegistry.create(authStorage, join(runtimeAgentDir, "models.json"));
+      const settingsManager = SettingsManager.create(cwd, runtimeAgentDir);
 
-        // 2. If the workspace specifies an extensions allowlist, that allowlist is
-        //    authoritative. Always keep inline factory extensions (path "<inline:N>")
-        //    because they're injected programmatically by the server.
-        const allowedNames = workspace?.extensions;
-        if (allowedNames !== undefined) {
-          const allowed = new Set(allowedNames);
-          filtered = filtered.filter((ext) => {
-            if (ext.path.startsWith("<inline:")) return true;
-            return allowed.has(getExtensionName(ext));
-          });
-        }
-
-        // Debug: log extension filtering
-        const extNames = base.extensions.map(
-          (ext) => `${getExtensionName(ext)}(tools:${[...ext.tools.keys()].join(",") || "none"})`,
-        );
-        const filteredNames = filtered.map(
-          (ext) => `${getExtensionName(ext)}(tools:${[...ext.tools.keys()].join(",") || "none"})`,
-        );
-        if (process.env.DEBUG) {
-          console.log("[sdk] Extensions override", {
-            workspace: workspace?.name,
-            input: extNames,
-            errors: base.errors.map((e) => `${e.path}: ${e.error}`),
-            allowlist: allowedNames,
-            output: filteredNames,
-          });
-        }
-
-        return { ...base, extensions: filtered };
-      },
-    });
-    await loader.reload();
-
-    // Sandbox mode: create tools backed by Gondolin micro-VM
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let sandboxTools: any[] | undefined;
-    if (workspace?.runtime === "sandbox") {
-      // Pre-flight: check QEMU availability before attempting VM creation.
-      const { isQemuAvailable, GondolinManager } = await import("./gondolin-manager.js");
-      if (!(await isQemuAvailable())) {
-        throw new Error(
-          "Sandbox mode requires QEMU but it is not installed on the server. " +
-            "Install with: brew install qemu (macOS) or apt install qemu-system (Linux)",
-        );
+      const shouldSeedFromSessionState = !sessionStartEvent;
+      const model =
+        shouldSeedFromSessionState && session.model
+          ? resolveRegistryModel(modelRegistry, session.model)
+          : undefined;
+      if (shouldSeedFromSessionState && session.model && !model) {
+        console.warn("[sdk] Failed to resolve model, using default", {
+          model: session.model,
+        });
       }
 
-      const {
-        createGondolinBashOps,
-        createGondolinReadOps,
-        createGondolinWriteOps,
-        createGondolinEditOps,
-      } = await import("./gondolin-ops.js");
-
-      // Lazy singleton — shared across all sessions for VM reuse.
-      if (!SdkBackend._gondolinManager) {
-        SdkBackend._gondolinManager = new GondolinManager();
+      // Build extension factories for in-process tools
+      const extensionFactories: ExtensionFactory[] = [];
+      const useGate = config.gate && config.permissionGate !== false;
+      if (useGate && config.gate) {
+        extensionFactories.push(
+          createPermissionGateFactory(config.gate, session.id, config.workspaceId || "", cwd),
+        );
       }
-      const manager = SdkBackend._gondolinManager;
+      if (config.extraExtensionFactories) {
+        extensionFactories.push(...config.extraExtensionFactories);
+      }
 
-      // Extract LLM provider API keys as secrets for host-mediated injection.
-      // The VM gets placeholder values; real keys are injected by the host HTTP proxy.
-      const secrets: Record<string, { value: string; headerName?: string }> = {};
-      try {
-        const allCreds = authStorage.getAll();
-        for (const [provider, cred] of Object.entries(allCreds)) {
-          if (cred.type === "api_key" && cred.key) {
-            secrets[`${provider.toUpperCase().replace(/[^A-Z0-9]/g, "_")}_API_KEY`] = {
-              value: cred.key,
-              headerName: "Authorization",
-            };
+      // Resource loader — suppress auto-discovery, load only what we need.
+      // Extension factories (permission gate) are injected here.
+      // Pi's auto-discovered permission-gate extension is filtered out since
+      // oppi has its own policy engine (GateServer). Without this, both gates
+      // run and the pi extension blocks commands it considers "dangerous" with
+      // no UI to approve them (ctx.hasUI is false in oppi sessions).
+      const workspaceSystemPromptMode = workspace?.systemPromptMode ?? "append";
+      const loader = new DefaultResourceLoader({
+        cwd,
+        agentDir: runtimeAgentDir,
+        settingsManager,
+        additionalExtensionPaths: [],
+        additionalSkillPaths: config.skillPaths ?? [],
+        noSkills: true,
+        noPromptTemplates: true,
+        noThemes: true,
+        extensionFactories,
+        systemPrompt: workspaceSystemPromptMode === "replace" ? workspace?.systemPrompt : undefined,
+        appendSystemPrompt:
+          workspaceSystemPromptMode === "append" ? workspace?.systemPrompt : undefined,
+        extensionsOverride: (base) => {
+          // 1. Filter out extensions managed directly by oppi-server.
+          //    ask and spawn_agent are injected as first-party factory extensions,
+          //    and permission-gate is replaced by oppi's own policy engine.
+          let filtered = base.extensions.filter(
+            (ext) => !isManagedExtensionName(getExtensionName(ext)),
+          );
+
+          // 2. If the workspace specifies an extensions allowlist, that allowlist is
+          //    authoritative. Always keep inline factory extensions (path "<inline:N>")
+          //    because they're injected programmatically by the server.
+          const allowedNames = workspace?.extensions;
+          if (allowedNames !== undefined) {
+            const allowed = new Set(allowedNames);
+            filtered = filtered.filter((ext) => {
+              if (ext.path.startsWith("<inline:")) return true;
+              return allowed.has(getExtensionName(ext));
+            });
           }
+
+          // Debug: log extension filtering
+          const extNames = base.extensions.map(
+            (ext) => `${getExtensionName(ext)}(tools:${[...ext.tools.keys()].join(",") || "none"})`,
+          );
+          const filteredNames = filtered.map(
+            (ext) => `${getExtensionName(ext)}(tools:${[...ext.tools.keys()].join(",") || "none"})`,
+          );
+          if (process.env.DEBUG) {
+            console.log("[sdk] Extensions override", {
+              workspace: workspace?.name,
+              input: extNames,
+              errors: base.errors.map((e) => `${e.path}: ${e.error}`),
+              allowlist: allowedNames,
+              output: filteredNames,
+            });
+          }
+
+          return { ...base, extensions: filtered };
+        },
+      });
+      await loader.reload();
+
+      // Sandbox mode: create tools backed by Gondolin micro-VM
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let sandboxTools: any[] | undefined;
+      if (workspace?.runtime === "sandbox") {
+        // Pre-flight: check QEMU availability before attempting VM creation.
+        const { isQemuAvailable, GondolinManager } = await import("./gondolin-manager.js");
+        if (!(await isQemuAvailable())) {
+          throw new Error(
+            "Sandbox mode requires QEMU but it is not installed on the server. " +
+              "Install with: brew install qemu (macOS) or apt install qemu-system (Linux)",
+          );
         }
-      } catch {
-        // Auth extraction failed — proceed without secrets
+
+        const {
+          createGondolinBashOps,
+          createGondolinReadOps,
+          createGondolinWriteOps,
+          createGondolinEditOps,
+        } = await import("./gondolin-ops.js");
+
+        // Lazy singleton — shared across all sessions for VM reuse.
+        if (!SdkBackend._gondolinManager) {
+          SdkBackend._gondolinManager = new GondolinManager();
+        }
+        const manager = SdkBackend._gondolinManager;
+
+        // Extract LLM provider API keys as secrets for host-mediated injection.
+        // The VM gets placeholder values; real keys are injected by the host HTTP proxy.
+        const secrets: Record<string, { value: string; headerName?: string }> = {};
+        try {
+          const allCreds = authStorage.getAll();
+          for (const [provider, cred] of Object.entries(allCreds)) {
+            if (cred.type === "api_key" && cred.key) {
+              secrets[`${provider.toUpperCase().replace(/[^A-Z0-9]/g, "_")}_API_KEY`] = {
+                value: cred.key,
+                headerName: "Authorization",
+              };
+            }
+          }
+        } catch {
+          // Auth extraction failed — proceed without secrets
+        }
+
+        // Mount specific subdirectories read-only so the agent can read
+        // SKILL.md files and extensions at the paths referenced in the system prompt.
+        // Do NOT mount agentDir itself — it contains auth.json (API keys).
+        const readonlyMounts: string[] = [];
+        if (config.skillPaths) {
+          readonlyMounts.push(...config.skillPaths);
+        }
+        // Mount only safe subdirectories, not the whole agentDir.
+        // skills/ is already covered by skillPaths above.
+        // extensions/ is needed for loaded extensions to resolve their own files.
+        const extensionsDir = join(runtimeAgentDir, "extensions");
+        if (existsSync(extensionsDir)) {
+          readonlyMounts.push(extensionsDir);
+        }
+
+        const extraEnv = workspace.sandboxConfig?.env;
+        const vm = await manager.ensureWorkspaceVm(
+          workspace,
+          cwd,
+          secrets,
+          readonlyMounts,
+          extraEnv,
+        );
+
+        sandboxTools = [
+          createReadToolDefinition(cwd, { operations: createGondolinReadOps(vm, cwd) }),
+          createBashToolDefinition(cwd, { operations: createGondolinBashOps(vm, cwd) }),
+          createEditToolDefinition(cwd, { operations: createGondolinEditOps(vm, cwd) }),
+          createWriteToolDefinition(cwd, { operations: createGondolinWriteOps(vm, cwd) }),
+        ];
+        console.log("[sdk] Sandbox VM ready", { workspaceId: workspace.id || "unknown" });
       }
 
-      // Mount specific subdirectories read-only so the agent can read
-      // SKILL.md files and extensions at the paths referenced in the system prompt.
-      // Do NOT mount agentDir itself — it contains auth.json (API keys).
-      const readonlyMounts: string[] = [];
-      if (config.skillPaths) {
-        readonlyMounts.push(...config.skillPaths);
-      }
-      // Mount only safe subdirectories, not the whole agentDir.
-      // skills/ is already covered by skillPaths above.
-      // extensions/ is needed for loaded extensions to resolve their own files.
-      const extensionsDir = join(agentDir, "extensions");
-      if (existsSync(extensionsDir)) {
-        readonlyMounts.push(extensionsDir);
-      }
+      const createResult = await createAgentSession({
+        cwd,
+        agentDir: runtimeAgentDir,
+        authStorage,
+        modelRegistry,
+        model,
+        thinkingLevel: shouldSeedFromSessionState
+          ? ((session.thinkingLevel as "off" | "minimal" | "low" | "medium" | "high" | "xhigh") ??
+            "medium")
+          : undefined,
+        sessionManager,
+        settingsManager,
+        resourceLoader: loader,
+        sessionStartEvent,
+        // Sandbox: disable all built-in tools (tools: []) and inject VM-backed
+        // implementations as customTools. This ensures bash/read/write/edit execute
+        // inside the Gondolin VM, not on the host.
+        ...(sandboxTools ? { tools: [], customTools: sandboxTools } : {}),
+      });
 
-      const extraEnv = workspace.sandboxConfig?.env;
-      const vm = await manager.ensureWorkspaceVm(workspace, cwd, secrets, readonlyMounts, extraEnv);
+      SdkBackend.applyDefaultQueueModes(createResult.session);
 
-      sandboxTools = [
-        createReadToolDefinition(cwd, { operations: createGondolinReadOps(vm, cwd) }),
-        createBashToolDefinition(cwd, { operations: createGondolinBashOps(vm, cwd) }),
-        createEditToolDefinition(cwd, { operations: createGondolinEditOps(vm, cwd) }),
-        createWriteToolDefinition(cwd, { operations: createGondolinWriteOps(vm, cwd) }),
-      ];
-      console.log("[sdk] Sandbox VM ready", { workspaceId: workspace.id || "unknown" });
-    }
+      return {
+        ...createResult,
+        services: {
+          cwd,
+          agentDir: runtimeAgentDir,
+          authStorage,
+          settingsManager,
+          modelRegistry,
+          resourceLoader: loader,
+          diagnostics: [],
+        },
+        diagnostics: [],
+      };
+    };
 
-    const { session: piSession } = await createAgentSession({
-      cwd,
+    const runtime = await createAgentSessionRuntime(createRuntimeFactory, {
+      cwd: initialCwd,
       agentDir,
-      authStorage,
-      modelRegistry,
-      model,
-      thinkingLevel:
-        (session.thinkingLevel as "off" | "minimal" | "low" | "medium" | "high" | "xhigh") ||
-        "medium",
-      sessionManager: piSessionManager,
-      settingsManager,
-      resourceLoader: loader,
-      // Sandbox: disable all built-in tools (tools: []) and inject VM-backed
-      // implementations as customTools. This ensures bash/read/write/edit execute
-      // inside the Gondolin VM, not on the host.
-      ...(sandboxTools ? { tools: [], customTools: sandboxTools } : {}),
+      sessionManager: initialSessionManager,
     });
 
-    SdkBackend.applyDefaultQueueModes(piSession);
-
-    // Subscribe to agent events — forward everything to the translation layer.
-    const unsub = piSession.subscribe((event: AgentSessionEvent) => {
-      onEvent(event);
-    });
-
-    const backend = new SdkBackend(piSession, unsub, onEvent, modelRegistry);
+    const backend = new SdkBackend(runtime, onEvent);
 
     const preBindMs = Date.now() - createStartMs;
     config.metrics?.record("server.session_create_sdk_ms", preBindMs);
 
-    await piSession.bindExtensions({
-      uiContext: backend.createExtensionUIContext(),
-      onError: (error) => {
-        const event: ExtensionErrorEvent = {
-          type: "extension_error",
-          extensionPath: error.extensionPath,
-          event: error.event,
-          error: error.error,
-        };
-        onEvent(event);
-      },
-    });
+    await backend.bindCurrentSessionExtensions();
 
     const totalMs = Date.now() - createStartMs;
     const bindMs = totalMs - preBindMs;
     config.metrics?.record("server.session_create_bind_ms", bindMs);
 
     console.log("[sdk] Session created", {
-      model: piSession.model?.id ?? piSession.model?.name,
-      thinking: piSession.thinkingLevel,
+      model: backend.piSession.model?.id ?? backend.piSession.model?.name,
+      thinking: backend.piSession.thinkingLevel,
       setupMs: preBindMs,
       bindExtensionMs: bindMs,
       totalMs,
@@ -407,6 +435,35 @@ export class SdkBackend {
 
   get session(): AgentSession {
     return this.piSession;
+  }
+
+  private subscribeToCurrentSession(): void {
+    this.unsub?.();
+    this.unsub = this.piSession.subscribe((event: AgentSessionEvent) => {
+      this.emitEvent(event);
+    });
+  }
+
+  private async bindCurrentSessionExtensions(): Promise<void> {
+    SdkBackend.applyDefaultQueueModes(this.piSession);
+
+    await this.piSession.bindExtensions({
+      uiContext: this.createExtensionUIContext(),
+      onError: (error) => {
+        const event: ExtensionErrorEvent = {
+          type: "extension_error",
+          extensionPath: error.extensionPath,
+          event: error.event,
+          error: error.error,
+        };
+        this.emitEvent(event);
+      },
+    });
+  }
+
+  private async refreshRuntimeSessionBindings(): Promise<void> {
+    this.subscribeToCurrentSession();
+    await this.bindCurrentSessionExtensions();
   }
 
   private static applyDefaultQueueModes(
@@ -627,6 +684,43 @@ export class SdkBackend {
     return true;
   }
 
+  async newSession(): Promise<{ cancelled: boolean }> {
+    if (this.disposed) {
+      return { cancelled: true };
+    }
+
+    const parentSession = this.piSession.sessionFile;
+    const result = await this.runtime.newSession({ parentSession });
+    if (!result.cancelled) {
+      await this.refreshRuntimeSessionBindings();
+    }
+    return result;
+  }
+
+  async switchSession(sessionPath: string): Promise<{ cancelled: boolean }> {
+    if (this.disposed) {
+      return { cancelled: true };
+    }
+
+    const result = await this.runtime.switchSession(sessionPath);
+    if (!result.cancelled) {
+      await this.refreshRuntimeSessionBindings();
+    }
+    return result;
+  }
+
+  async fork(entryId: string): Promise<{ cancelled: boolean; selectedText?: string }> {
+    if (this.disposed) {
+      return { cancelled: true };
+    }
+
+    const result = await this.runtime.fork(entryId);
+    if (!result.cancelled) {
+      await this.refreshRuntimeSessionBindings();
+    }
+    return result;
+  }
+
   // ─── Commands ───
 
   /** Send a prompt. Fire-and-forget — events come via subscribe. */
@@ -767,15 +861,13 @@ export class SdkBackend {
       return this.shutdownCleanupPromise;
     }
 
-    const extensionRunner = this.piSession.extensionRunner;
     this.shutdownCleanupPromise = (async () => {
       try {
-        // Emit session_shutdown so extensions can run cleanup (e.g. continuation
-        // summaries, knowledge indexing). Do this in the background so stopping a
-        // session does not block on slow shutdown hooks.
-        await extensionRunner?.emit({ type: "session_shutdown" });
+        // Runtime dispose emits session_shutdown and tears down the current
+        // session lifecycle (extensions + event subscriptions).
+        await this.runtime.dispose();
       } catch (err: unknown) {
-        console.error("[sdk] session_shutdown cleanup failed", {
+        console.error("[sdk] runtime dispose failed", {
           sessionId: this.piSession.sessionId,
           error: safeErrorMessage(err),
         });
@@ -796,11 +888,10 @@ export class SdkBackend {
     }
     this.pendingExtensionResponses.clear();
 
+    this.unsub?.();
+    this.unsub = null;
+
     const shutdownCleanup = this.startShutdownCleanup();
-
-    this.unsub();
-    this.piSession.dispose();
-
     void shutdownCleanup;
   }
 }

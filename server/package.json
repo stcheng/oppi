@@ -64,9 +64,12 @@
   },
   "dependencies": {
     "@earendil-works/gondolin": "^0.7.0",
-    "@mariozechner/pi-coding-agent": "^0.64.0",
+    "@mariozechner/pi-coding-agent": "0.67.1",
     "diff-match-patch": "^1.0.5",
     "ws": "^8.18.0"
+  },
+  "overrides": {
+    "basic-ftp": "5.2.2"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.2",

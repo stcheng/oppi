@@ -206,7 +206,7 @@ export class SessionCommandCoordinator {
     [
       "new_session",
       async (backend) => {
-        await backend.session.newSession();
+        await backend.newSession();
         return { success: true };
       },
     ],
@@ -219,8 +219,8 @@ export class SessionCommandCoordinator {
       },
     ],
 
-    ["fork", (backend, cmd) => backend.session.fork(cmd.entryId as string)],
-    ["switch_session", (backend, cmd) => backend.session.switchSession(cmd.sessionPath as string)],
+    ["fork", (backend, cmd) => backend.fork(cmd.entryId as string)],
+    ["switch_session", (backend, cmd) => backend.switchSession(cmd.sessionPath as string)],
   ]);
 
   private static readonly SESSION_PASSTHROUGH_HANDLERS = new Map<string, SessionCommandHandler>([

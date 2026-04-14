@@ -47,13 +47,18 @@ describe("SdkBackend.setModel", () => {
         | undefined,
     };
 
-    const mutableBackend = backend as unknown as {
-      modelRegistry: typeof modelRegistry;
-      piSession: typeof piSession;
+    const runtime = {
+      session: piSession,
+      services: {
+        modelRegistry,
+      },
     };
 
-    mutableBackend.modelRegistry = modelRegistry;
-    mutableBackend.piSession = piSession;
+    const mutableBackend = backend as unknown as {
+      runtime: typeof runtime;
+    };
+
+    mutableBackend.runtime = runtime;
 
     return { backend, modelRegistry, piSession };
   }
