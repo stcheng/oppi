@@ -12,9 +12,8 @@
  */
 
 import { openDatabase, type SqliteDatabase, type SqliteStatement } from "./sqlite-compat.js";
-import { existsSync, readFileSync, statSync } from "node:fs";
-import { homedir } from "node:os";
-import { basename, join } from "node:path";
+import { readFileSync, statSync } from "node:fs";
+import { join } from "node:path";
 
 import type { Session } from "./types.js";
 
@@ -36,7 +35,6 @@ export interface SearchResult {
 
 /** Text block types we extract from message content arrays. */
 const TEXT_BLOCK_TYPES = new Set(["text", "output_text"]);
-const CONTINUATION_SUMMARY_DIR = join(homedir(), ".pi", "agent", "continuation", "sessions");
 
 function extractTextFromContent(content: unknown): string {
   if (typeof content === "string") return content;
@@ -68,31 +66,11 @@ function extractToolNames(content: unknown): Set<string> {
 
 const USER_MESSAGE_CAP = 50_000;
 const ASSISTANT_MESSAGE_CAP = 100_000;
-const SUMMARY_TEXT_CAP = 16_000;
 
 interface TranscriptContent {
   userMessages: string;
   assistantMessages: string;
   toolNames: string;
-}
-
-interface ContinuationSummaryRecord {
-  title?: unknown;
-  thread?: unknown;
-  goal?: unknown;
-  status?: unknown;
-  completed?: unknown;
-  remaining?: unknown;
-  blockers?: unknown;
-  learnings?: unknown;
-}
-
-interface ContinuationSummaryContent {
-  path: string;
-  mtimeMs: number;
-  size: number;
-  title: string;
-  text: string;
 }
 
 interface ExtractedContent {
@@ -104,87 +82,6 @@ interface ExtractedContent {
   summaryPath: string | null;
   summaryMtimeMs: number;
   summarySize: number;
-}
-
-function cleanSummaryText(value: unknown, max = 240): string {
-  if (typeof value !== "string") return "";
-  return value.replace(/\s+/g, " ").trim().slice(0, max);
-}
-
-function formatSummaryList(label: string, values: unknown, maxItems = 6): string | null {
-  if (!Array.isArray(values)) return null;
-  const items = values
-    .map((value) => cleanSummaryText(value, 220))
-    .filter(Boolean)
-    .slice(0, maxItems);
-  if (items.length === 0) return null;
-  return `${label}: ${items.join(" ; ")}`;
-}
-
-function parsePiSessionIdFromJsonlPath(jsonlPath: string | undefined): string | null {
-  if (!jsonlPath) return null;
-  const base = basename(jsonlPath, ".jsonl");
-  const underscore = base.lastIndexOf("_");
-  const candidate = underscore >= 0 ? base.slice(underscore + 1) : base;
-  return /^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(candidate) ? candidate : null;
-}
-
-function candidatePiSessionIds(session: Session): string[] {
-  const ids = new Set<string>();
-  if (session.piSessionId) ids.add(session.piSessionId);
-
-  const primaryFromPath = parsePiSessionIdFromJsonlPath(session.piSessionFile);
-  if (primaryFromPath) ids.add(primaryFromPath);
-
-  for (const file of session.piSessionFiles ?? []) {
-    const id = parsePiSessionIdFromJsonlPath(file);
-    if (id) ids.add(id);
-  }
-
-  return [...ids];
-}
-
-function readContinuationSummary(session: Session): ContinuationSummaryContent | null {
-  for (const piSessionId of candidatePiSessionIds(session)) {
-    const path = join(CONTINUATION_SUMMARY_DIR, `${piSessionId}.json`);
-    if (!existsSync(path)) continue;
-
-    try {
-      const stat = statSync(path);
-      const raw = readFileSync(path, "utf-8");
-      const summary = JSON.parse(raw) as ContinuationSummaryRecord;
-      const lines = [
-        cleanSummaryText(summary.title, 160)
-          ? `Title: ${cleanSummaryText(summary.title, 160)}`
-          : null,
-        cleanSummaryText(summary.thread, 120)
-          ? `Thread: ${cleanSummaryText(summary.thread, 120)}`
-          : null,
-        cleanSummaryText(summary.goal, 400) ? `Goal: ${cleanSummaryText(summary.goal, 400)}` : null,
-        cleanSummaryText(summary.status, 40)
-          ? `Status: ${cleanSummaryText(summary.status, 40)}`
-          : null,
-        formatSummaryList("Completed", summary.completed),
-        formatSummaryList("Remaining", summary.remaining),
-        formatSummaryList("Blockers", summary.blockers),
-        formatSummaryList("Learnings", summary.learnings),
-      ].filter(Boolean);
-
-      const title = cleanSummaryText(summary.title, 160);
-      const text = lines.join("\n").slice(0, SUMMARY_TEXT_CAP);
-      return {
-        path,
-        mtimeMs: stat.mtimeMs,
-        size: stat.size,
-        title,
-        text,
-      };
-    } catch {
-      continue;
-    }
-  }
-
-  return null;
 }
 
 function extractTranscriptContent(jsonlPath: string): TranscriptContent | null {
@@ -237,21 +134,20 @@ function extractTranscriptContent(jsonlPath: string): TranscriptContent | null {
 
 function extractIndexedContent(session: Session, jsonlPath?: string): ExtractedContent {
   const transcript = jsonlPath ? extractTranscriptContent(jsonlPath) : null;
-  const summary = readContinuationSummary(session);
-  const title = [session.name, summary?.title, session.firstMessage]
+  const title = [session.name, session.firstMessage]
     .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
     .join(" ")
     .slice(0, 500);
 
   return {
     title,
-    summaryText: summary?.text ?? "",
+    summaryText: "",
     userMessages: transcript?.userMessages ?? "",
     assistantMessages: transcript?.assistantMessages ?? "",
     toolNames: transcript?.toolNames ?? "",
-    summaryPath: summary?.path ?? null,
-    summaryMtimeMs: summary ? Math.floor(summary.mtimeMs) : 0,
-    summarySize: summary?.size ?? 0,
+    summaryPath: null,
+    summaryMtimeMs: 0,
+    summarySize: 0,
   };
 }
 

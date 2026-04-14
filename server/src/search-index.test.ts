@@ -64,8 +64,8 @@ afterEach(() => {
   cleanupPaths.clear();
 });
 
-describe("SearchIndex continuation summaries", () => {
-  it("indexes continuation summary text so summary-only queries are discoverable", () => {
+describe("SearchIndex decouples from continuation summaries", () => {
+  it("ignores continuation summary-only text and indexes transcript content", () => {
     const dataDir = mkdtempSync(join(tmpdir(), "search-index-"));
     cleanupPaths.add(dataDir);
 
@@ -74,7 +74,7 @@ describe("SearchIndex continuation summaries", () => {
     writeJsonl(
       jsonlPath,
       "Investigate search ranking",
-      "I checked the transcript, but the unique blocker phrase is not mentioned here.",
+      "The transcript mentions zebra transcript clue but not the external blocker phrase.",
     );
 
     const summaryPath = writeSummary(piSessionId, {
@@ -83,8 +83,6 @@ describe("SearchIndex continuation summaries", () => {
       goal: "Make continuation summaries searchable",
       status: "blocked",
       blockers: ["walrus token blocker in continuation summary"],
-      remaining: ["Wire the summary fields into the search index"],
-      learnings: ["Transcript text alone is not enough for fast discovery"],
     });
     cleanupPaths.add(summaryPath);
 
@@ -95,16 +93,19 @@ describe("SearchIndex continuation summaries", () => {
 
     try {
       index.sync([session]);
-      const results = index.search("walrus token blocker", "ws-1", 10);
-      expect(results).toHaveLength(1);
-      expect(results[0]?.sessionId).toBe(session.id);
-      expect(results[0]?.snippet.toLowerCase()).toContain("walrus");
+
+      const transcriptResults = index.search("zebra transcript clue", "ws-1", 10);
+      expect(transcriptResults).toHaveLength(1);
+      expect(transcriptResults[0]?.sessionId).toBe(session.id);
+
+      const summaryOnlyResults = index.search("walrus token blocker", "ws-1", 10);
+      expect(summaryOnlyResults).toHaveLength(0);
     } finally {
       index.close();
     }
   });
 
-  it("reindexes when the continuation summary changes even if the transcript file is unchanged", () => {
+  it("does not reindex when only an ignored continuation summary changes", () => {
     const dataDir = mkdtempSync(join(tmpdir(), "search-index-"));
     cleanupPaths.add(dataDir);
 
@@ -118,7 +119,7 @@ describe("SearchIndex continuation summaries", () => {
 
     const summaryPath = writeSummary(piSessionId, {
       title: "Initial blocker",
-      goal: "Prove summary-aware invalidation",
+      goal: "Prove summary is ignored by core index",
       status: "blocked",
       blockers: ["otter blocker"],
     });
@@ -130,22 +131,23 @@ describe("SearchIndex continuation summaries", () => {
     cleanupPaths.add(join(dataDir, "session-search.db"));
 
     try {
-      index.sync([session]);
-      expect(index.search("otter blocker", "ws-1", 10)).toHaveLength(1);
-      expect(index.search("penguin blocker", "ws-1", 10)).toHaveLength(0);
+      const first = index.sync([session]);
+      expect(first.added).toBe(1);
+      expect(index.search("otter blocker", "ws-1", 10)).toHaveLength(0);
 
       writeSummary(piSessionId, {
         title: "Updated blocker",
-        goal: "Prove summary-aware invalidation",
+        goal: "Prove summary is ignored by core index",
         status: "blocked",
         blockers: ["penguin blocker"],
       });
       const future = new Date(Date.now() + 5_000);
       utimesSync(summaryPath, future, future);
 
-      index.sync([session]);
-      expect(index.search("penguin blocker", "ws-1", 10)).toHaveLength(1);
-      expect(index.search("otter blocker", "ws-1", 10)).toHaveLength(0);
+      const second = index.sync([session]);
+      expect(second.reindexed).toBe(0);
+      expect(second.skipped).toBe(1);
+      expect(index.search("penguin blocker", "ws-1", 10)).toHaveLength(0);
     } finally {
       index.close();
     }
