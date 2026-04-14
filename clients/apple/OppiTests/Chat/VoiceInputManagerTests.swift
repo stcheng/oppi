@@ -727,6 +727,38 @@ struct VoiceInputManagerTests {
         #expect(onDeviceProvider.prepareSessionCallCount == 1)
     }
 
+    /// ASR advertised but remote setup fails — automatically retries with on-device.
+    @Test func remoteModeWithAsrAvailableButServerSetupFailureFallsBackToOnDevice() async {
+        resetVoicePreferences()
+        defer { resetVoicePreferences() }
+
+        let systemAccess = MockVoiceInputSystemAccess()
+        let onDeviceProvider = MockVoiceProvider(id: .appleClassicDictation, engine: .classicDictation)
+        let serverProvider = MockVoiceProvider(id: .oppiServer, engine: .serverDictation)
+        serverProvider.prepareSessionHandler = { _ in
+            throw VoiceInputError.remoteRequestTimedOut
+        }
+
+        let manager = VoiceInputManager(
+            providerRegistry: VoiceProviderRegistry(providers: [onDeviceProvider, serverProvider]),
+            systemAccess: systemAccess
+        )
+        manager.setEngineMode(.remote)
+
+        let conn = ServerConnection()
+        conn.setAsrAvailableForTesting(true)
+        manager.setServerConnection(conn)
+
+        try? await manager.startRecording(source: "test")
+
+        #expect(serverProvider.prepareSessionCallCount == 1)
+        #expect(onDeviceProvider.prepareSessionCallCount == 1)
+        #expect(manager.state == .recording)
+        #expect(manager.activeEngine == .classicDictation)
+
+        await manager.cancelRecording()
+    }
+
     // MARK: - Send-while-recording: stop awaits final transcript
 
     /// Verifies that stopRecording() waits for the final transcript event
