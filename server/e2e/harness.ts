@@ -6,11 +6,12 @@
  * - Docker mode (default): spins up oppi-e2e container
  * - Native mode (E2E_NATIVE=1): starts server as child process (faster iteration)
  *
- * Requires LM Studio running on localhost:1234 with a loaded model.
+ * Requires an OMLX-compatible local model server running on localhost:8400
+ * with at least one model loaded.
  */
 
 import { execSync, spawn, type ChildProcess } from "node:child_process";
-import { mkdtempSync, writeFileSync, rmSync, readFileSync, openSync, closeSync } from "node:fs";
+import { mkdtempSync, writeFileSync, rmSync, openSync, closeSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -22,40 +23,92 @@ const SERVER_DIR = join(__dirname, "..");
 // ── Configuration ──
 
 export const E2E_PORT = Number(process.env.E2E_PORT || 17760);
-export const MLX_PORT = Number(process.env.E2E_MLX_PORT || 9847);
-export const MLX_HOST_URL = `http://localhost:${MLX_PORT}`;
-export const MLX_DOCKER_URL = `http://host.docker.internal:${MLX_PORT}`;
+export const OMLX_PORT = Number(process.env.E2E_OMLX_PORT || process.env.E2E_MLX_PORT || 8400);
+export const OMLX_HOST_URL = `http://localhost:${OMLX_PORT}`;
+export const OMLX_DOCKER_URL = `http://host.docker.internal:${OMLX_PORT}`;
 export const ADMIN_TOKEN = "e2e-admin-token";
 
-// Resolved after MLX server probe
+// Resolved after local model server probe
 export let E2E_MODEL = "";
+
+const PREFERRED_MODEL_REGEX = /qwen3\.?5.*27b/i;
+
+function chooseModelId(modelIds: string[]): string | null {
+  if (modelIds.length === 0) return null;
+
+  const preferred = modelIds.find((id) => PREFERRED_MODEL_REGEX.test(id));
+  return preferred ?? modelIds[0] ?? null;
+}
 
 const BOOT_TIMEOUT_MS = 120_000;
 const HEALTH_POLL_MS = 500;
 
-export const BASE_URL = `http://127.0.0.1:${E2E_PORT}`;
-export const STREAM_WS_URL = `ws://127.0.0.1:${E2E_PORT}/stream`;
+type E2ETransportScheme = "http" | "https";
+let transportScheme: E2ETransportScheme =
+  process.env.E2E_TRANSPORT_SCHEME === "https" ? "https" : "http";
 
-// ── MLX server check ──
+function activeTransportScheme(): E2ETransportScheme {
+  const envScheme = process.env.E2E_TRANSPORT_SCHEME;
+  if (envScheme === "http" || envScheme === "https") {
+    transportScheme = envScheme;
+  }
+
+  if (transportScheme === "https") {
+    process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
+  }
+
+  return transportScheme;
+}
+
+export function baseURL(): string {
+  const scheme = activeTransportScheme();
+  return `${scheme}://127.0.0.1:${E2E_PORT}`;
+}
+
+export function streamURL(): string {
+  const scheme = activeTransportScheme();
+  const wsScheme = scheme === "https" ? "wss" : "ws";
+  return `${wsScheme}://127.0.0.1:${E2E_PORT}/stream`;
+}
+
+export function isSecureTransport(): boolean {
+  return activeTransportScheme() === "https";
+}
+
+function applySelfSignedTlsBypass(): void {
+  if (activeTransportScheme() === "https") {
+    process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
+  }
+}
+
+// ── Local model server check ──
 
 export async function ensureMLXServerReady(): Promise<boolean> {
   try {
-    const res = await fetch(`${MLX_HOST_URL}/v1/models`);
+    const res = await fetch(`${OMLX_HOST_URL}/v1/models`);
     if (!res.ok) return false;
     const data = (await res.json()) as { data?: { id: string }[] };
-    const models = data.data || [];
-    if (models.length === 0) {
-      console.warn("[e2e] MLX server is running but no models loaded");
+    const modelIds = (data.data || []).map((model) => model.id);
+
+    const modelId = chooseModelId(modelIds);
+    if (!modelId) {
+      console.warn("[e2e] OMLX server is running but no models loaded");
       return false;
     }
 
-    // Use the first loaded model
-    const modelId = models[0].id;
-    E2E_MODEL = `mlx-server/${modelId}`;
-    console.log(`[e2e] MLX server ready on :${MLX_PORT}, model: ${modelId}`);
+    E2E_MODEL = `omlx/${modelId}`;
+
+    if (PREFERRED_MODEL_REGEX.test(modelId)) {
+      console.log(`[e2e] OMLX server ready on :${OMLX_PORT}, using preferred model: ${modelId}`);
+    } else {
+      console.warn(
+        `[e2e] Preferred model (Qwen3.5-27B*) not found, falling back to: ${modelId}`,
+      );
+    }
+
     return true;
   } catch {
-    console.warn("[e2e] MLX server not reachable at", MLX_HOST_URL);
+    console.warn("[e2e] OMLX server not reachable at", OMLX_HOST_URL);
     return false;
   }
 }
@@ -83,28 +136,66 @@ export async function stopServer(): Promise<void> {
 
 let dockerModelsJson: string | null = null;
 
+async function canReachHealthOver(scheme: E2ETransportScheme): Promise<boolean> {
+  if (scheme === "https") {
+    process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
+  }
+
+  try {
+    const res = await fetch(`${scheme}://127.0.0.1:${E2E_PORT}/health`);
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+async function resolveDockerTransportScheme(): Promise<E2ETransportScheme> {
+  const preferredOrder: E2ETransportScheme[] = (() => {
+    try {
+      const tlsJson = execSync("docker exec oppi-e2e node dist/src/cli.js config get tls", {
+        encoding: "utf-8",
+        stdio: "pipe",
+      }).trim();
+
+      const tls = JSON.parse(tlsJson) as { mode?: string };
+      return tls.mode === "disabled" ? ["http", "https"] : ["https", "http"];
+    } catch {
+      // Fresh `serve` bootstraps self-signed by default.
+      return ["https", "http"];
+    }
+  })();
+
+  for (const scheme of preferredOrder) {
+    if (await canReachHealthOver(scheme)) {
+      return scheme;
+    }
+  }
+
+  throw new Error("[e2e] Could not detect server transport (health check failed on http+https)");
+}
+
 async function startDockerServer(): Promise<void> {
   console.log("[e2e] Building and starting Docker server...");
 
   const composeFile = join(__dirname, "docker-compose.e2e.yml");
 
-  // Probe the MLX server for its loaded model and generate a container-compatible
-  // models.json that routes mlx-server/* to host.docker.internal:<port>.
-  const res = await fetch(`${MLX_HOST_URL}/v1/models`);
+  // Probe the OMLX server for its loaded model and generate a container-compatible
+  // models.json that routes omlx/* to host.docker.internal:<port>.
+  const res = await fetch(`${OMLX_HOST_URL}/v1/models`);
   const data = (await res.json()) as { data?: { id: string }[] };
-  const modelId = data.data?.[0]?.id;
-  if (!modelId) throw new Error("[e2e] MLX server has no models loaded");
+  const modelId = chooseModelId((data.data || []).map((model) => model.id));
+  if (!modelId) throw new Error("[e2e] OMLX server has no models loaded");
 
   const modelsConfig = {
     providers: {
-      "mlx-server": {
-        baseUrl: `${MLX_DOCKER_URL}/v1`,
+      omlx: {
+        baseUrl: `${OMLX_DOCKER_URL}/v1`,
         apiKey: "DUMMY",
         api: "openai-completions",
         models: [
           {
             id: modelId,
-            name: "E2E MLX Model",
+            name: "E2E OMLX Model",
             contextWindow: 32768,
             maxTokens: 8192,
             input: ["text"],
@@ -131,9 +222,12 @@ async function startDockerServer(): Promise<void> {
     },
   });
 
+  transportScheme = await resolveDockerTransportScheme();
+  process.env.E2E_TRANSPORT_SCHEME = transportScheme;
+  applySelfSignedTlsBypass();
   await waitForHealth();
 
-  // Set the server's defaultModel to the MLX model (replaces the Dockerfile default)
+  // Set the server's defaultModel to the OMLX model (replaces the Dockerfile default)
   execSync(`docker exec oppi-e2e node dist/src/cli.js config set defaultModel "${E2E_MODEL}"`, {
     stdio: "pipe",
   });
@@ -176,7 +270,11 @@ async function startNativeServer(): Promise<void> {
     defaultModel: E2E_MODEL,
   });
 
-  // Copy host models.json so pi can resolve the mlx-server provider
+  transportScheme = storage.getConfig().tls?.mode === "disabled" ? "http" : "https";
+  process.env.E2E_TRANSPORT_SCHEME = transportScheme;
+  applySelfSignedTlsBypass();
+
+  // Copy host models.json so pi can resolve the omlx provider
   const hostModels = join(process.env.HOME || "", ".pi/agent/models.json");
   const piDir = join(nativeDataDir, "pi-agent");
   const { existsSync: exists, mkdirSync: mkdir, copyFileSync: cpFile } = await import("node:fs");
@@ -228,7 +326,7 @@ async function waitForHealth(): Promise<void> {
   const started = Date.now();
   while (Date.now() - started < BOOT_TIMEOUT_MS) {
     try {
-      const res = await fetch(`${BASE_URL}/health`);
+      const res = await fetch(`${baseURL()}/health`);
       if (res.ok) return;
     } catch {
       // keep retrying
@@ -257,7 +355,7 @@ export async function api(
     headers.Authorization = `Bearer ${token}`;
   }
 
-  const res = await fetch(`${BASE_URL}${path}`, {
+  const res = await fetch(`${baseURL()}${path}`, {
     method,
     headers,
     body: body === undefined ? undefined : JSON.stringify(body),
@@ -330,10 +428,11 @@ export async function generateTestInvite(): Promise<{
     ");",
     "const payload = {",
     `  v: 3, host: "127.0.0.1", port: ${E2E_PORT},`,
-    '  scheme: "http", token: "",',
+    "  scheme: invite.scheme, token: '',",
     "  pairingToken: invite.pairingToken,",
     "  name: invite.name,",
     "  fingerprint: invite.fingerprint,",
+    "  tlsCertFingerprint: invite.tlsCertFingerprint,",
     "};",
     "console.log(JSON.stringify({",
     "  inviteURL: invite.inviteURL, invitePayload: payload,",
@@ -387,8 +486,9 @@ export interface StreamEvent {
 }
 
 export async function openStream(deviceToken: string): Promise<StreamConnection> {
-  const ws = new WebSocket(STREAM_WS_URL, {
+  const ws = new WebSocket(streamURL(), {
     headers: { Authorization: `Bearer ${deviceToken}` },
+    ...(isSecureTransport() ? { rejectUnauthorized: false } : {}),
   });
 
   let seq = 0;

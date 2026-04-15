@@ -44,6 +44,7 @@ beforeAll(async () => {
   storage.updateConfig({
     port: randomPort,
     host: "127.0.0.1",
+    tls: { mode: "disabled" },
   });
   token = storage.ensurePaired();
   server = new Server(storage);
@@ -382,7 +383,11 @@ describe("close code handling", () => {
     const localDataDir = mkdtempSync(join(tmpdir(), "oppi-ws-shutdown-"));
     const localStorage = new Storage(localDataDir);
     const localPort = 50_000 + Math.floor(Math.random() * 5_000);
-    localStorage.updateConfig({ port: localPort, host: "127.0.0.1" });
+    localStorage.updateConfig({
+      port: localPort,
+      host: "127.0.0.1",
+      tls: { mode: "disabled" },
+    });
     const localToken = localStorage.ensurePaired();
     const localServer = new Server(localStorage);
 

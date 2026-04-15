@@ -27,12 +27,12 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
-      # Mount e2e models.json so pi can resolve the mlx-server provider
+      # Mount e2e models.json so pi can resolve the omlx provider
       - ${E2E_MODELS_JSON:-/dev/null}:/data/pi-agent/models.json:ro
     tmpfs:
       - /data/oppi
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://localhost:${E2E_PORT:-17760}/health"]
+      test: ["CMD-SHELL", "curl -fsSk https://localhost:${E2E_PORT:-17760}/health || curl -fsS http://localhost:${E2E_PORT:-17760}/health"]
       interval: 2s
       timeout: 3s
       retries: 30

@@ -71,6 +71,7 @@ beforeAll(async () => {
   storage.updateConfig({
     port: 0,
     host: "127.0.0.1",
+    tls: { mode: "disabled" },
     authDeviceTokens: [authDeviceToken],
     pushDeviceTokens: [pushOnlyToken],
   });
@@ -1358,6 +1359,7 @@ async function withIsolatedPairingServer(
   pairingStorage.updateConfig({
     port: 0,
     host: "127.0.0.1",
+    tls: { mode: "disabled" },
   });
   pairingStorage.ensurePaired();
 

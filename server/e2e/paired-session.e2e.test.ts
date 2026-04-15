@@ -11,7 +11,7 @@
  *   7. Verifies tool_start → tool_output → tool_end lifecycle
  *   8. Reconnects /stream and verifies catch-up replay
  *
- * Requires: Docker, MLX server on localhost:9847 with a loaded model
+ * Requires: Docker, OMLX server on localhost:8400 with a loaded model
  */
 
 import { describe, it, expect, beforeAll, inject } from "vitest";

@@ -8,7 +8,7 @@
  *   4. Session deletion while stream is subscribed
  *   5. Follow-up queue execution during an active turn
  *
- * Requires: Docker, MLX server on localhost:9847 with a loaded model
+ * Requires: Docker, OMLX server on localhost:8400 with a loaded model
  */
 
 import { describe, it, expect, beforeAll, inject } from "vitest";
@@ -273,7 +273,7 @@ describe("E2E: Advanced Session Lifecycle", { timeout: 600_000 }, () => {
         { startIndex, timeoutMs: 300_000 },
       );
 
-      // The MLX model may or may not produce thinking_delta events at level "low" —
+      // The local OMLX model may or may not produce thinking_delta events at level "low" —
       // we only assert the command didn't cause errors (no fatal error events).
       const fatalErrors = stream.events
         .slice(startIndex)

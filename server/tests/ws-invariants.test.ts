@@ -29,6 +29,7 @@ beforeAll(async () => {
   storage.updateConfig({
     host: "127.0.0.1",
     port: randomPort,
+    tls: { mode: "disabled" },
   });
 
   token = storage.ensurePaired();

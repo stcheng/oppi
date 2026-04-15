@@ -24,6 +24,7 @@ describe("Storage config validation", () => {
     expect(result.config?.configVersion).toBe(2);
     expect(result.config?.runtimePathEntries?.length).toBeGreaterThan(0);
     expect(result.config?.approvalTimeoutMs).toBe(120_000);
+    expect(result.config?.tls?.mode).toBe("self-signed");
   });
 
   it("rejects unknown top-level keys in strict mode", () => {

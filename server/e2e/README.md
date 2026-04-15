@@ -1,12 +1,12 @@
 # E2E Tests
 
-End-to-end tests that exercise the full Oppi stack: Docker server + LM Studio local models.
+End-to-end tests that exercise the full Oppi stack: Docker server + local OMLX models.
 
 ## Prerequisites
 
 - Docker (OrbStack recommended)
-- LM Studio running on localhost:1234 with at least one model loaded
-- Default model: `glm-4.7-flash-mlx` (override with `E2E_MODEL=lmstudio/<model-id>`)
+- OMLX-compatible OpenAI API server on localhost:8400 with at least one model loaded
+- Preferred model: `Qwen3.5-27B-*` (fallback: first model returned by `/v1/models`)
 
 ## Test Suites
 
@@ -53,9 +53,10 @@ E2E_NATIVE=1 npm run test:e2e
 | Env var | Default | Description |
 |---------|---------|-------------|
 | `E2E_PORT` | `17760` | Server port |
-| `E2E_MODEL` | `lmstudio/glm-4.7-flash-mlx` | Model ID for sessions |
+| `E2E_MODEL` | auto-discovered | Model ID for sessions (resolved from `/v1/models`) |
+| `E2E_OMLX_PORT` | `8400` | Local OMLX server port |
+| `E2E_MLX_PORT` | unset | Legacy alias for `E2E_OMLX_PORT` |
 | `E2E_NATIVE` | `0` | `1` to skip Docker, run server natively |
-| `LMSTUDIO_API_URL` | `http://localhost:1234` | LM Studio API endpoint |
 
 ## Architecture
 
@@ -69,7 +70,7 @@ e2e/
 ```
 
 The harness supports two modes:
-- **Docker mode** (default): builds and starts `oppi-e2e` container, LM Studio reached via `host.docker.internal`
+- **Docker mode** (default): builds and starts `oppi-e2e` container, OMLX reached via `host.docker.internal`
 - **Native mode** (`E2E_NATIVE=1`): builds server locally, starts as child process in a temp directory
 
 Both modes share the same test code — only server lifecycle differs.

@@ -86,10 +86,14 @@ If you need tools from custom paths (e.g. `mise`, `pyenv`, `nvm`), add their bin
 
 | Setting | Type | Default | Description |
 |---------|------|---------|-------------|
-| `tls.mode` | string | `"disabled"` | Transport security mode. See modes below. |
+| `tls.mode` | string | `"self-signed"` | Transport security mode. See modes below. |
 | `tls.certPath` | string | - | PEM certificate path. Required for `manual` mode. |
 | `tls.keyPath` | string | - | PEM private key path. Required for `manual` mode. |
 | `tls.caPath` | string | - | CA chain path. Used in `self-signed` mode for client certificate pinning. |
+
+New configs default to `"self-signed"` so iOS pairing uses HTTPS/WSS out of the box.
+For legacy configs that still have `"disabled"`, first `oppi serve` auto-promotes
+TLS to `"self-signed"`.
 
 Modes:
 

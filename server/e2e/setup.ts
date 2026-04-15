@@ -13,7 +13,7 @@ let mlxReady = false;
 export default async function setup({ provide }: GlobalSetupContext): Promise<() => Promise<void>> {
   mlxReady = await ensureMLXServerReady();
   if (!mlxReady) {
-    console.warn("[e2e] Skipping E2E suite — MLX server not available on :9847");
+    console.warn("[e2e] Skipping E2E suite — OMLX server not available on :8400");
     provide("e2eLmsReady", false);
     provide("e2eModel", "");
     return async () => {};

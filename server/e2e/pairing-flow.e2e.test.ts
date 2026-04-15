@@ -9,7 +9,7 @@
  *   5. Device token authenticates all subsequent API calls
  *   6. Device can list workspaces, create sessions, access /stream
  *
- * Requires: Docker, LM Studio on localhost:1234
+ * Requires: Docker, OMLX server on localhost:8400
  */
 
 import { describe, it, expect, beforeAll, inject } from "vitest";
@@ -18,7 +18,8 @@ import {
   generateTestInvite,
   openStream,
   closeStream,
-  E2E_PORT,
+  streamURL,
+  isSecureTransport,
 } from "./harness.js";
 
 declare module "vitest" {
@@ -54,7 +55,10 @@ describe("E2E: Pairing Flow", { timeout: 180_000 }, () => {
     const WebSocket = (await import("ws")).default;
 
     const result = await new Promise<{ status: number }>((resolve) => {
-      const ws = new WebSocket(`ws://127.0.0.1:${E2E_PORT}/stream`);
+      const ws = new WebSocket(
+        streamURL(),
+        isSecureTransport() ? { rejectUnauthorized: false } : undefined,
+      );
       ws.on("unexpected-response", (_req, res) => {
         res.resume();
         resolve({ status: res.statusCode || 0 });
@@ -208,8 +212,9 @@ describe("E2E: Pairing Flow", { timeout: 180_000 }, () => {
 
       const WebSocket = (await import("ws")).default;
       const result = await new Promise<{ status: number }>((resolve) => {
-        const ws = new WebSocket(`ws://127.0.0.1:${E2E_PORT}/stream`, {
+        const ws = new WebSocket(streamURL(), {
           headers: { Authorization: `Bearer ${deviceToken}_invalid` },
+          ...(isSecureTransport() ? { rejectUnauthorized: false } : {}),
         });
         ws.on("unexpected-response", (_req, res) => {
           res.resume();

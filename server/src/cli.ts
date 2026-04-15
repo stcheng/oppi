@@ -160,6 +160,12 @@ async function cmdServe(storage: Storage, pairHost?: string): Promise<void> {
 
   // Auto-init: generate owner token + identity keys if this is a fresh install.
   if (!storage.isPaired()) {
+    const currentTlsMode = storage.getConfig().tls?.mode ?? "disabled";
+    if (currentTlsMode === "disabled") {
+      storage.updateConfig({ tls: { mode: "self-signed" } });
+      console.log(c.green("  ✓ First run — TLS mode set to self-signed"));
+    }
+
     storage.rotateToken();
     console.log(c.green("  ✓ First run — owner token generated"));
   }

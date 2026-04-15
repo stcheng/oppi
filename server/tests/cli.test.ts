@@ -20,12 +20,16 @@ try {
   hasOpenSSL = false;
 }
 
-function run(args: string[], env?: Record<string, string>): { stdout: string; exitCode: number } {
+function run(
+  args: string[],
+  env?: Record<string, string>,
+  timeoutMs = 5000,
+): { stdout: string; exitCode: number } {
   try {
     const stdout = execFileSync("node", [CLI, ...args], {
       encoding: "utf-8",
       env: { ...process.env, OPPI_DATA_DIR: dataDir, ...env },
-      timeout: 5000,
+      timeout: timeoutMs,
     });
     return { stdout, exitCode: 0 };
   } catch (err: unknown) {
@@ -325,6 +329,49 @@ exit 1
     } finally {
       rmSync(tlsDataDir, { recursive: true, force: true });
       rmSync(fakeBinDir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("oppi serve (first-run tls bootstrap)", () => {
+  it("upgrades legacy disabled TLS to self-signed on first serve", () => {
+    const serveDir = mkdtempSync(join(tmpdir(), "oppi-cli-serve-tls-"));
+
+    try {
+      const { stdout: defaultTlsJson, exitCode: defaultExitCode } = run(
+        ["config", "get", "tls"],
+        { OPPI_DATA_DIR: serveDir },
+      );
+      expect(defaultExitCode).toBe(0);
+      const defaultTls = JSON.parse(defaultTlsJson) as { mode?: string };
+      expect(defaultTls.mode).toBe("self-signed");
+
+      const { exitCode: setDisabledExitCode } = run(
+        ["config", "set", "tls", '{"mode":"disabled"}'],
+        { OPPI_DATA_DIR: serveDir },
+      );
+      expect(setDisabledExitCode).toBe(0);
+
+      const { stdout: beforeTlsJson, exitCode: beforeExitCode } = run(
+        ["config", "get", "tls"],
+        { OPPI_DATA_DIR: serveDir },
+      );
+      expect(beforeExitCode).toBe(0);
+      const beforeTls = JSON.parse(beforeTlsJson) as { mode?: string };
+      expect(beforeTls.mode).toBe("disabled");
+
+      // `serve` is long-running; use a short timeout to trigger startup path.
+      run(["serve"], { OPPI_DATA_DIR: serveDir }, 1_500);
+
+      const { stdout: afterTlsJson, exitCode: afterExitCode } = run(
+        ["config", "get", "tls"],
+        { OPPI_DATA_DIR: serveDir },
+      );
+      expect(afterExitCode).toBe(0);
+      const afterTls = JSON.parse(afterTlsJson) as { mode?: string };
+      expect(afterTls.mode).toBe("self-signed");
+    } finally {
+      rmSync(serveDir, { recursive: true, force: true });
     }
   });
 });

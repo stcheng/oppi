@@ -59,7 +59,7 @@ function createDefaultConfig(dataDir: string): ServerConfig {
 
     runtimePathEntries: defaultRuntimePathEntries(),
     runtimeEnv: {},
-    tls: { mode: "disabled" },
+    tls: { mode: "self-signed" },
     policy: defaultPolicy(),
     subagents: defaultSubagentConfig(),
   };

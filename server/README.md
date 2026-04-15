@@ -17,7 +17,10 @@ pi auth
 node dist/src/cli.js serve
 ```
 
-Optional: enable local HTTPS/WSS (self-signed + cert pin in invite):
+On a fresh install, first `serve` bootstraps local HTTPS/WSS with
+`tls.mode=self-signed` automatically (including cert pin in invite payloads).
+
+Use this command only if you need to switch back to self-signed later:
 
 ```bash
 node dist/src/cli.js config set tls '{"mode":"self-signed"}'
