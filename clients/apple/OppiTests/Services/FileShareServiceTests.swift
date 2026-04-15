@@ -186,7 +186,8 @@ struct FileShareServiceTests {
     // MARK: - Render Default
 
     @Test func renderDefaultProducesPDFForMarkdown() async {
-        let item = await FileShareService.renderDefault(.markdown("# Hello World"))
+        let content = FileShareService.ShareableContent.markdown("# Hello World")
+        let item = await FileShareService.render(content, as: FileShareService.defaultFormat(for: content))
         guard case .pdf(let data, let filename) = item else {
             Issue.record("Expected PDF, got \(item)")
             return
@@ -196,7 +197,8 @@ struct FileShareServiceTests {
     }
 
     @Test func renderDefaultProducesPDFForHTML() async {
-        let item = await FileShareService.renderDefault(.html("<h1>Hello</h1>"))
+        let content = FileShareService.ShareableContent.html("<h1>Hello</h1>")
+        let item = await FileShareService.render(content, as: FileShareService.defaultFormat(for: content))
         guard case .pdf(let data, let filename) = item else {
             Issue.record("Expected PDF, got \(item)")
             return
@@ -206,13 +208,85 @@ struct FileShareServiceTests {
     }
 
     @Test func renderDefaultProducesSourceForPlainText() async {
-        let item = await FileShareService.renderDefault(.plainText("hello"))
+        let content = FileShareService.ShareableContent.plainText("hello")
+        let item = await FileShareService.render(content, as: FileShareService.defaultFormat(for: content))
         guard case .file(let url) = item else {
             Issue.record("Expected file, got \(item)")
             return
         }
         #expect(url.lastPathComponent == "text.txt")
         FileShareService.cleanupTempFiles()
+    }
+
+    // MARK: - HTML Canvas Export (end-to-end)
+
+    @Test func htmlCanvasRendersToImageWithCanvasPixels() async {
+        let item = await FileShareService.render(.html(Self.canvasFixtureHTML), as: .image)
+        guard case .image(let image) = item else {
+            Issue.record("Expected image, got \(item)")
+            return
+        }
+
+        #expect(image.size.width > 10)
+        #expect(image.size.height > 10)
+        #expect(Self.containsApproxMagentaPixel(in: image))
+    }
+
+    @Test func htmlCanvasRendersToPDFWithCanvasPixels() async {
+        let item = await FileShareService.render(.html(Self.canvasFixtureHTML), as: .pdf)
+        guard case .pdf(let data, let filename) = item else {
+            Issue.record("Expected PDF, got \(item)")
+            return
+        }
+
+        #expect(filename == "page.pdf")
+        #expect(!data.isEmpty)
+        let header = String(data: data.prefix(5), encoding: .ascii)
+        #expect(header == "%PDF-")
+
+        guard let image = Self.rasterizeFirstPDFPage(data) else {
+            Issue.record("Failed to rasterize exported HTML PDF")
+            return
+        }
+        #expect(Self.containsApproxMagentaPixel(in: image))
+    }
+
+    @Test func htmlCanvasManualArtifactExportWhenEnabled() async throws {
+        guard ProcessInfo.processInfo.environment["OPPI_EXPORT_HTML_ARTIFACTS"] == "1" else {
+            return
+        }
+
+        let imageItem = await FileShareService.render(.html(Self.canvasFixtureHTML), as: .image)
+        guard case .image(let image) = imageItem else {
+            Issue.record("Expected image, got \(imageItem)")
+            return
+        }
+
+        let pdfItem = await FileShareService.render(.html(Self.canvasFixtureHTML), as: .pdf)
+        guard case .pdf(let pdfData, _) = pdfItem else {
+            Issue.record("Expected pdf, got \(pdfItem)")
+            return
+        }
+
+        guard let pngData = image.pngData() else {
+            Issue.record("Could not encode PNG")
+            return
+        }
+
+        let exportDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("oppi-html-export-artifacts", isDirectory: true)
+        try FileManager.default.createDirectory(at: exportDir, withIntermediateDirectories: true)
+
+        let pngURL = exportDir.appendingPathComponent("html-canvas-export.png")
+        let pdfURL = exportDir.appendingPathComponent("html-canvas-export.pdf")
+        try pngData.write(to: pngURL)
+        try pdfData.write(to: pdfURL)
+
+        print("OPPI_HTML_EXPORT_ARTIFACT_PNG=\(pngURL.path)")
+        print("OPPI_HTML_EXPORT_ARTIFACT_PDF=\(pdfURL.path)")
+
+        #expect(FileManager.default.fileExists(atPath: pngURL.path))
+        #expect(FileManager.default.fileExists(atPath: pdfURL.path))
     }
 
     // MARK: - PDF Rendering (additional types)
@@ -395,7 +469,8 @@ struct FileShareServiceTests {
 
     @Test func diffImageDefaultRenderUsesImageFormat() async {
         let hunks = Self.sampleDiffHunks
-        let item = await FileShareService.renderDefault(.diff(hunks, filePath: "test.swift"))
+        let content = FileShareService.ShareableContent.diff(hunks, filePath: "test.swift")
+        let item = await FileShareService.render(content, as: FileShareService.defaultFormat(for: content))
         guard case .image = item else {
             Issue.record("Expected image (default format for diff), got \(item)")
             return
@@ -697,6 +772,103 @@ struct FileShareServiceTests {
     }
 
     // MARK: - Diff Fixtures
+
+    private static let canvasFixtureHTML = """
+    <!doctype html>
+    <html>
+      <head>
+        <meta charset="utf-8" />
+        <style>
+          html, body { margin: 0; padding: 0; background: #111; }
+          canvas { display: block; }
+        </style>
+      </head>
+      <body>
+        <canvas id="c" width="640" height="240"></canvas>
+        <script>
+          (function() {
+            window.__captureReady = false;
+            const canvas = document.getElementById('c');
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#111111';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = '#ff00ff';
+            ctx.fillRect(40, 40, 560, 160);
+            ctx.fillStyle = '#00ff88';
+            ctx.fillRect(260, 80, 120, 80);
+
+            window.__oppiPrepareForCapture = function() {};
+            window.__oppiReadyForCapture = function() { return window.__captureReady; };
+
+            requestAnimationFrame(function() {
+              window.__captureReady = true;
+            });
+          })();
+        </script>
+      </body>
+    </html>
+    """
+
+    private static func rasterizeFirstPDFPage(_ data: Data) -> UIImage? {
+        guard let provider = CGDataProvider(data: data as CFData),
+              let pdfDoc = CGPDFDocument(provider),
+              let page = pdfDoc.page(at: 1) else {
+            return nil
+        }
+
+        let pageRect = page.getBoxRect(.mediaBox)
+        let scale: CGFloat = 2
+        let size = CGSize(width: pageRect.width * scale, height: pageRect.height * scale)
+        let renderer = UIGraphicsImageRenderer(size: size)
+        return renderer.image { ctx in
+            UIColor.white.setFill()
+            ctx.fill(CGRect(origin: .zero, size: size))
+
+            let cgCtx = ctx.cgContext
+            cgCtx.translateBy(x: 0, y: size.height)
+            cgCtx.scaleBy(x: scale, y: -scale)
+            cgCtx.drawPDFPage(page)
+        }
+    }
+
+    private static func containsApproxMagentaPixel(in image: UIImage) -> Bool {
+        guard let cgImage = image.cgImage else { return false }
+
+        let width = cgImage.width
+        let height = cgImage.height
+        let bytesPerRow = width * 4
+        var buffer = [UInt8](repeating: 0, count: width * height * 4)
+        guard let ctx = CGContext(
+            data: &buffer,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: bytesPerRow,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else {
+            return false
+        }
+
+        ctx.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
+
+        let sampleStride = max(2, min(width, height) / 80)
+        for y in stride(from: 0, to: height, by: sampleStride) {
+            for x in stride(from: 0, to: width, by: sampleStride) {
+                let idx = (y * width + x) * 4
+                let r = buffer[idx]
+                let g = buffer[idx + 1]
+                let b = buffer[idx + 2]
+                let a = buffer[idx + 3]
+
+                if a > 200, r > 200, b > 200, g < 140 {
+                    return true
+                }
+            }
+        }
+
+        return false
+    }
 
     private static let sampleDiffHunks: [WorkspaceReviewDiffHunk] = [
         WorkspaceReviewDiffHunk(

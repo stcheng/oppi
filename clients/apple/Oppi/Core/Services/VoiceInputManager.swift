@@ -175,10 +175,6 @@ final class VoiceInputManager {
     /// User-selected engine routing mode.
     private(set) var engineMode: EngineMode = .auto
 
-    /// Backward-compatible engine preference surface used by tests.
-    /// `nil` = auto, `.serverDictation` = remote mode, on-device values = on-device mode.
-    private(set) var enginePreference: TranscriptionEngine?
-
     // MARK: - Init
 
     init(
@@ -219,40 +215,14 @@ final class VoiceInputManager {
     /// Set engine mode directly.
     func setEngineMode(_ mode: EngineMode) {
         engineMode = mode
-
-        switch mode {
-        case .auto:
-            enginePreference = nil
-        case .onDevice:
-            // Sentinel value for legacy tests — runtime routing still resolves
-            // to locale-based on-device engine selection.
-            enginePreference = .modernSpeech
-        case .remote:
-            enginePreference = .serverDictation
-        }
-
         activeEngine = nil
         invalidateModelCache()
         logger.info("Engine mode: \(mode.logName)")
     }
 
-    // periphery:ignore - used by tests via @testable import
-    /// Backward-compatible preference API. Prefer `setEngineMode(_:)`.
-    func setEnginePreference(_ engine: TranscriptionEngine?) {
-        switch engine {
-        case nil:
-            setEngineMode(.auto)
-        case .serverDictation?:
-            setEngineMode(.remote)
-        case .modernSpeech?, .classicDictation?:
-            setEngineMode(.onDevice)
-            enginePreference = engine
-        }
-    }
-
     // MARK: - Locale Resolution
     /// Resolve the effective engine, considering mode + server availability.
-    private func effectiveEngine(for locale: Locale, source: String) async -> TranscriptionEngine {
+    private func effectiveEngine(for locale: Locale) async -> TranscriptionEngine {
         let fallback = Self.preferredEngine(for: locale)
         return await routeResolver.resolveEngine(
             mode: engineMode,
@@ -296,7 +266,7 @@ final class VoiceInputManager {
     func prewarm(keyboardLanguage: String? = nil, source: String = "unknown") async {
         let locale = Self.resolvedLocale(keyboardLanguage: keyboardLanguage)
         let localeID = locale.identifier(.bcp47)
-        let engine = await effectiveEngine(for: locale, source: source)
+        let engine = await effectiveEngine(for: locale)
         let metricAnnotation = VoiceMetricAnnotation(
             engine: engine.logName,
             locale: localeID,
@@ -403,7 +373,7 @@ final class VoiceInputManager {
         let locale = Self.resolvedLocale(keyboardLanguage: keyboardLanguage)
         let localeID = locale.identifier(.bcp47)
         let fallbackEngine = Self.preferredEngine(for: locale)
-        var engine = await effectiveEngine(for: locale, source: source)
+        var engine = await effectiveEngine(for: locale)
         var attemptedServerFallback = false
         dictationSessionStart = startTime
 
@@ -455,9 +425,7 @@ final class VoiceInputManager {
                 let timings = try await startProviderRecording(
                     requestID: requestID,
                     startTime: startTime,
-                    engine: engine,
                     locale: locale,
-                    localeID: localeID,
                     provider: provider,
                     context: context,
                     metricAnnotation: metricAnnotation,
@@ -651,9 +619,7 @@ final class VoiceInputManager {
     private func startProviderRecording(
         requestID: Int,
         startTime: ContinuousClock.Instant,
-        engine: TranscriptionEngine,
         locale: Locale,
-        localeID: String,
         provider: any VoiceTranscriptionProvider,
         context: VoiceProviderContext,
         metricAnnotation: VoiceMetricAnnotation,

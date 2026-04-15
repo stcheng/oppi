@@ -75,13 +75,9 @@ interface TranscriptContent {
 
 interface ExtractedContent {
   title: string;
-  summaryText: string;
   userMessages: string;
   assistantMessages: string;
   toolNames: string;
-  summaryPath: string | null;
-  summaryMtimeMs: number;
-  summarySize: number;
 }
 
 function extractTranscriptContent(jsonlPath: string): TranscriptContent | null {
@@ -141,13 +137,9 @@ function extractIndexedContent(session: Session, jsonlPath?: string): ExtractedC
 
   return {
     title,
-    summaryText: "",
     userMessages: transcript?.userMessages ?? "",
     assistantMessages: transcript?.assistantMessages ?? "",
     toolNames: transcript?.toolNames ?? "",
-    summaryPath: null,
-    summaryMtimeMs: 0,
-    summarySize: 0,
   };
 }
 
@@ -219,7 +211,7 @@ export class SearchIndex {
       const row = this.db.prepare("SELECT value FROM fts_schema WHERE key = 'version'").get() as
         | { value: string }
         | undefined;
-      if (row?.value === "2") return; // Schema up to date
+      if (row?.value === "3") return; // Schema up to date
 
       // Version mismatch — drop and recreate
       this.db.exec("DROP TABLE IF EXISTS session_fts");
@@ -232,7 +224,6 @@ export class SearchIndex {
         session_id UNINDEXED,
         workspace_id UNINDEXED,
         title,
-        summary_text,
         user_messages,
         assistant_messages,
         tool_names,
@@ -244,9 +235,6 @@ export class SearchIndex {
         jsonl_path TEXT,
         jsonl_mtime_ms INTEGER,
         jsonl_size INTEGER,
-        summary_path TEXT,
-        summary_mtime_ms INTEGER,
-        summary_size INTEGER,
         indexed_at INTEGER
       );
 
@@ -255,7 +243,7 @@ export class SearchIndex {
         value TEXT
       );
 
-      INSERT OR REPLACE INTO fts_schema VALUES ('version', '2');
+      INSERT OR REPLACE INTO fts_schema VALUES ('version', '3');
     `);
   }
 
@@ -270,12 +258,11 @@ export class SearchIndex {
         session_id,
         workspace_id,
         title,
-        summary_text,
         user_messages,
         assistant_messages,
         tool_names
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?)
     `);
 
     this.stmtUpsertMeta = this.db.prepare(`
@@ -284,20 +271,17 @@ export class SearchIndex {
         jsonl_path,
         jsonl_mtime_ms,
         jsonl_size,
-        summary_path,
-        summary_mtime_ms,
-        summary_size,
         indexed_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?)
     `);
 
     this.stmtGetMeta = this.db.prepare(
-      "SELECT jsonl_mtime_ms, jsonl_size, summary_mtime_ms, summary_size FROM fts_meta WHERE session_id = ?",
+      "SELECT jsonl_mtime_ms, jsonl_size FROM fts_meta WHERE session_id = ?",
     );
 
     // Search across all workspaces
-    // Column weights: title=10, summary_text=6, user_messages=5, assistant_messages=1, tool_names=2
+    // Column weights: title=10, user_messages=5, assistant_messages=1, tool_names=2
     this.stmtSearch = this.db.prepare(`
       SELECT
         session_id AS sessionId,
@@ -307,9 +291,9 @@ export class SearchIndex {
           NULLIF(snippet(session_fts, 3, '<b>', '</b>', '...', 40), ''),
           NULLIF(snippet(session_fts, 4, '<b>', '</b>', '...', 40), ''),
           NULLIF(snippet(session_fts, 5, '<b>', '</b>', '...', 40), ''),
-          snippet(session_fts, 6, '<b>', '</b>', '...', 40)
+          snippet(session_fts, 2, '<b>', '</b>', '...', 40)
         ) as snippet,
-        bm25(session_fts, 0.0, 0.0, 10.0, 6.0, 5.0, 1.0, 2.0) as rank
+        bm25(session_fts, 0.0, 0.0, 10.0, 5.0, 1.0, 2.0) as rank
       FROM session_fts
       WHERE session_fts MATCH ?
       ORDER BY rank
@@ -326,9 +310,9 @@ export class SearchIndex {
           NULLIF(snippet(session_fts, 3, '<b>', '</b>', '...', 40), ''),
           NULLIF(snippet(session_fts, 4, '<b>', '</b>', '...', 40), ''),
           NULLIF(snippet(session_fts, 5, '<b>', '</b>', '...', 40), ''),
-          snippet(session_fts, 6, '<b>', '</b>', '...', 40)
+          snippet(session_fts, 2, '<b>', '</b>', '...', 40)
         ) as snippet,
-        bm25(session_fts, 0.0, 0.0, 10.0, 6.0, 5.0, 1.0, 2.0) as rank
+        bm25(session_fts, 0.0, 0.0, 10.0, 5.0, 1.0, 2.0) as rank
       FROM session_fts
       WHERE session_fts MATCH ? AND workspace_id = ?
       ORDER BY rank
@@ -401,7 +385,6 @@ export class SearchIndex {
         sessionId,
         session.workspaceId ?? "",
         content.title,
-        content.summaryText,
         content.userMessages,
         content.assistantMessages,
         content.toolNames,
@@ -412,9 +395,6 @@ export class SearchIndex {
         fileStat ? (jsonlPath ?? null) : null,
         fileStat ? Math.floor(fileStat.mtimeMs) : 0,
         fileStat?.size ?? 0,
-        content.summaryPath,
-        content.summaryMtimeMs,
-        content.summarySize,
         Date.now(),
       );
     })();
@@ -424,21 +404,12 @@ export class SearchIndex {
     sessionId: string,
     workspaceId: string,
     title: string,
-    summaryText: string,
     userMessages: string,
     assistantMessages: string,
     toolNames: string,
   ): void {
     this.stmtDelete.run(sessionId);
-    this.stmtUpsert.run(
-      sessionId,
-      workspaceId,
-      title,
-      summaryText,
-      userMessages,
-      assistantMessages,
-      toolNames,
-    );
+    this.stmtUpsert.run(sessionId, workspaceId, title, userMessages, assistantMessages, toolNames);
   }
 
   /** Remove a session from the index. */
@@ -524,26 +495,18 @@ export class SearchIndex {
 
         const content = extractIndexedContent(session, fileStat ? jsonlPath : undefined);
 
-        // Check if already indexed with same transcript + summary state
+        // Check if already indexed with same transcript state.
         const meta = this.stmtGetMeta.get(session.id) as
           | {
               jsonl_mtime_ms: number;
               jsonl_size: number;
-              summary_mtime_ms: number;
-              summary_size: number;
             }
           | undefined;
 
         const jsonlMtimeMs = fileStat ? Math.floor(fileStat.mtimeMs) : 0;
         const jsonlSize = fileStat?.size ?? 0;
 
-        if (
-          meta &&
-          meta.jsonl_mtime_ms === jsonlMtimeMs &&
-          meta.jsonl_size === jsonlSize &&
-          meta.summary_mtime_ms === content.summaryMtimeMs &&
-          meta.summary_size === content.summarySize
-        ) {
+        if (meta && meta.jsonl_mtime_ms === jsonlMtimeMs && meta.jsonl_size === jsonlSize) {
           skipped++;
           continue;
         }
@@ -552,7 +515,6 @@ export class SearchIndex {
           session.id,
           session.workspaceId ?? "",
           content.title,
-          content.summaryText,
           content.userMessages,
           content.assistantMessages,
           content.toolNames,
@@ -562,9 +524,6 @@ export class SearchIndex {
           fileStat ? (jsonlPath ?? null) : null,
           jsonlMtimeMs,
           jsonlSize,
-          content.summaryPath,
-          content.summaryMtimeMs,
-          content.summarySize,
           Date.now(),
         );
 

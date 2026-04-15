@@ -20,7 +20,7 @@ import WebKit
 /// - **CGContext draw** for Mermaid/LaTeX (via DocumentRenderPipeline)
 /// - **NSAttributedString.draw()** for Code/JSON/Plain (syntax-highlighted)
 /// - **UIView snapshot** for Markdown/Org (AssistantMarkdownContentView)
-/// - **WKWebView** for HTML (pdf() or takeSnapshot())
+/// - **WKWebView PDF pipeline** for HTML (pdf() + rasterization when needed)
 /// - **Pass-through** for image data / PDF data
 @MainActor
 enum FileShareService {
@@ -297,12 +297,6 @@ enum FileShareService {
 
     // MARK: - Rendering
 
-    /// Render content using the smart default format.
-    static func renderDefault(_ content: ShareableContent) async -> ShareItem {
-        let format = defaultFormat(for: content)
-        return await render(content, as: format)
-    }
-
     /// Render content to a specific format.
     static func render(_ content: ShareableContent, as format: ExportFormat) async -> ShareItem {
         let startNs = ChatTimelinePerf.timestampNs()
@@ -417,86 +411,18 @@ enum FileShareService {
         renderMarkdownToImage(DocumentRenderPipeline.orgToMarkdown(source))
     }
 
-    /// Render HTML to a full-page screenshot using WKWebView.
+    /// Render HTML image export through the PDF pipeline.
     ///
-    /// Briefly attaches an offscreen web view to the window hierarchy so the
-    /// GPU renders <canvas> elements (Chart.js, D3, etc.), then takes a
-    /// full-height snapshot via takeSnapshot(). Removes the web view after.
+    /// PDF-first avoids flaky GPU snapshot behavior for offscreen WKWebView and
+    /// keeps image/PDF exports consistent.
     private static func renderHTMLToImage(_ source: String) async -> UIImage {
-        let layoutWidth = textLayoutWidth
-        let config = WKWebViewConfiguration()
-        config.websiteDataStore = .nonPersistent()
-
-        let webView = WKWebView(
-            frame: CGRect(x: 0, y: 0, width: layoutWidth, height: 1),
-            configuration: config
-        )
-        webView.isOpaque = false
-
-        // Attach to window at z=0 (behind all other views) so GPU compositing
-        // is active. Can't use isHidden, alpha=0, or off-screen positioning —
-        // all three prevent the GPU from rendering, making takeSnapshot black.
-        let window = UIApplication.shared.connectedScenes
-            .compactMap { $0 as? UIWindowScene }
-            .first?.windows.first
-        webView.frame = CGRect(x: 0, y: 0, width: layoutWidth, height: 1)
-        webView.overrideUserInterfaceStyle = .light
-        window?.insertSubview(webView, at: 0)
-
-        defer {
-            webView.removeFromSuperview()
-        }
-
-        // Load HTML
-        let loaded = await withCheckedContinuation { (cont: CheckedContinuation<Bool, Never>) in
-            let delegate = PDFNavigationDelegate(continuation: cont)
-            webView.navigationDelegate = delegate
-            objc_setAssociatedObject(webView, &PDFNavigationDelegate.associatedKey, delegate, .OBJC_ASSOCIATION_RETAIN)
-            webView.loadHTMLString(source, baseURL: nil)
-        }
-
-        guard loaded else { return placeholderImage() }
-
-        // Wait for external resources (Chart.js, Leaflet, fonts)
-        await waitForContentReady(webView: webView)
-
-        // Measure full content height
-        let contentHeight = try? await webView.evaluateJavaScript(
-            "document.documentElement.scrollHeight"
-        ) as? CGFloat
-        let fullHeight = max(contentHeight ?? 600, 100)
-
-        // Cap at reasonable max to avoid memory issues
-        let maxHeight = maxHTMLHeight
-        let clampedHeight = min(fullHeight, maxHeight)
-
-        // Resize to full content
-        webView.frame = CGRect(x: 0, y: 0, width: layoutWidth, height: clampedHeight)
-        try? await Task.sleep(for: .milliseconds(300))
-
-        // Take full-page snapshot
-        let snapshotConfig = WKSnapshotConfiguration()
-        snapshotConfig.rect = CGRect(x: 0, y: 0, width: layoutWidth, height: clampedHeight)
-
-        do {
-            let snapshot = try await webView.takeSnapshot(configuration: snapshotConfig)
-            // Verify the snapshot isn't blank (all-black or all-white).
-            // Offscreen WKWebView on iOS 26 can produce empty snapshots
-            // when GPU compositing doesn't activate in time.
-            if isBlankImage(snapshot) {
-                return await rasterizeHTMLViaPDF(source)
-            }
-            return snapshot
-        } catch {
-            return await rasterizeHTMLViaPDF(source)
-        }
+        await rasterizeHTMLViaPDF(source)
     }
 
     /// Check if an image is effectively blank (solid color).
     ///
-    /// Samples multiple pixels to detect GPU-compositing failures (transparent or
-    /// pure-black images). Sampling a single center pixel caused false positives for
-    /// normal white-background HTML pages.
+    /// Shared by export validation tests and fallback heuristics.
+    // periphery:ignore - used by MarkdownTextTests via @testable import
     static func isBlankImage(_ image: UIImage) -> Bool {
         guard let cgImage = image.cgImage,
               cgImage.width > 10, cgImage.height > 10 else {
@@ -505,7 +431,6 @@ enum FileShareService {
 
         let colorSpace = CGColorSpaceCreateDeviceRGB()
         let w = cgImage.width, h = cgImage.height
-        // Sample center + four inset corners (20% from each edge)
         let insetX = w / 5, insetY = h / 5
         let points: [(Int, Int)] = [
             (w / 2, h / 2),
@@ -539,12 +464,10 @@ enum FileShareService {
         var blankCount = 0
         for (x, y) in points {
             guard let sample = samplePixel(x: x, y: y) else { continue }
-            // Transparent or near-black = GPU failure signature
             if sample.a < 10 || (sample.r < 5 && sample.g < 5 && sample.b < 5) {
                 blankCount += 1
             }
         }
-        // Require majority of sampled points to be blank before declaring failure
         return blankCount > points.count / 2
     }
 
@@ -974,8 +897,8 @@ enum FileShareService {
     /// Creates a temporary web view, loads the HTML, waits for all resources
     /// (CDN scripts, fonts, images) to load and JavaScript to execute, then
     /// uses `WKWebView.pdf(configuration:)` for a native PDF export with
-    /// selectable text and proper layout. Chart.js canvases are converted
-    /// to static images before capture to survive PDF rendering.
+    /// selectable text and proper layout. Canvas elements are rasterized to
+    /// static images in a library-agnostic pass before PDF capture.
     private static func renderHTMLToPDF(_ source: String) async -> Data {
         let layoutWidth = textLayoutWidth
         let config = WKWebViewConfiguration()
@@ -999,54 +922,49 @@ enum FileShareService {
 
         guard loaded else { return Data() }
 
-        // Wait for external resources (Chart.js, Leaflet, fonts) to load
-        // and JavaScript to execute. Poll document.readyState + check for
-        // Chart.js canvases that need time to animate and render.
+        // Wait for external resources (scripts, fonts, images) to load
+        // and JavaScript to execute.
         await waitForContentReady(webView: webView)
 
-        // Offscreen WKWebView doesn't trigger GPU canvas rendering, so
-        // Chart.js canvases are blank despite JS executing. Use Chart.js's
-        // toBase64Image() API which reads from the internal render state,
-        // then replace canvases with static <img> tags for PDF capture.
+        // Library-agnostic canvas freeze pass:
+        // convert each <canvas> into a static <img> so PDF capture does not
+        // depend on runtime GPU-backed canvas state.
+        //
+        // Optional page hooks:
+        // - window.__oppiReadyForCapture: Bool | () -> Bool
+        // - window.__oppiPrepareForCapture: () -> Void
         try? await webView.evaluateJavaScript("""
             (function() {
-                if (!window.Chart || !Chart.instances) return;
-                var keys = Object.keys(Chart.instances);
-                keys.forEach(function(k) {
-                    var chart = Chart.instances[k];
-                    // Disable animation and force a synchronous internal render
-                    chart.options.animation = false;
-                    chart.resize();
-                    chart.update('none');
-
-                    // Use Chart.js API to get rendered image
-                    var dataURL = chart.toBase64Image('image/png', 1);
-                    if (!dataURL || dataURL === 'data:,') return;
-
-                    var canvas = chart.canvas;
-                    var img = document.createElement('img');
-                    img.src = dataURL;
-                    img.style.width = canvas.offsetWidth + 'px';
-                    img.style.height = canvas.offsetHeight + 'px';
-                    img.style.display = 'block';
-                    if (canvas.parentNode) {
-                        canvas.parentNode.replaceChild(img, canvas);
+                try {
+                    if (typeof window.__oppiReadyForCapture === 'function') {
+                        if (window.__oppiReadyForCapture() === false) return false;
+                    } else if (window.__oppiReadyForCapture === false) {
+                        return false;
                     }
-                });
 
-                // Also handle any non-Chart.js canvases (e.g. Leaflet)
+                    if (typeof window.__oppiPrepareForCapture === 'function') {
+                        window.__oppiPrepareForCapture();
+                    }
+                } catch (_) {}
+
                 document.querySelectorAll('canvas').forEach(function(canvas) {
                     try {
                         var dataURL = canvas.toDataURL('image/png');
                         if (!dataURL || dataURL === 'data:,') return;
+
                         var img = document.createElement('img');
+                        var rect = canvas.getBoundingClientRect();
                         img.src = dataURL;
-                        img.style.width = canvas.offsetWidth + 'px';
-                        img.style.height = canvas.offsetHeight + 'px';
+                        img.style.width = rect.width + 'px';
+                        img.style.height = rect.height + 'px';
                         img.style.display = 'block';
-                        canvas.parentNode.replaceChild(img, canvas);
-                    } catch(e) {}
+                        if (canvas.parentNode) {
+                            canvas.parentNode.replaceChild(img, canvas);
+                        }
+                    } catch (_) {}
                 });
+
+                return true;
             })();
         """)
 
@@ -1058,7 +976,8 @@ enum FileShareService {
             "document.documentElement.scrollHeight"
         ) as? CGFloat
         let fullHeight = max(contentHeight ?? 600, 100)
-        webView.frame = CGRect(x: 0, y: 0, width: layoutWidth, height: fullHeight)
+        let clampedHeight = min(fullHeight, maxHTMLHeight)
+        webView.frame = CGRect(x: 0, y: 0, width: layoutWidth, height: clampedHeight)
 
         try? await Task.sleep(for: .milliseconds(50))
 
@@ -1072,8 +991,9 @@ enum FileShareService {
     }
 
     /// Poll the web view until document and external resources have loaded.
-    /// Waits up to 5 seconds for `document.readyState === 'complete'` and
-    /// any Chart.js instances to be registered.
+    /// Waits up to 5 seconds for document completion, web fonts, and inline
+    /// images to settle. An optional `window.__oppiReadyForCapture` hook can
+    /// return false to delay capture.
     private static func waitForContentReady(webView: WKWebView) async {
         let maxAttempts = 25  // 25 × 200ms = 5 seconds
         for _ in 0..<maxAttempts {
@@ -1082,12 +1002,24 @@ enum FileShareService {
             let ready = try? await webView.evaluateJavaScript("""
                 (function() {
                     if (document.readyState !== 'complete') return false;
-                    // If Chart.js is loaded, wait until instances are created
-                    if (typeof Chart !== 'undefined' && Chart.instances) {
-                        var keys = Object.keys(Chart.instances);
-                        // Charts exist in source but none created yet
-                        if (document.querySelectorAll('canvas').length > 0 && keys.length === 0) return false;
+
+                    if (document.fonts && document.fonts.status !== 'loaded') {
+                        return false;
                     }
+
+                    var images = Array.prototype.slice.call(document.images || []);
+                    for (var i = 0; i < images.length; i++) {
+                        if (!images[i].complete) return false;
+                    }
+
+                    try {
+                        if (typeof window.__oppiReadyForCapture === 'function') {
+                            if (window.__oppiReadyForCapture() === false) return false;
+                        } else if (window.__oppiReadyForCapture === false) {
+                            return false;
+                        }
+                    } catch (_) {}
+
                     return true;
                 })();
             """) as? Bool

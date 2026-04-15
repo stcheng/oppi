@@ -14,7 +14,6 @@ struct WorkspaceDetailView: View {
     @Environment(WorkspaceStore.self) private var workspaceStore
     @Environment(GitStatusStore.self) private var gitStatusStore
     @Environment(SessionActivityStore.self) private var activityStore
-    @Environment(AppNavigation.self) private var navigation
 
     @State private var isCreating = false
     @State private var error: String?

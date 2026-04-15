@@ -1,13 +1,11 @@
 import { randomUUID } from "node:crypto";
-import { mkdirSync, rmSync, utimesSync, writeFileSync, mkdtempSync } from "node:fs";
-import { homedir, tmpdir } from "node:os";
+import { rmSync, utimesSync, writeFileSync, mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { SearchIndex } from "./search-index.js";
 import type { Session } from "./types.js";
-
-const CONTINUATION_SUMMARY_DIR = join(homedir(), ".pi", "agent", "continuation", "sessions");
 
 function makeSession(overrides: Partial<Session> = {}): Session {
   return {
@@ -48,9 +46,8 @@ function writeJsonl(path: string, userText: string, assistantText: string): void
   writeFileSync(path, lines.join("\n") + "\n");
 }
 
-function writeSummary(piSessionId: string, body: Record<string, unknown>): string {
-  mkdirSync(CONTINUATION_SUMMARY_DIR, { recursive: true });
-  const path = join(CONTINUATION_SUMMARY_DIR, `${piSessionId}.json`);
+function writeSummary(baseDir: string, piSessionId: string, body: Record<string, unknown>): string {
+  const path = join(baseDir, `${piSessionId}.summary.json`);
   writeFileSync(path, JSON.stringify(body, null, 2) + "\n");
   return path;
 }
@@ -77,7 +74,7 @@ describe("SearchIndex decouples from continuation summaries", () => {
       "The transcript mentions zebra transcript clue but not the external blocker phrase.",
     );
 
-    const summaryPath = writeSummary(piSessionId, {
+    const summaryPath = writeSummary(dataDir, piSessionId, {
       title: "Search summary indexing",
       thread: "Memory discovery",
       goal: "Make continuation summaries searchable",
@@ -117,7 +114,7 @@ describe("SearchIndex decouples from continuation summaries", () => {
       "This transcript never mentions the changing blocker keywords.",
     );
 
-    const summaryPath = writeSummary(piSessionId, {
+    const summaryPath = writeSummary(dataDir, piSessionId, {
       title: "Initial blocker",
       goal: "Prove summary is ignored by core index",
       status: "blocked",
@@ -135,7 +132,7 @@ describe("SearchIndex decouples from continuation summaries", () => {
       expect(first.added).toBe(1);
       expect(index.search("otter blocker", "ws-1", 10)).toHaveLength(0);
 
-      writeSummary(piSessionId, {
+      writeSummary(dataDir, piSessionId, {
         title: "Updated blocker",
         goal: "Prove summary is ignored by core index",
         status: "blocked",
