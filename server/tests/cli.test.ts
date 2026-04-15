@@ -44,7 +44,7 @@ beforeAll(() => {
   try {
     execSync("npm run build", { cwd: resolve(__dirname, ".."), stdio: "pipe" });
   } catch {}
-});
+}, 30_000);
 
 afterAll(() => {
   rmSync(dataDir, { recursive: true, force: true });

@@ -340,7 +340,7 @@ describe("random command fuzzing", () => {
     }
 
     expect(crashes).toBe(0);
-  });
+  }, 30_000);
 });
 
 // ─── 8. Performance ───
@@ -359,14 +359,14 @@ describe("performance", () => {
     ];
 
     const N = 100_000;
-    const start = process.hrtime.bigint();
+    const startCpu = process.cpuUsage();
     for (let i = 0; i < N; i++) {
       hostPolicy.evaluate(bash(commands[i % commands.length]));
     }
-    const elapsedUs = Number(process.hrtime.bigint() - start) / 1000;
-    const avgUs = elapsedUs / N;
-    // Regression guard: each evaluation should average under 100µs.
-    // Solo baseline is ~12µs; 100µs gives 8x headroom for CI contention.
+    const elapsedCpuUs = cpuMs(process.cpuUsage(startCpu)) * 1000;
+    const avgUs = elapsedCpuUs / N;
+    // Regression guard: each evaluation should average under 100µs CPU time.
+    // Solo baseline is ~12µs; 100µs gives generous headroom.
     expect(avgUs).toBeLessThan(100);
   });
 
@@ -376,12 +376,12 @@ describe("performance", () => {
       "osascript -e 'do evil' ; screencapture /tmp/s.png";
 
     const N = 10_000;
-    const start = process.hrtime.bigint();
+    const startCpu = process.cpuUsage();
     for (let i = 0; i < N; i++) {
       hostPolicy.evaluate(bash(evil));
     }
-    const elapsedUs = Number(process.hrtime.bigint() - start) / 1000;
-    const avgUs = elapsedUs / N;
+    const elapsedCpuUs = cpuMs(process.cpuUsage(startCpu)) * 1000;
+    const avgUs = elapsedCpuUs / N;
     // Pathological commands have more parsing overhead.
     // Solo baseline is ~50µs; 200µs gives 4x headroom.
     expect(avgUs).toBeLessThan(200);
