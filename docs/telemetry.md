@@ -1,10 +1,10 @@
 # Telemetry and Privacy Policy (Oppi iOS + Server)
 
-## TL;DR (internal/TestFlight builds)
+## TL;DR
 
 - **No usage analytics are collected.**
 - **No feature usage logs are used for product analytics.**
-- Internal/TestFlight builds default to **remote diagnostics uploads enabled**.
+- Diagnostic uploads can be enabled or disabled via `OPPI_TELEMETRY_MODE`.
 
 The release flow enforces this with one gate:
 - `OPPI_TELEMETRY_MODE=internal`
@@ -27,7 +27,7 @@ This gate controls all diagnostics transports:
 3. Chat metrics upload (`POST /telemetry/chat-metrics`)
 4. Debug client-log upload (`POST /workspaces/:workspaceId/sessions/:sessionId/client-logs`)
 
-For the build-mode matrix, channel inventory, and full metric catalog, see the internal telemetry catalog (`.internal/telemetry-catalog.md`).
+Metric names and descriptions are defined in `server/src/types.ts` and `server/src/server-metric-registry.ts`.
 
 
 ## Explicit non-goals (what Oppi does not track)
@@ -81,8 +81,8 @@ This provides defense-in-depth if a client is misconfigured.
 
 ## Policy statement
 
-For current internal usage, Oppi’s default posture is:
+Current default posture:
 
-> **No behavior analytics, no usage tracking, and internal diagnostics uploads enabled by default.**
+> **No behavior analytics, no usage tracking. Diagnostic uploads are controlled only by `OPPI_TELEMETRY_MODE`.**
 
 Set `OPPI_TELEMETRY_MODE=public` to disable diagnostics uploads (Sentry, MetricKit, chat metrics, and client-log upload).

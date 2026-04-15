@@ -11,7 +11,7 @@ npm run check
 npm test
 ```
 
-For faster PR gates:
+Fast PR gate:
 
 ```bash
 npm run test:gate:pr-fast
@@ -27,13 +27,14 @@ From `clients/apple/`:
 xcodegen generate
 ```
 
-### Simulator build
+### Simulator build (public-safe command)
 
-Always use `sim-pool.sh` for simulator builds and tests.
+Use a unique `-derivedDataPath` so concurrent builds do not collide.
 
 ```bash
-bash ~/.pi/agent/skills/oppi-dev/scripts/sim-pool.sh \
-  run -- xcodebuild -project Oppi.xcodeproj -scheme Oppi build
+xcodebuild -project Oppi.xcodeproj -scheme Oppi build \
+  -destination 'platform=iOS Simulator,name=iPhone 16 Pro' \
+  -derivedDataPath .build/derived-data-build
 ```
 
 ### iOS unit tests
@@ -41,8 +42,9 @@ bash ~/.pi/agent/skills/oppi-dev/scripts/sim-pool.sh \
 Use the dedicated `OppiUnitTests` scheme for `OppiTests`.
 
 ```bash
-bash ~/.pi/agent/skills/oppi-dev/scripts/sim-pool.sh \
-  run -- xcodebuild -project Oppi.xcodeproj -scheme OppiUnitTests test \
+xcodebuild -project Oppi.xcodeproj -scheme OppiUnitTests test \
+  -destination 'platform=iOS Simulator,name=iPhone 16 Pro' \
+  -derivedDataPath .build/derived-data-tests \
   -only-testing:OppiTests
 ```
 
@@ -53,44 +55,32 @@ Why: the full `Oppi` scheme also builds `OppiPerfTests`, `OppiUITests`, and `Opp
 `xcodebuild` strips one trailing `()` from Swift Testing identifiers.
 Use double parentheses for function-level filters.
 
-Examples:
-
 ```bash
 # Suite
-bash ~/.pi/agent/skills/oppi-dev/scripts/sim-pool.sh \
-  run -- xcodebuild -project Oppi.xcodeproj -scheme OppiUnitTests test \
+xcodebuild -project Oppi.xcodeproj -scheme OppiUnitTests test \
+  -destination 'platform=iOS Simulator,name=iPhone 16 Pro' \
+  -derivedDataPath .build/derived-data-tests \
   -only-testing:OppiTests/MySuiteStruct
 
 # Function
-bash ~/.pi/agent/skills/oppi-dev/scripts/sim-pool.sh \
-  run -- xcodebuild -project Oppi.xcodeproj -scheme OppiUnitTests test \
+xcodebuild -project Oppi.xcodeproj -scheme OppiUnitTests test \
+  -destination 'platform=iOS Simulator,name=iPhone 16 Pro' \
+  -derivedDataPath .build/derived-data-tests \
   -only-testing:'OppiTests/MySuiteStruct/myTestFunc()()'
 ```
 
 ### UI / E2E / perf tests
 
-These still use the full `Oppi` scheme or their dedicated scripts, because they intentionally exercise non-unit-test bundles.
-
-```bash
-# E2E lane
-bash ~/.pi/agent/skills/oppi-dev/scripts/oppi-workflow.sh sim-test
-```
-
-### Coverage
-
-```bash
-bash ~/.pi/agent/skills/oppi-dev/scripts/apple/check-coverage.sh
-```
+Use project-specific scripts or your CI lane. These intentionally exercise non-unit-test bundles.
 
 ### Protocol checks
 
-```bash
-bash ~/.pi/agent/skills/oppi-dev/scripts/check-protocol.sh
-```
+Run the protocol-related test suites from `server/` and `clients/apple/` when editing message contracts.
+
+## Internal maintainer note
+
+Maintainers may use additional local wrappers (for example simulator pool scripts) to coordinate parallel agent runs. Those wrappers are optional and not required for public contributors.
 
 ## Failure investigation
 
-`sim-pool.sh` writes full output to a log file and prints the log path in its summary.
-Read the log file directly instead of rerunning the same build blindly.
-
-Do not pipe `sim-pool.sh` through `grep`, `tail`, or `head`.
+When a wrapper script writes an external log path, inspect the log directly instead of rerunning blindly.
