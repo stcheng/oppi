@@ -78,14 +78,30 @@ describe("ModelCatalog", () => {
       expect(models[1].id).toBe("openai/gpt-5.3-codex");
     });
 
-    it("falls back to all models when available is empty", () => {
+    it("returns an empty catalog when no providers are authenticated/configured", () => {
       const registry = makeRegistry([], [SONNET]);
       const catalog = new ModelCatalog(registry, makeStorage());
 
       catalog.refresh();
 
-      expect(catalog.getAll()).toHaveLength(1);
-      expect(catalog.getAll()[0].provider).toBe("anthropic");
+      expect(catalog.getAll()).toEqual([]);
+    });
+
+    it("keeps configured models while hiding unauthenticated built-ins", () => {
+      const local = {
+        id: "Qwen3.5-27B-8bit",
+        name: "Qwen3.5 27B (Local VLM)",
+        provider: "omlx",
+        contextWindow: 262144,
+      };
+      const registry = makeRegistry([local], [SONNET, GPT, local]);
+      const catalog = new ModelCatalog(registry, makeStorage());
+
+      catalog.refresh();
+
+      const models = catalog.getAll();
+      expect(models).toHaveLength(1);
+      expect(models[0].id).toBe("omlx/Qwen3.5-27B-8bit");
     });
 
     it("deduplicates by provider/id", () => {
@@ -317,7 +333,7 @@ describe("ModelCatalog", () => {
       expect(catalog.getAll()).toHaveLength(3);
     });
 
-    it("applies allowlist to the fallback-to-all path", () => {
+    it("returns empty when allowlist is set but no model is authenticated/configured", () => {
       const registry = makeRegistry([], [SONNET, GPT, GEMINI]);
       const catalog = new ModelCatalog(registry, makeStorage(), [
         "openai/gpt-5.3-codex",
@@ -325,9 +341,7 @@ describe("ModelCatalog", () => {
 
       catalog.refresh();
 
-      const models = catalog.getAll();
-      expect(models).toHaveLength(1);
-      expect(models[0].id).toBe("openai/gpt-5.3-codex");
+      expect(catalog.getAll()).toEqual([]);
     });
 
     it("returns empty catalog when no models match the allowlist", () => {

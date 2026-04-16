@@ -79,19 +79,20 @@ export class ModelCatalog {
     try {
       this.registry.refresh();
       const available = this.registry.getAvailable();
-      if (available.length > 0) {
-        this.catalog = sdkModelsToModelInfo(available).filter((m) =>
-          isModelAllowed(m, this.allowlist),
-        );
-        this.updatedAt = Date.now();
+      this.catalog = sdkModelsToModelInfo(available).filter((m) =>
+        isModelAllowed(m, this.allowlist),
+      );
+      this.updatedAt = Date.now();
+
+      if (this.catalog.length > 0) {
         return;
       }
 
-      // Fall back to all registered models (includes those without auth)
-      const all = this.registry.getAll();
-      if (all.length > 0) {
-        this.catalog = sdkModelsToModelInfo(all).filter((m) => isModelAllowed(m, this.allowlist));
-        this.updatedAt = Date.now();
+      const allCount = this.registry.getAll().length;
+      if (allCount > 0) {
+        console.warn(
+          `${ts()} [models] no authenticated/configured models available; hiding ${allCount} unauthenticated model(s)`,
+        );
         return;
       }
 
