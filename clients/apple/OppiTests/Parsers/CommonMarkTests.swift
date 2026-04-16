@@ -860,6 +860,42 @@ struct FlatSegmentTextTests {
         #expect(String(after.characters).contains("After paragraph."))
     }
 
+    @Test func codeBlockInsideListItemStillProducesCodeSegment() {
+        let markdown = """
+        1. Start the server:
+
+           ```bash
+           cd server
+           node dist/src/cli.js serve
+           ```
+
+        2. Continue setup.
+        """
+
+        let blocks = parseCommonMark(markdown)
+        let segments = FlatSegment.build(from: blocks)
+
+        #expect(segments.count == 3)
+
+        guard case .text(let before) = segments[0] else {
+            Issue.record("Expected first segment to be text")
+            return
+        }
+        guard case .codeBlock(let language, let code) = segments[1] else {
+            Issue.record("Expected second segment to be code block")
+            return
+        }
+        guard case .text(let after) = segments[2] else {
+            Issue.record("Expected third segment to be text")
+            return
+        }
+
+        #expect(String(before.characters).contains("1. Start the server:"))
+        #expect(language == "bash")
+        #expect(code == "cd server\nnode dist/src/cli.js serve")
+        #expect(String(after.characters).contains("2. Continue setup."))
+    }
+
     @Test func fourBacktickFenceCodeBlockCleanInFlatSegments() {
         let markdown = "Before.\n\n````swift\nfunc foo() {\n    return 1\n}\n```\n````\n\nAfter.\n"
         let blocks = parseCommonMark(markdown)

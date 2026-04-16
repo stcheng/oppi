@@ -42,6 +42,9 @@ final class NativeMermaidBlockView: UIView {
 
     private var currentCode: String?
     private var isShowingDiagram = false
+    /// Natural (unscaled) diagram size from the latest successful render.
+    /// Used to recompute inline height if the view width changes later.
+    private var renderedDiagramNaturalSize: CGSize?
     private var renderTask: Task<Void, Never>?
     private var selectedTextPiRouter: SelectedTextPiActionRouter?
     private var selectedTextSourceContext: SelectedTextSourceContext?
@@ -89,6 +92,23 @@ final class NativeMermaidBlockView: UIView {
         ])
     }
 
+    override func layoutSubviews() {
+        super.layoutSubviews()
+
+        // Async renders can complete before Auto Layout settles the final
+        // message-bubble width. Recompute height on later width changes so
+        // diagrams don't stay clamped until an unrelated snapshot reconfigure.
+        guard isShowingDiagram,
+              let naturalSize = renderedDiagramNaturalSize,
+              naturalSize.width > 0,
+              naturalSize.height > 0,
+              bounds.width > 0 else {
+            return
+        }
+
+        updateDiagramHeight(naturalSize: naturalSize, availableWidth: bounds.width)
+    }
+
     // MARK: - Public API
 
     /// Show as a code block (streaming / fence still open).
@@ -100,6 +120,7 @@ final class NativeMermaidBlockView: UIView {
         diagramImageView.isHidden = true
         diagramHeightConstraint?.isActive = false
         isShowingDiagram = false
+        renderedDiagramNaturalSize = nil
 
         codeBlockView.apply(language: language, code: code, palette: palette, isOpen: isOpen)
         currentCode = code
@@ -209,13 +230,12 @@ final class NativeMermaidBlockView: UIView {
     // MARK: - Private
 
     private func showDiagram(image: UIImage, naturalSize: CGSize, palette: ThemePalette) {
-        let availableWidth = bounds.width > 0
-            ? bounds.width
-            : (window?.windowScene?.screen.bounds.width ?? 360)
-        let scale = min(1.0, availableWidth / naturalSize.width)
-        let displayHeight = min(naturalSize.height * scale, Self.maxInlineHeight)
+        renderedDiagramNaturalSize = naturalSize
 
-        diagramHeightConstraint?.constant = displayHeight
+        let fallbackWidth = window?.windowScene?.screen.bounds.width ?? 360
+        let availableWidth = bounds.width > 0 ? bounds.width : fallbackWidth
+        updateDiagramHeight(naturalSize: naturalSize, availableWidth: availableWidth)
+
         diagramHeightConstraint?.isActive = true
         diagramImageView.backgroundColor = UIColor(palette.bgHighlight)
         diagramImageView.image = image
@@ -230,11 +250,26 @@ final class NativeMermaidBlockView: UIView {
         superview?.layoutIfNeeded()
     }
 
+    private func updateDiagramHeight(naturalSize: CGSize, availableWidth: CGFloat) {
+        guard availableWidth > 0, naturalSize.width > 0, naturalSize.height > 0 else { return }
+
+        let scale = min(1.0, availableWidth / naturalSize.width)
+        let displayHeight = min(naturalSize.height * scale, Self.maxInlineHeight)
+        let clampedHeight = max(1, displayHeight)
+
+        if abs((diagramHeightConstraint?.constant ?? 0) - clampedHeight) > 0.5 {
+            diagramHeightConstraint?.constant = clampedHeight
+            invalidateIntrinsicContentSize()
+            superview?.setNeedsLayout()
+        }
+    }
+
     private func showAsCodeFallback(code: String, palette: ThemePalette) {
         codeBlockView.isHidden = false
         diagramImageView.isHidden = true
         diagramHeightConstraint?.isActive = false
         isShowingDiagram = false
+        renderedDiagramNaturalSize = nil
         codeBlockView.apply(language: "mermaid", code: code, palette: palette, isOpen: false)
     }
 

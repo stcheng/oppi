@@ -195,6 +195,59 @@ struct AssistantTimelineRowContentViewTests {
     }
 
     @MainActor
+    @Test func mermaidInlineDiagramRecomputesHeightWhenWidthChanges() {
+        let mermaidCode = """
+        flowchart LR
+            A[Second Brain] --> B[Capture]
+            A --> C[Process]
+            A --> D[Organize]
+            A --> E[Retrieve]
+            A --> F[Express]
+            A --> G[Review]
+            A --> H[Improve]
+            B --> B1[Quick inbox]
+            B --> B2[Voice notes]
+            C --> C1[Daily triage]
+            C --> C2[Link notes]
+        """
+
+        let view = NativeMermaidBlockView()
+        let container = UIView(frame: CGRect(x: 0, y: 0, width: 210, height: 900))
+        view.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(view)
+        NSLayoutConstraint.activate([
+            view.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            view.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            view.topAnchor.constraint(equalTo: container.topAnchor),
+        ])
+
+        container.layoutIfNeeded()
+        view.applyAsDiagramSync(code: mermaidCode, palette: ThemeRuntimeState.currentPalette())
+        container.layoutIfNeeded()
+
+        let narrowHeight = view.systemLayoutSizeFitting(
+            CGSize(width: 210, height: UIView.layoutFittingCompressedSize.height),
+            withHorizontalFittingPriority: .required,
+            verticalFittingPriority: .fittingSizeLevel
+        ).height
+
+        container.frame.size.width = 330
+        container.setNeedsLayout()
+        container.layoutIfNeeded()
+
+        let wideHeight = view.systemLayoutSizeFitting(
+            CGSize(width: 330, height: UIView.layoutFittingCompressedSize.height),
+            withHorizontalFittingPriority: .required,
+            verticalFittingPriority: .fittingSizeLevel
+        ).height
+
+        #expect(
+            wideHeight > narrowHeight + 10,
+            "Mermaid inline height should grow when width grows (narrow=\(narrowHeight), wide=\(wideHeight))"
+        )
+    }
+
+    @MainActor
     @Test func rendersTableInSeparateView() throws {
         let text = """
         Here is a table:

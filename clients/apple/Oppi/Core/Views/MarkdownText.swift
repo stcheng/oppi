@@ -238,17 +238,109 @@ enum FlatSegment: Sendable {
             hasPendingText = true
         }
 
+        func appendCodeSegment(language: String?, code: String) {
+            if let lang = language, SyntaxLanguage.detect(lang) == .mermaid {
+                result.append(.mermaidDiagram(code: code))
+            } else if let lang = language, SyntaxLanguage.detect(lang) == .latex {
+                result.append(.latexBlock(code: code))
+            } else {
+                result.append(.codeBlock(language: language, code: code))
+            }
+        }
+
+        // Render list item text as attributed lines, but keep nested block-level
+        // nodes (fenced code, tables, thematic breaks) as standalone segments.
+        // This preserves code fences inside list items instead of dropping them.
+        func appendListBlock(
+            items: [[MarkdownBlock]],
+            markerForItem: (Int) -> AttributedString,
+            continuationForItem: (Int) -> AttributedString,
+            transformItemContent: (inout AttributedString, Int) -> Void = { _, _ in }
+        ) {
+            var textLines: [AttributedString] = []
+            textLines.reserveCapacity(items.count)
+
+            func flushListTextLines() {
+                guard !textLines.isEmpty else { return }
+                var merged = AttributedString()
+                for (lineIndex, line) in textLines.enumerated() {
+                    if lineIndex > 0 {
+                        merged.append(AttributedString("\n"))
+                    }
+                    merged.append(line)
+                }
+                appendTextBlock(merged)
+                textLines.removeAll(keepingCapacity: true)
+            }
+
+            for (itemIndex, itemBlocks) in items.enumerated() {
+                var itemHasPrefix = false
+                var emittedAnyRenderable = false
+
+                func appendItemText(_ content: AttributedString) {
+                    guard !content.characters.isEmpty else { return }
+                    var rendered = content
+                    transformItemContent(&rendered, itemIndex)
+                    guard !rendered.characters.isEmpty else { return }
+
+                    let prefix = itemHasPrefix ? continuationForItem(itemIndex) : markerForItem(itemIndex)
+                    var line = prefix
+                    line.append(rendered)
+                    textLines.append(line)
+                    itemHasPrefix = true
+                    emittedAnyRenderable = true
+                }
+
+                for itemBlock in itemBlocks {
+                    switch itemBlock {
+                    case .codeBlock(let language, let code):
+                        if !itemHasPrefix {
+                            textLines.append(markerForItem(itemIndex))
+                            itemHasPrefix = true
+                        }
+                        flushListTextLines()
+                        flushPendingText()
+                        appendCodeSegment(language: language, code: code)
+                        emittedAnyRenderable = true
+
+                    case .table(let headers, let rows):
+                        if !itemHasPrefix {
+                            textLines.append(markerForItem(itemIndex))
+                            itemHasPrefix = true
+                        }
+                        flushListTextLines()
+                        flushPendingText()
+                        result.append(.table(headers: headers, rows: rows))
+                        emittedAnyRenderable = true
+
+                    case .thematicBreak:
+                        if !itemHasPrefix {
+                            textLines.append(markerForItem(itemIndex))
+                            itemHasPrefix = true
+                        }
+                        flushListTextLines()
+                        flushPendingText()
+                        result.append(.thematicBreak)
+                        emittedAnyRenderable = true
+
+                    default:
+                        appendItemText(Self.attributedString(for: itemBlock, palette: palette))
+                    }
+                }
+
+                if !emittedAnyRenderable, !itemHasPrefix {
+                    textLines.append(markerForItem(itemIndex))
+                }
+            }
+
+            flushListTextLines()
+        }
+
         for block in blocks {
             switch block {
             case .codeBlock(let language, let code):
                 flushPendingText()
-                if let lang = language, SyntaxLanguage.detect(lang) == .mermaid {
-                    result.append(.mermaidDiagram(code: code))
-                } else if let lang = language, SyntaxLanguage.detect(lang) == .latex {
-                    result.append(.latexBlock(code: code))
-                } else {
-                    result.append(.codeBlock(language: language, code: code))
-                }
+                appendCodeSegment(language: language, code: code)
 
             case .table(let headers, let rows):
                 flushPendingText()
@@ -276,6 +368,39 @@ enum FlatSegment: Sendable {
                     let attributed = Self.attributedString(for: block, palette: palette)
                     appendTextBlock(attributed)
                 }
+
+            case .unorderedList(let items):
+                appendListBlock(
+                    items: items,
+                    markerForItem: { _ in
+                        var marker = AttributedString("  • ")
+                        marker.uiKit.foregroundColor = UIColor(palette.mdListBullet)
+                        return marker
+                    },
+                    continuationForItem: { _ in AttributedString("    ") }
+                )
+
+            case .orderedList(let start, let items):
+                let listFont = Self.listBodyFont()
+                appendListBlock(
+                    items: items,
+                    markerForItem: { itemIndex in
+                        let markerText = "  \(start + itemIndex). "
+                        var marker = AttributedString(markerText)
+                        marker.uiKit.foregroundColor = UIColor(palette.mdListBullet)
+                        marker.uiKit.font = listFont
+                        return marker
+                    },
+                    continuationForItem: { itemIndex in
+                        let markerText = "  \(start + itemIndex). "
+                        var continuation = AttributedString(String(repeating: " ", count: markerText.count))
+                        continuation.uiKit.font = listFont
+                        return continuation
+                    },
+                    transformItemContent: { content, _ in
+                        Self.applyListFont(to: &content, listFont: listFont)
+                    }
+                )
 
             default:
                 let attributed = Self.attributedString(for: block, palette: palette)
