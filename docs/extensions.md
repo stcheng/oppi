@@ -59,10 +59,11 @@ flowchart TD
 
 ### Host extensions
 
-At session startup, Oppi starts from pi's normal discovered extension set for the session cwd:
+At session startup, Oppi starts from pi's normal extension set for the session cwd:
 
-- `~/.pi/agent/extensions/`
-- `.pi/extensions/`
+- auto-discovered extension dirs (`~/.pi/agent/extensions/`, `.pi/extensions/`)
+- settings-declared extension paths (`settings.json` `extensions` arrays)
+- package-provided extensions from `pi install` (git/npm/local package sources)
 
 Oppi does not replace that mechanism. It filters it.
 
@@ -95,13 +96,12 @@ If a workspace sets `extensions`, include `ask` and `spawn_agent` explicitly if 
 
 Behavior:
 
-- always scans `~/.pi/agent/extensions/`
-- also scans `<workspace cwd>/.pi/extensions/` when the client provides a cwd
+- resolves extensions via pi's settings/package resolver (same source graph pi uses at runtime)
+- includes auto-discovered dirs (`~/.pi/agent/extensions/`, `<cwd>/.pi/extensions/`)
+- includes package-installed extensions (for example `~/.pi/agent/git/...` and npm installs)
+- includes settings-declared local extension paths
 - excludes managed names
-- deduplicates by extension name for UI display
-- prefers the project-local entry when the same name exists in both places
-
-That last rule is a UI choice so the picker matches the workspace context cleanly.
+- deduplicates by extension name for UI display using pi precedence rules (project > user > package)
 
 ## Mobile rendering gotcha
 

@@ -1,7 +1,7 @@
 import type { ServerResponse } from "node:http";
 
 import { discoverProjects, scanDirectories } from "../host.js";
-import { listHostExtensions } from "../extension-loader.js";
+import { listConfiguredHostExtensions } from "../extension-loader.js";
 import { FIRST_PARTY_EXTENSION_NAMES } from "../../extensions/first-party.js";
 import type { RouteContext, RouteDispatcher, RouteHelpers } from "./types.js";
 
@@ -15,9 +15,9 @@ export function createSkillRoutes(ctx: RouteContext, helpers: RouteHelpers): Rou
     helpers.json(res, { skills: ctx.skillRegistry.list(), changed: event });
   }
 
-  function handleListExtensions(url: URL, res: ServerResponse): void {
+  async function handleListExtensions(url: URL, res: ServerResponse): Promise<void> {
     const cwd = url.searchParams.get("cwd") ?? undefined;
-    const piExtensions = listHostExtensions({ cwd }).map((ext) => ({
+    const piExtensions = (await listConfiguredHostExtensions({ cwd })).map((ext) => ({
       ...ext,
       source: "pi" as const,
     }));
@@ -154,7 +154,7 @@ export function createSkillRoutes(ctx: RouteContext, helpers: RouteHelpers): Rou
     }
 
     if (path === "/extensions" && method === "GET") {
-      handleListExtensions(url, res);
+      await handleListExtensions(url, res);
       return true;
     }
 

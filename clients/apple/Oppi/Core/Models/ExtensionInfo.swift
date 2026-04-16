@@ -3,8 +3,8 @@ import Foundation
 /// Host extension metadata from `GET /extensions`.
 ///
 /// The server returns oppi first-party extensions (ask, spawn_agent) and
-/// pi host extensions from `~/.pi/agent/extensions` and project-local
-/// `.pi/extensions`.
+/// pi extensions resolved from auto-discovered directories plus installed
+/// packages/settings paths.
 struct ExtensionInfo: Codable, Identifiable, Sendable, Equatable {
     let name: String
     let path: String
@@ -20,7 +20,12 @@ struct ExtensionInfo: Codable, Identifiable, Sendable, Equatable {
     var locationLabel: String {
         if isOppi { return "oppi" }
         if path.contains("/.pi/extensions/") { return ".pi/extensions" }
-        return "~/.pi/agent/extensions"
+        if path.contains("/.pi/agent/extensions/") { return "~/.pi/agent/extensions" }
+        if path.contains("/.pi/git/") { return ".pi/git (package)" }
+        if path.contains("/.pi/agent/git/") { return "~/.pi/agent/git (package)" }
+        if path.contains("/.pi/npm/") { return ".pi/npm (package)" }
+        if path.contains("/node_modules/") { return "npm package" }
+        return "pi package/local path"
     }
 
     var subtitle: String {

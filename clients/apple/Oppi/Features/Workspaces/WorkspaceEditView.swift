@@ -330,7 +330,7 @@ struct WorkspaceEditView: View {
             } header: {
                 Text("Pi Extensions")
             } footer: {
-                Text("From ~/.pi/agent/extensions\(hostMount.isEmpty ? "" : " and project .pi/extensions")")
+                Text("From pi extension dirs and installed packages\(hostMount.isEmpty ? "" : " (including project .pi/extensions)")")
             }
         }
     }

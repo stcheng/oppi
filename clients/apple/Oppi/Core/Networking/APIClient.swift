@@ -575,8 +575,8 @@ actor APIClient {
 
     /// List available host extensions for the current workspace context.
     ///
-    /// When `cwd` is provided, the server also scans `<cwd>/.pi/extensions` in addition to
-    /// the global `~/.pi/agent/extensions` directory.
+    /// The server resolves extensions using pi's resource resolver, including
+    /// auto-discovered dirs, settings paths, and installed package extensions.
     func listExtensions(cwd: String? = nil) async throws -> [ExtensionInfo] {
         var path = "/extensions"
         if let cwd, !cwd.isEmpty {

@@ -6,11 +6,18 @@
 
 import { existsSync, readdirSync, statSync } from "node:fs";
 import { homedir } from "node:os";
-import { extname, join, resolve } from "node:path";
+import { basename, extname, join, resolve } from "node:path";
+
+import {
+  DefaultPackageManager,
+  SettingsManager,
+  type ResolvedResource,
+} from "@mariozechner/pi-coding-agent";
 
 import { isManagedExtensionName } from "../extensions/first-party.js";
 
-const HOST_EXTENSIONS_DIR = join(homedir(), ".pi", "agent", "extensions");
+const DEFAULT_AGENT_DIR = join(homedir(), ".pi", "agent");
+const HOST_EXTENSIONS_DIR = join(DEFAULT_AGENT_DIR, "extensions");
 
 const EXTENSION_NAME_RE = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/;
 
@@ -45,6 +52,16 @@ export interface ListHostExtensionsOptions {
   cwd?: string;
   /** Override global directory for tests. */
   globalDir?: string;
+}
+
+export interface ListConfiguredHostExtensionsOptions {
+  /**
+   * Workspace cwd/hostMount used to resolve project-local settings/packages.
+   * When omitted, only user/global scope is considered.
+   */
+  cwd?: string;
+  /** Override pi agent dir for tests. */
+  agentDir?: string;
 }
 
 /** Validate extension name accepted by workspace API. */
@@ -85,6 +102,44 @@ export function listHostExtensions(options: ListHostExtensionsOptions = {}): Hos
   }
 
   return Array.from(byName.values()).sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/**
+ * List host extensions using pi's package/settings resolver.
+ *
+ * This includes:
+ * - auto-discovered global/project extension directories
+ * - settings-declared local extension paths
+ * - package-provided extensions from `pi install` (git/npm/local package sources)
+ *
+ * Falls back to directory scanning if package resolution fails.
+ */
+export async function listConfiguredHostExtensions(
+  options: ListConfiguredHostExtensionsOptions = {},
+): Promise<HostExtensionInfo[]> {
+  const cwd = resolveWorkspaceCwd(options.cwd, homedir()) ?? homedir();
+  const agentDir = options.agentDir ?? DEFAULT_AGENT_DIR;
+
+  try {
+    const settingsManager = SettingsManager.create(cwd, agentDir);
+    const packageManager = new DefaultPackageManager({
+      cwd,
+      agentDir,
+      settingsManager,
+    });
+
+    // Do not auto-install missing packages from the server route.
+    const resolved = await packageManager.resolve(async () => "skip");
+    return listFromResolvedResources(resolved.extensions);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.warn(`[extensions] Failed to resolve configured extensions: ${message}`);
+
+    return listHostExtensions({
+      cwd: options.cwd,
+      globalDir: join(agentDir, "extensions"),
+    });
+  }
 }
 
 /**
@@ -147,6 +202,65 @@ export function extensionInstallName(extension: ResolvedExtension): string {
   return extension.name;
 }
 
+function listFromResolvedResources(resources: ResolvedResource[]): HostExtensionInfo[] {
+  // DefaultPackageManager.resolve() already returns resources in pi precedence order.
+  // Keep first name collision to mirror native pi behavior.
+  const byName = new Map<string, HostExtensionInfo>();
+
+  for (const resource of resources) {
+    if (!resource.enabled) {
+      continue;
+    }
+
+    const extension = toHostExtensionInfo(resource.path);
+    if (!extension) {
+      continue;
+    }
+
+    if (byName.has(extension.name)) {
+      continue;
+    }
+
+    byName.set(extension.name, extension);
+  }
+
+  return Array.from(byName.values()).sort((a, b) => a.name.localeCompare(b.name));
+}
+
+function toHostExtensionInfo(absPath: string): HostExtensionInfo | null {
+  const kind = detectKind(absPath);
+  if (!kind) {
+    return null;
+  }
+
+  const fileName = basename(absPath);
+  const suffix = extname(fileName);
+  let name = fileName;
+
+  if (kind === "file") {
+    if (suffix !== ".ts" && suffix !== ".js") {
+      return null;
+    }
+
+    name = fileName.slice(0, -suffix.length);
+
+    // Skip test files — they are not loadable extensions.
+    if (name.endsWith(".test") || name.endsWith(".spec")) {
+      return null;
+    }
+  }
+
+  if (!isValidExtensionName(name) || isManagedExtensionName(name)) {
+    return null;
+  }
+
+  return {
+    name,
+    path: absPath,
+    kind,
+  };
+}
+
 function discoverExtensionsInDir(dir: string): HostExtensionInfo[] {
   if (!existsSync(dir)) {
     return [];
@@ -160,33 +274,14 @@ function discoverExtensionsInDir(dir: string): HostExtensionInfo[] {
     }
 
     const absPath = join(dir, entry);
-    const kind = detectKind(absPath);
-    if (!kind) {
+    const extension = toHostExtensionInfo(absPath);
+    if (!extension) {
       continue;
     }
 
-    const ext = extname(entry);
-    let name = entry;
-
-    if (kind === "file") {
-      if (ext !== ".ts" && ext !== ".js") {
-        continue;
-      }
-      name = entry.slice(0, -ext.length);
-
-      // Skip test files — they are not loadable extensions.
-      if (name.endsWith(".test") || name.endsWith(".spec")) {
-        continue;
-      }
-    }
-
-    if (!isValidExtensionName(name) || isManagedExtensionName(name)) {
-      continue;
-    }
-
-    const existing = byName.get(name);
-    if (!existing || (existing.kind === "file" && kind === "directory")) {
-      byName.set(name, { name, path: absPath, kind });
+    const existing = byName.get(extension.name);
+    if (!existing || (existing.kind === "file" && extension.kind === "directory")) {
+      byName.set(extension.name, extension);
     }
   }
 
@@ -194,13 +289,22 @@ function discoverExtensionsInDir(dir: string): HostExtensionInfo[] {
 }
 
 function getProjectExtensionsDir(cwd: string | undefined): string | null {
-  const raw = cwd?.trim();
-  if (!raw) {
+  const resolvedCwd = resolveWorkspaceCwd(cwd);
+  if (!resolvedCwd) {
     return null;
   }
 
+  return join(resolvedCwd, ".pi", "extensions");
+}
+
+function resolveWorkspaceCwd(cwd: string | undefined, fallback?: string): string | null {
+  const raw = cwd?.trim();
+  if (!raw) {
+    return fallback ?? null;
+  }
+
   const expanded = raw === "~" || raw.startsWith("~/") ? raw.replace(/^~(?=\/|$)/, homedir()) : raw;
-  return join(resolve(expanded), ".pi", "extensions");
+  return resolve(expanded);
 }
 
 function resolveByName(name: string): ResolvedExtension | null {
