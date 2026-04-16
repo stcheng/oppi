@@ -22,7 +22,6 @@ export interface SessionLifecycleCoordinatorDeps {
   destroySessionGuard: (sessionId: string) => void;
   releaseSession: (identity: { workspaceId: string; sessionId: string }) => void;
   stopSession: (sessionId: string) => Promise<void>;
-  onSessionDisposed?: (sessionId: string) => void;
   getSessionIdleTimeoutMs: () => number;
   /** Whether children automatically stop after completing work. */
   getChildAutoStopWhenDone: () => boolean;
@@ -78,13 +77,6 @@ export class SessionLifecycleCoordinator {
 
     this.deps.destroySessionGuard(active.session.id);
     active.pendingUIRequests.clear();
-
-    // Shutdown cleanup can be slow (e.g. continuation summary extraction).
-    // Register the post-cleanup callback first, then dispose without blocking
-    // session teardown on the cleanup work itself.
-    active.sdkBackend.onShutdownCleanupComplete(() => {
-      this.deps.onSessionDisposed?.(active.session.id);
-    });
 
     if (!active.sdkBackend.isDisposed) {
       await active.sdkBackend.dispose();

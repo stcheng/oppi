@@ -64,22 +64,15 @@ function makeDeps(
 // ─── Tests ───
 
 describe("SessionLifecycleCoordinator.handleSessionEnd", () => {
-  it("tears down immediately and reindexes after shutdown cleanup completes", async () => {
+  it("tears down immediately and disposes the backend", async () => {
     const order: string[] = [];
     const active = makeActiveSession();
-    let cleanupListener: (() => void) | undefined;
 
-    active.sdkBackend.onShutdownCleanupComplete = vi.fn((listener: () => void) => {
-      cleanupListener = listener;
-    }) as never;
     active.sdkBackend.dispose = vi.fn(async () => {
       order.push("dispose");
     }) as never;
 
     const deps = makeDeps(active, {
-      onSessionDisposed: vi.fn(() => {
-        order.push("reindex");
-      }),
       broadcast: vi.fn(() => {
         order.push("broadcast");
       }),
@@ -88,15 +81,16 @@ describe("SessionLifecycleCoordinator.handleSessionEnd", () => {
 
     await coordinator.handleSessionEnd("key", "agent_end");
 
-    expect(active.sdkBackend.onShutdownCleanupComplete).toHaveBeenCalledTimes(1);
     expect(active.sdkBackend.dispose).toHaveBeenCalledTimes(1);
-    expect(deps.onSessionDisposed).not.toHaveBeenCalled();
+    expect(active.session.status).toBe("stopped");
+    expect(deps.persistSessionNow).toHaveBeenCalledWith("key", active.session);
+    expect(deps.destroySessionGuard).toHaveBeenCalledWith("child-1");
+    expect(deps.removeActiveSession).toHaveBeenCalledWith("key");
+    expect(deps.releaseSession).toHaveBeenCalledWith({
+      workspaceId: "ws-1",
+      sessionId: "child-1",
+    });
     expect(order).toEqual(["dispose", "broadcast"]);
-
-    cleanupListener?.();
-
-    expect(deps.onSessionDisposed).toHaveBeenCalledWith("child-1");
-    expect(order).toEqual(["dispose", "broadcast", "reindex"]);
   });
 
   it("mirrors a child stop to the parent session key", async () => {

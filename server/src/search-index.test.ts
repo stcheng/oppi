@@ -61,8 +61,8 @@ afterEach(() => {
   cleanupPaths.clear();
 });
 
-describe("SearchIndex decouples from continuation summaries", () => {
-  it("ignores continuation summary-only text and indexes transcript content", () => {
+describe("SearchIndex indexes transcript content only", () => {
+  it("ignores sidecar summary-only text and indexes transcript content", () => {
     const dataDir = mkdtempSync(join(tmpdir(), "search-index-"));
     cleanupPaths.add(dataDir);
 
@@ -77,9 +77,9 @@ describe("SearchIndex decouples from continuation summaries", () => {
     const summaryPath = writeSummary(dataDir, piSessionId, {
       title: "Search summary indexing",
       thread: "Memory discovery",
-      goal: "Make continuation summaries searchable",
+      goal: "Make sidecar summaries searchable",
       status: "blocked",
-      blockers: ["walrus token blocker in continuation summary"],
+      blockers: ["walrus token blocker in sidecar summary"],
     });
     cleanupPaths.add(summaryPath);
 
@@ -102,7 +102,7 @@ describe("SearchIndex decouples from continuation summaries", () => {
     }
   });
 
-  it("does not reindex when only an ignored continuation summary changes", () => {
+  it("does not reindex when only an ignored sidecar summary changes", () => {
     const dataDir = mkdtempSync(join(tmpdir(), "search-index-"));
     cleanupPaths.add(dataDir);
 
@@ -116,7 +116,7 @@ describe("SearchIndex decouples from continuation summaries", () => {
 
     const summaryPath = writeSummary(dataDir, piSessionId, {
       title: "Initial blocker",
-      goal: "Prove summary is ignored by core index",
+      goal: "Prove sidecar summary is ignored by core index",
       status: "blocked",
       blockers: ["otter blocker"],
     });
@@ -134,7 +134,7 @@ describe("SearchIndex decouples from continuation summaries", () => {
 
       writeSummary(dataDir, piSessionId, {
         title: "Updated blocker",
-        goal: "Prove summary is ignored by core index",
+        goal: "Prove sidecar summary is ignored by core index",
         status: "blocked",
         blockers: ["penguin blocker"],
       });

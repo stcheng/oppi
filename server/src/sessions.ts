@@ -136,7 +136,6 @@ export class SessionManager extends EventEmitter {
       broadcast: (key, message) => this.broadcast(key, message),
       stopSession: (sessionId) => this.stopSession(sessionId),
       resumeSession: (sessionId) => this.startSession(sessionId),
-      onSessionDisposed: (sessionId) => this.searchIndex?.indexSession(sessionId),
       spawnChildSession: (parentSessionId, params) =>
         this.spawnChildSession(parentSessionId, params),
       spawnDetachedSession: (originSessionId, params) =>

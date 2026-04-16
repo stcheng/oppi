@@ -84,7 +84,6 @@ export interface SessionCoordinatorBundleDeps {
   broadcast: (key: string, message: ServerMessage) => void;
   stopSession: (sessionId: string) => Promise<void>;
   resumeSession: (sessionId: string) => Promise<Session>;
-  onSessionDisposed?: (sessionId: string) => void;
   // spawn_agent support
   spawnChildSession: (
     parentSessionId: string,
@@ -211,7 +210,6 @@ export function createSessionCoordinatorBundle(
     destroySessionGuard: (sessionId) => deps.gate.destroySessionGuard(sessionId),
     releaseSession: (identity) => deps.runtimeManager.releaseSession(identity),
     stopSession: (sessionId) => deps.stopSession(sessionId),
-    onSessionDisposed: (sessionId) => deps.onSessionDisposed?.(sessionId),
     getSessionIdleTimeoutMs: () => deps.runtimeManager.getLimits().sessionIdleTimeoutMs,
     getChildAutoStopWhenDone: () => deps.runtimeManager.getLimits().subagents.autoStopWhenDone,
     getChildStartupGraceMs: () => deps.runtimeManager.getLimits().subagents.startupGraceMs,
