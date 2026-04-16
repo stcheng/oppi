@@ -104,6 +104,7 @@ Requirements: macOS 15+, [pi](https://github.com/badlogic/pi-mono) CLI.
 ## Docs
 
 - [Server README](server/README.md) — server setup, Docker, development
+- [Onboarding and pairing](docs/onboarding.md) — intended first-run user flow
 - [Config schema](server/docs/config-schema.md) — all config options
 - [Policy engine](server/docs/policy-engine.md) — permission rules and heuristics
 - [Extensions](docs/extensions.md) — Oppi-specific extension behavior, workspace filtering, and mobile rendering gotchas

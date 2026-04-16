@@ -10,14 +10,18 @@ clients/apple/*.xcodeproj/
 # clients/apple/OppiMacTests/  # Un-ignored: Mac tests should be tracked
 clients/apple/.env.testflight.local
 
-# Scripts — only build-wired scripts are tracked
+# Scripts — build-wired + selected ops scripts are tracked
 scripts/
+!clients/apple/scripts/
+!server/scripts/
 server/scripts/*
 !server/scripts/architecture-layer-rules.mjs
 !server/scripts/check-architecture-boundaries.ts
 !server/scripts/check-testing-policy.ts
 !server/scripts/telemetry-review.ts
-clients/apple/scripts/
+!server/scripts/manual/
+!server/scripts/manual/telemetry-import-sqlite.mjs
+clients/apple/scripts/*
 !clients/apple/scripts/testflight.ts
 !clients/apple/scripts/release-mac.sh
 !clients/apple/scripts/check-duplication.sh
