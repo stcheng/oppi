@@ -88,7 +88,6 @@ interface DictationConfigSummary {
   sttProvider: string;
   sttModel: string;
   sttEndpoint: string;
-  preserveAudio: boolean;
   llmCorrectionEnabled: boolean;
   llmModel: string;
 }
@@ -286,13 +285,6 @@ export const SLO_THRESHOLDS: Record<string, SloThreshold> = {
     group: "Dictation Backend",
     short: "llm_correct",
   },
-  "server.dictation_audio_save_ms": {
-    p95: 200,
-    label: "Audio save (FLAC)",
-    group: "Dictation Backend",
-    short: "audio_save",
-  },
-
   "chat.session_list_compute_ms": {
     p95: 60,
     label: "List compute",
@@ -373,7 +365,6 @@ const DICTATION_COMPARE_METRICS = [
   "chat.dictation_preview_final_delta",
   "server.dictation_stt_ms",
   "server.dictation_stt_audio_ratio",
-  "server.dictation_audio_save_ms",
 ] as const;
 
 function inferUnit(metric: string): string {
@@ -629,7 +620,6 @@ function loadDictationAssetSummary(
 
   for (const file of walkJsonFiles(dictationDir)) {
     let meta: {
-      audioId?: string;
       startedAt?: string;
       durationMs?: number;
       language?: string;
@@ -693,7 +683,6 @@ function loadDictationConfigSummary(dataDir: string): DictationConfigSummary | n
       sttProvider: typeof asr.sttProvider === "string" ? asr.sttProvider : "mlx-server",
       sttModel: typeof asr.sttModel === "string" ? asr.sttModel : "unknown",
       sttEndpoint: typeof asr.sttEndpoint === "string" ? asr.sttEndpoint : "unknown",
-      preserveAudio: asr.preserveAudio !== false,
       llmCorrectionEnabled: asr.llmCorrectionEnabled === true,
       llmModel: typeof asr.llmModel === "string" ? asr.llmModel : "unknown",
     };
@@ -899,7 +888,6 @@ function printConfigSummary(
   console.log(`  provider             ${config.sttProvider}`);
   console.log(`  stt model            ${config.sttModel}`);
   console.log(`  stt endpoint         ${config.sttEndpoint}`);
-  console.log(`  preserve audio       ${config.preserveAudio ? "yes" : "no"}`);
   console.log(`  llm correction       ${config.llmCorrectionEnabled ? "on" : "off"}`);
   console.log(`  llm model            ${config.llmModel}`);
   console.log();

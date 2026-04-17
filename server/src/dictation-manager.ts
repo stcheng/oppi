@@ -1,28 +1,17 @@
 /**
  * Dictation pipeline manager.
  *
- * Handles per-connection lifecycle: audio accumulation for FLAC
- * preservation, forwarding audio to the SttProvider, relaying transcript
- * updates to the client, and audio archival.
+ * Handles per-connection lifecycle: forwarding audio to the SttProvider,
+ * relaying transcript updates to the client, and emitting dictation metrics.
  *
- * Final transcript correctness now lives in the upstream streaming STT
- * service (Yuwp segment-commit). Oppi forwards streaming updates and the
- * provider's final text instead of re-running a second whole-audio batch pass.
+ * Final transcript correctness lives in the upstream streaming STT service
+ * (Yuwp segment-commit). Oppi forwards streaming updates and the provider's
+ * final text instead of re-running a second whole-audio batch pass.
  *
- * All STT providers implement the same streaming interface (SttProvider).
- * DictationManager has one code path — no branching on provider type.
+ * Oppi no longer persists dictation audio locally.
  */
 
-import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
-import { join } from "node:path";
-import { spawn } from "node:child_process";
-import { randomBytes } from "node:crypto";
-import type {
-  DictationConfig,
-  DictationClientMessage,
-  DictationServerMessage,
-  DictationAudioMetadata,
-} from "./dictation-types.js";
+import type { DictationClientMessage, DictationServerMessage } from "./dictation-types.js";
 import type { SttProvider } from "./stt-provider.js";
 import type { ServerMetricCollector } from "./server-metric-collector.js";
 
@@ -34,75 +23,15 @@ const BITS_PER_SAMPLE = 16;
 const NUM_CHANNELS = 1;
 const BYTES_PER_SAMPLE = BITS_PER_SAMPLE / 8;
 
-/** Initial audio buffer capacity (64 KB ≈ 2s of 16kHz mono 16-bit). */
-const INITIAL_AUDIO_BUFFER_SIZE = 64 * 1024;
-
 // ─── Per-connection session state ───
 
 interface DictationSession {
-  /** Accumulated raw PCM audio for FLAC preservation (amortized doubling). */
-  audioBuffer: Buffer;
-  /** Valid byte count within audioBuffer. */
+  /** Total PCM bytes received for this session. */
   totalBytes: number;
-  /** ISO timestamp when dictation started. */
-  startedAt: string;
   /** High-res monotonic start time for latency measurement. */
   startHrMs: number;
   /** Set to true once dictation_stop is received. */
   stopping: boolean;
-}
-
-// ─── WAV encoding ───
-
-/**
- * Encode raw PCM samples as a WAV file (RIFF header + data).
- * 16-bit signed, 16kHz, mono, little-endian.
- */
-export function encodeWav(pcmChunks: Buffer[]): Buffer {
-  const dataLength = pcmChunks.reduce((sum, chunk) => sum + chunk.length, 0);
-  const header = Buffer.alloc(44);
-
-  const byteRate = SAMPLE_RATE * NUM_CHANNELS * BYTES_PER_SAMPLE;
-  const blockAlign = NUM_CHANNELS * BYTES_PER_SAMPLE;
-
-  header.write("RIFF", 0);
-  header.writeUInt32LE(36 + dataLength, 4);
-  header.write("WAVE", 8);
-  header.write("fmt ", 12);
-  header.writeUInt32LE(16, 16);
-  header.writeUInt16LE(1, 20);
-  header.writeUInt16LE(NUM_CHANNELS, 22);
-  header.writeUInt32LE(SAMPLE_RATE, 24);
-  header.writeUInt32LE(byteRate, 28);
-  header.writeUInt16LE(blockAlign, 32);
-  header.writeUInt16LE(BITS_PER_SAMPLE, 34);
-  header.write("data", 36);
-  header.writeUInt32LE(dataLength, 40);
-
-  return Buffer.concat([header, ...pcmChunks]);
-}
-
-/** Create a 44-byte WAV header for the given PCM data length (no data copy). */
-function makeWavHeader(dataLength: number): Buffer {
-  const header = Buffer.alloc(44);
-  const byteRate = SAMPLE_RATE * NUM_CHANNELS * BYTES_PER_SAMPLE;
-  const blockAlign = NUM_CHANNELS * BYTES_PER_SAMPLE;
-
-  header.write("RIFF", 0);
-  header.writeUInt32LE(36 + dataLength, 4);
-  header.write("WAVE", 8);
-  header.write("fmt ", 12);
-  header.writeUInt32LE(16, 16);
-  header.writeUInt16LE(1, 20);
-  header.writeUInt16LE(NUM_CHANNELS, 22);
-  header.writeUInt32LE(SAMPLE_RATE, 24);
-  header.writeUInt32LE(byteRate, 28);
-  header.writeUInt16LE(blockAlign, 32);
-  header.writeUInt16LE(BITS_PER_SAMPLE, 34);
-  header.write("data", 36);
-  header.writeUInt32LE(dataLength, 40);
-
-  return header;
 }
 
 // ─── DictationManager ───
@@ -111,9 +40,6 @@ function makeWavHeader(dataLength: number): Buffer {
 export type DictationSendFn = (msg: DictationServerMessage) => void;
 
 export class DictationManager {
-  private config: DictationConfig;
-  private dataDir: string;
-
   private sttProvider: SttProvider;
 
   /** Optional metrics collector for pipeline telemetry. */
@@ -125,14 +51,7 @@ export class DictationManager {
   /** Callback for sending messages to the client. Set by handleControlMessage. */
   private sendFn: DictationSendFn | null = null;
 
-  constructor(
-    config: DictationConfig,
-    dataDir: string,
-    sttProvider: SttProvider,
-    metrics?: ServerMetricCollector,
-  ) {
-    this.config = config;
-    this.dataDir = dataDir;
+  constructor(sttProvider: SttProvider, metrics?: ServerMetricCollector) {
     this.sttProvider = sttProvider;
     this.metrics = metrics ?? null;
   }
@@ -154,9 +73,7 @@ export class DictationManager {
           return;
         }
         this.session = {
-          audioBuffer: Buffer.alloc(INITIAL_AUDIO_BUFFER_SIZE),
           totalBytes: 0,
-          startedAt: new Date().toISOString(),
           startHrMs: performance.now(),
           stopping: false,
         };
@@ -200,18 +117,7 @@ export class DictationManager {
   handleAudioData(buf: Buffer): void {
     if (!this.session) return;
 
-    // Accumulate for FLAC preservation
-    const needed = this.session.totalBytes + buf.length;
-    if (needed > this.session.audioBuffer.length) {
-      const newCap = Math.max(this.session.audioBuffer.length * 2, needed);
-      const newBuf = Buffer.alloc(newCap);
-      this.session.audioBuffer.copy(newBuf, 0, 0, this.session.totalBytes);
-      this.session.audioBuffer = newBuf;
-    }
-    buf.copy(this.session.audioBuffer, this.session.totalBytes);
     this.session.totalBytes += buf.length;
-
-    // Feed to STT provider
     this.sttProvider.feedAudio(buf);
   }
 
@@ -338,40 +244,6 @@ export class DictationManager {
       return;
     }
 
-    // Audio preservation
-    // Segment-commit Yuwp already batch-corrects on pause/finalize, so the
-    // provider's final text is the source of truth.
-    let audioId: string | undefined;
-    let audioSaveMs = 0;
-    if (this.config.preserveAudio) {
-      const saveT0 = performance.now();
-      const sttRtf =
-        audioDurationMs > 0 ? Math.round((finalSttMs / audioDurationMs) * 100) / 100 : 0;
-      const timing: DictationAudioMetadata["timing"] = {
-        sessionMs,
-        finalSttMs,
-        sttRealTimeFactor: sttRtf,
-        audioSaveMs: 0,
-        finalizeMs: 0,
-      };
-      try {
-        audioId = await this.saveAudio(session, text, timing);
-        audioSaveMs = Math.round(performance.now() - saveT0);
-        this.metrics?.record(
-          "server.dictation_audio_save_ms",
-          audioSaveMs,
-          this.metricTags({ language: langTag }),
-        );
-      } catch (err) {
-        this.metrics?.record(
-          "server.dictation_error",
-          1,
-          this.metricTags({ phase: "save", fatal: "false", error_kind: "save", language: langTag }),
-        );
-        console.warn("[dictation] Audio save failed:", err instanceof Error ? err.message : err);
-      }
-    }
-
     const finalizeMs = Math.round(performance.now() - finalizeT0);
     this.metrics?.record(
       "server.dictation_finalize_ms",
@@ -379,11 +251,7 @@ export class DictationManager {
       this.metricTags({ language: langTag }),
     );
 
-    this.send({
-      type: "dictation_final",
-      text,
-      ...(audioId !== undefined ? { audioId } : {}),
-    });
+    this.send({ type: "dictation_final", text });
   }
 
   // ─── Metrics ───
@@ -395,88 +263,5 @@ export class DictationManager {
       model: this.sttProvider.model,
       ...extra,
     };
-  }
-
-  // ─── Audio preservation ───
-
-  private async saveAudio(
-    session: DictationSession,
-    transcript: string,
-    timing?: DictationAudioMetadata["timing"],
-  ): Promise<string> {
-    const audioId = `dict_${randomBytes(8).toString("hex")}`;
-    const now = new Date(session.startedAt);
-    const year = now.getFullYear().toString();
-    const month = String(now.getMonth() + 1).padStart(2, "0");
-    const day = String(now.getDate()).padStart(2, "0");
-
-    const dir = join(this.dataDir, "dictation", year, month, day);
-    await mkdir(dir, { recursive: true });
-
-    const pcm = session.audioBuffer.subarray(0, session.totalBytes);
-    const wav = Buffer.concat([makeWavHeader(session.totalBytes), pcm]);
-
-    let audioPath: string;
-    try {
-      const flacData = await encodeFlac(wav);
-      audioPath = join(dir, `${audioId}.flac`);
-      await writeFile(audioPath, flacData);
-    } catch {
-      audioPath = join(dir, `${audioId}.wav`);
-      await writeFile(audioPath, wav);
-    }
-
-    const durationMs = Math.round(
-      (session.totalBytes / (SAMPLE_RATE * BYTES_PER_SAMPLE * NUM_CHANNELS)) * 1000,
-    );
-    const sttEndpoint =
-      "endpoint" in this.sttProvider
-        ? (this.sttProvider as { endpoint: string }).endpoint
-        : "local";
-    const metadata: DictationAudioMetadata = {
-      audioId,
-      startedAt: session.startedAt,
-      durationMs,
-      sampleRate: SAMPLE_RATE,
-      transcript,
-      model: this.sttProvider.model,
-      sttEndpoint,
-      ...(timing ? { timing } : {}),
-    };
-    await writeFile(join(dir, `${audioId}.json`), JSON.stringify(metadata, null, 2));
-
-    return audioId;
-  }
-}
-
-// ─── Helpers ───
-
-/**
- * Encode WAV buffer to FLAC via ffmpeg subprocess.
- */
-export async function encodeFlac(wavBuffer: Buffer): Promise<Buffer> {
-  // Write to a temp file instead of stdout so ffmpeg can seek back and write
-  // the correct total_samples into the FLAC STREAMINFO block. Piping to
-  // stdout produces FLAC with a corrupt STREAMINFO (wrong sample_rate /
-  // total_samples) because ffmpeg cannot seek on a non-seekable pipe.
-  const tmp = join("/tmp", `oppi_flac_${randomBytes(6).toString("hex")}.flac`);
-  try {
-    await new Promise<void>((resolve, reject) => {
-      const proc = spawn(
-        "ffmpeg",
-        ["-i", "pipe:0", "-f", "flac", "-compression_level", "5", "-y", tmp],
-        { stdio: ["pipe", "ignore", "ignore"] },
-      );
-      proc.on("close", (code) => {
-        if (code !== 0) reject(new Error(`ffmpeg exited with code ${code}`));
-        else resolve();
-      });
-      proc.on("error", reject);
-      proc.stdin.write(wavBuffer);
-      proc.stdin.end();
-    });
-    return await readFile(tmp);
-  } finally {
-    await unlink(tmp).catch(() => undefined);
   }
 }

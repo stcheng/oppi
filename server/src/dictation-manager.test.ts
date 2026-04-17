@@ -1,30 +1,15 @@
 /**
- * Tests for DictationManager — audio accumulation, WAV encoding,
- * STT provider integration (streaming), final transcript forwarding,
- * and error handling.
+ * Tests for DictationManager — STT provider integration (streaming),
+ * final transcript forwarding, and error handling.
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import {
-  DictationManager,
-  encodeFlac,
-  encodeWav,
-  type DictationSendFn,
-} from "./dictation-manager.js";
+import { DictationManager, type DictationSendFn } from "./dictation-manager.js";
 
-import type { DictationConfig, DictationServerMessage } from "./dictation-types.js";
+import type { DictationServerMessage } from "./dictation-types.js";
 import type { SttProvider } from "./stt-provider.js";
 
 // ─── Test helpers ───
-
-function testConfig(overrides: Partial<DictationConfig> = {}): DictationConfig {
-  return {
-    sttEndpoint: "http://localhost:9847",
-    sttModel: "test-model",
-    preserveAudio: false,
-    ...overrides,
-  };
-}
 
 /** Drain pending microtasks (multiple levels for chained async). */
 async function drain(): Promise<void> {
@@ -96,85 +81,6 @@ function failingSttProvider(error: string) {
   return Object.assign(provider, { start: startFn, feedAudio: feedAudioFn, stop: stopFn });
 }
 
-// ─── Unit tests for standalone utilities ───
-
-describe("encodeWav", () => {
-  it("produces valid WAV header for empty audio", () => {
-    const wav = encodeWav([]);
-    expect(wav.length).toBe(44);
-    expect(wav.toString("ascii", 0, 4)).toBe("RIFF");
-    expect(wav.toString("ascii", 8, 12)).toBe("WAVE");
-    expect(wav.readUInt16LE(20)).toBe(1); // PCM
-    expect(wav.readUInt16LE(22)).toBe(1); // mono
-    expect(wav.readUInt32LE(24)).toBe(16000); // sample rate
-    expect(wav.readUInt16LE(34)).toBe(16); // bits per sample
-    expect(wav.readUInt32LE(40)).toBe(0); // data size
-  });
-
-  it("concatenates multiple PCM chunks with correct header sizes", () => {
-    const chunk1 = Buffer.alloc(1000, 0x42);
-    const chunk2 = Buffer.alloc(2000, 0x43);
-    const wav = encodeWav([chunk1, chunk2]);
-    expect(wav.length).toBe(44 + 3000);
-    expect(wav.readUInt32LE(4)).toBe(36 + 3000);
-    expect(wav.readUInt32LE(40)).toBe(3000);
-    expect(wav[44]).toBe(0x42);
-    expect(wav[44 + 1000]).toBe(0x43);
-  });
-
-  it("handles byte rate and block align correctly", () => {
-    const wav = encodeWav([]);
-    expect(wav.readUInt32LE(28)).toBe(32000); // byteRate
-    expect(wav.readUInt16LE(32)).toBe(2); // blockAlign
-  });
-});
-
-describe("encodeFlac", () => {
-  it("produces valid FLAC from WAV with correct binary round-trip", async () => {
-    const sampleRate = 16000;
-    const numSamples = sampleRate;
-    const pcm = Buffer.alloc(numSamples * 2);
-    for (let i = 0; i < numSamples; i++) {
-      const sample = Math.round(16000 * Math.sin((2 * Math.PI * 440 * i) / sampleRate));
-      pcm.writeInt16LE(sample, i * 2);
-    }
-    const wav = encodeWav([pcm]);
-    const flac = await encodeFlac(wav);
-
-    expect(flac.toString("ascii", 0, 4)).toBe("fLaC");
-    expect(flac.length).toBeGreaterThan(100);
-
-    const highBytes = Array.from(flac).filter((b) => b > 127);
-    expect(highBytes.length).toBeGreaterThan(0);
-
-    const { execFileSync } = await import("node:child_process");
-    const decoded = execFileSync(
-      "ffprobe",
-      [
-        "-v",
-        "quiet",
-        "-show_entries",
-        "stream=sample_rate,channels,codec_name",
-        "-of",
-        "json",
-        "-f",
-        "flac",
-        "pipe:0",
-      ],
-      { input: flac, maxBuffer: 10 * 1024 * 1024 },
-    );
-    const info = JSON.parse(decoded.toString());
-    const stream = info.streams[0];
-    expect(stream.codec_name).toBe("flac");
-    expect(stream.sample_rate).toBe("16000");
-    expect(stream.channels).toBe(1);
-  });
-
-  it("rejects on empty input", async () => {
-    await expect(encodeFlac(Buffer.alloc(0))).rejects.toThrow();
-  });
-});
-
 // ─── DictationManager with streaming provider ───
 
 describe("DictationManager", () => {
@@ -186,7 +92,7 @@ describe("DictationManager", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     provider = mockSttProvider(["hello", "world"]);
-    manager = new DictationManager(testConfig(), "/tmp/test-dictation", provider);
+    manager = new DictationManager(provider);
     sent = [];
     sendFn = (msg: DictationServerMessage) => sent.push(msg);
   });
@@ -244,7 +150,7 @@ describe("DictationManager", () => {
       await drain();
       const finals = messagesOfType(sent, "dictation_final");
       expect(finals).toHaveLength(1);
-      expect(finals[0].text).toBe("");
+      expect(finals[0]).toEqual({ type: "dictation_final", text: "" });
     });
 
     it("handles dictation_cancel silently", () => {
@@ -314,7 +220,7 @@ describe("DictationManager", () => {
     it("sends fatal error when STT backend is unreachable", async () => {
       const failStartProvider = mockSttProvider(["test"]);
       failStartProvider.start.mockRejectedValue(new Error("STT backend unreachable"));
-      const mgr = new DictationManager(testConfig(), "/tmp/test", failStartProvider);
+      const mgr = new DictationManager(failStartProvider);
       const mgrSent: DictationServerMessage[] = [];
 
       mgr.handleControlMessage({ type: "dictation_start" }, (m) => mgrSent.push(m));
@@ -360,12 +266,12 @@ describe("DictationManager", () => {
       expect(provider.stop).toHaveBeenCalledTimes(1);
       const finals = messagesOfType(sent, "dictation_final");
       expect(finals).toHaveLength(1);
-      expect(finals[0].text).toBe("hello world");
+      expect(finals[0]).toEqual({ type: "dictation_final", text: "hello world" });
     });
 
     it("handles stop() failure with fatal error", async () => {
       const failProvider = failingSttProvider("process crashed");
-      const mgr = new DictationManager(testConfig(), "/tmp/test", failProvider);
+      const mgr = new DictationManager(failProvider);
       const mgrSent: DictationServerMessage[] = [];
       const mgrSendFn: DictationSendFn = (msg) => {
         mgrSent.push(msg);

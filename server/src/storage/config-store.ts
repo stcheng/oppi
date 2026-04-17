@@ -698,7 +698,7 @@ function normalizeConfig(
   // ASR / dictation pipeline config
   if ("asr" in obj && isRecord(obj.asr)) {
     const asr = obj.asr;
-    const allowedAsrKeys = new Set(["sttEndpoint", "sttModel", "preserveAudio"]);
+    const allowedAsrKeys = new Set(["sttEndpoint"]);
 
     if (strictUnknown) {
       for (const key of Object.keys(asr)) {
@@ -712,12 +712,6 @@ function normalizeConfig(
 
     if (typeof asr.sttEndpoint === "string" && asr.sttEndpoint.trim().length > 0) {
       asrConfig.sttEndpoint = asr.sttEndpoint.trim();
-    }
-    if (typeof asr.sttModel === "string" && asr.sttModel.trim().length > 0) {
-      asrConfig.sttModel = asr.sttModel.trim();
-    }
-    if (typeof asr.preserveAudio === "boolean") {
-      asrConfig.preserveAudio = asr.preserveAudio;
     }
 
     if (Object.keys(asrConfig).length > 0) {

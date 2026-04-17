@@ -341,7 +341,7 @@ export class Server {
   private routes!: RouteHandler;
   // WebSocket message command dispatcher (/stream full-session commands)
   private wsMessageHandler!: WsMessageHandler;
-  // Dictation pipeline (/dictation WS endpoint)
+  // Dictation pipeline (multiplexed over /stream WS)
   private dictationManager: DictationManager | undefined;
 
   constructor(storage: Storage, apnsConfig?: APNsConfig) {
@@ -425,12 +425,7 @@ export class Server {
         { endpoint: asrConfig.sttEndpoint, model: asrConfig.sttModel },
         globalThis.fetch,
       );
-      this.dictationManager = new DictationManager(
-        asrConfig,
-        dataDir,
-        sttProvider,
-        this.opsMetrics,
-      );
+      this.dictationManager = new DictationManager(sttProvider, this.opsMetrics);
     }
 
     // Create the user stream mux (handles /stream WS, event rings, replay)

@@ -13,15 +13,11 @@ export interface DictationConfig {
 
   /** Model to request from the STT backend. */
   sttModel: string;
-
-  /** Save audio as FLAC on finalize. */
-  preserveAudio: boolean;
 }
 
 export const DEFAULT_DICTATION_CONFIG: DictationConfig = {
-  sttEndpoint: "http://localhost:9748",
+  sttEndpoint: "http://localhost:7936",
   sttModel: "mlx-community/Qwen3-ASR-1.7B-bf16",
-  preserveAudio: true,
 };
 
 // ─── Client -> Server messages ───
@@ -63,7 +59,6 @@ export interface DictationResultMessage {
 export interface DictationFinalMessage {
   type: "dictation_final";
   text: string;
-  audioId?: string;
 }
 
 export interface DictationErrorMessage {
@@ -77,29 +72,3 @@ export type DictationServerMessage =
   | DictationResultMessage
   | DictationFinalMessage
   | DictationErrorMessage;
-
-// ─── Audio metadata (saved alongside FLAC) ───
-
-export interface DictationAudioMetadata {
-  audioId: string;
-  startedAt: string;
-  durationMs: number;
-  sampleRate: number;
-  transcript: string;
-  language?: string;
-  model: string;
-  sttEndpoint: string;
-  /** Pipeline timing breakdown (populated when metrics are available). */
-  timing?: {
-    /** Total session wall-clock time (start to final) in ms. */
-    sessionMs: number;
-    /** Final STT call latency in ms. */
-    finalSttMs: number;
-    /** Real-time factor for final STT (sttMs / audioDurationMs). <1.0 = faster than real-time. */
-    sttRealTimeFactor: number;
-    /** Audio save (FLAC encode + write) latency in ms. */
-    audioSaveMs: number;
-    /** Total finalize latency in ms (final STT + save). */
-    finalizeMs: number;
-  };
-}

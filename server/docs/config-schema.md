@@ -2,10 +2,10 @@
 
 Oppi server uses a JSON config file with validated fields and sensible defaults.
 
-| Location | Scope |
-|----------|-------|
+| Location                     | Scope            |
+| ---------------------------- | ---------------- |
 | `~/.config/oppi/config.json` | Default data dir |
-| `$OPPI_DATA_DIR/config.json` | Custom data dir |
+| `$OPPI_DATA_DIR/config.json` | Custom data dir  |
 
 Auto-created on first `npx oppi serve`, or manually via `npx oppi init`. Validated on load — invalid fields fall back to defaults with warnings. New fields are backfilled automatically on startup.
 
@@ -15,20 +15,20 @@ Settings are listed in the order they appear in the config file. Auth state is d
 
 ### Server
 
-| Setting | Type | Default | Description |
-|---------|------|---------|-------------|
-| `configVersion` | number | `2` | Schema version. Managed automatically — do not edit. |
-| `port` | number | `7749` | HTTP + WebSocket listen port. Range: 0-65535. |
-| `host` | string | `"0.0.0.0"` | Bind address. Use `"127.0.0.1"` to restrict to localhost. |
-| `dataDir` | string | `"~/.config/oppi"` | Root state directory. Contains sessions, workspaces, rules, config, and TLS material. |
+| Setting         | Type   | Default            | Description                                                                           |
+| --------------- | ------ | ------------------ | ------------------------------------------------------------------------------------- |
+| `configVersion` | number | `2`                | Schema version. Managed automatically — do not edit.                                  |
+| `port`          | number | `7749`             | HTTP + WebSocket listen port. Range: 0-65535.                                         |
+| `host`          | string | `"0.0.0.0"`        | Bind address. Use `"127.0.0.1"` to restrict to localhost.                             |
+| `dataDir`       | string | `"~/.config/oppi"` | Root state directory. Contains sessions, workspaces, rules, config, and TLS material. |
 
 ### Model
 
-| Setting | Type | Default | Description |
-|---------|------|---------|-------------|
-| `defaultModel` | string | `"openai-codex/gpt-5.3-codex"` | Model used for new sessions when client doesn't specify one. Format: `"provider/model-id"`. |
-| `thinkingLevelByModel` | object | `{}` | Per-model thinking level preferences. Synced from the iOS model picker — values are `"off"`, `"minimal"`, `"low"`, `"medium"`, `"high"`, `"xhigh"`. |
-| `modelAllowlist` | string[] | - | When set, only these models plus custom provider models from `~/.pi/agent/models.json` appear in the picker. Format: `["provider/model-id"]`. **Note: defined in types but not yet wired into config parsing — currently has no effect.** |
+| Setting                | Type     | Default                        | Description                                                                                                                                                                                                                               |
+| ---------------------- | -------- | ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `defaultModel`         | string   | `"openai-codex/gpt-5.3-codex"` | Model used for new sessions when client doesn't specify one. Format: `"provider/model-id"`.                                                                                                                                               |
+| `thinkingLevelByModel` | object   | `{}`                           | Per-model thinking level preferences. Synced from the iOS model picker — values are `"off"`, `"minimal"`, `"low"`, `"medium"`, `"high"`, `"xhigh"`.                                                                                       |
+| `modelAllowlist`       | string[] | -                              | When set, only these models plus custom provider models from `~/.pi/agent/models.json` appear in the picker. Format: `["provider/model-id"]`. **Note: defined in types but not yet wired into config parsing — currently has no effect.** |
 
 ```json
 {
@@ -42,30 +42,31 @@ Settings are listed in the order they appear in the config file. Auth state is d
 
 ### Session Lifecycle
 
-| Setting | Type | Default | Description |
-|---------|------|---------|-------------|
-| `sessionIdleTimeoutMs` | number | `600000` | Stop sessions after this many ms of inactivity. 600000 = 10 min. Min: 1. |
-| `workspaceIdleTimeoutMs` | number | `1800000` | Stop workspace runtimes after this many ms with no active sessions. 1800000 = 30 min. Min: 1. |
-| `maxSessionsPerWorkspace` | number | `20` | Max concurrent sessions in a single workspace. Min: 1. |
-| `maxSessionsGlobal` | number | `40` | Max concurrent sessions across all workspaces. Min: 1. |
+| Setting                   | Type   | Default   | Description                                                                                   |
+| ------------------------- | ------ | --------- | --------------------------------------------------------------------------------------------- |
+| `sessionIdleTimeoutMs`    | number | `600000`  | Stop sessions after this many ms of inactivity. 600000 = 10 min. Min: 1.                      |
+| `workspaceIdleTimeoutMs`  | number | `1800000` | Stop workspace runtimes after this many ms with no active sessions. 1800000 = 30 min. Min: 1. |
+| `maxSessionsPerWorkspace` | number | `20`      | Max concurrent sessions in a single workspace. Min: 1.                                        |
+| `maxSessionsGlobal`       | number | `40`      | Max concurrent sessions across all workspaces. Min: 1.                                        |
 
 The alias `sessionTimeout` is accepted for `sessionIdleTimeoutMs` (legacy compat). If both are present, `sessionIdleTimeoutMs` takes precedence.
 
 ### Permission Gate
 
-| Setting | Type | Default | Description |
-|---------|------|---------|-------------|
-| `approvalTimeoutMs` | number | `120000` | How long the server waits for a user to approve/deny a tool call before timing out. Set to `0` to wait indefinitely (no expiry). Min: 0. |
-| `permissionGate` | boolean | `true` | When `true`, tool calls are gated through the policy engine + iOS approval flow. When `false`, all tool calls auto-run with no approval. |
+| Setting             | Type    | Default  | Description                                                                                                                              |
+| ------------------- | ------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `approvalTimeoutMs` | number  | `120000` | How long the server waits for a user to approve/deny a tool call before timing out. Set to `0` to wait indefinitely (no expiry). Min: 0. |
+| `permissionGate`    | boolean | `true`   | When `true`, tool calls are gated through the policy engine + iOS approval flow. When `false`, all tool calls auto-run with no approval. |
 
 ### Runtime Environment
 
-| Setting | Type | Default | Description |
-|---------|------|---------|-------------|
+| Setting              | Type     | Default   | Description                                                                                                                                |
+| -------------------- | -------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
 | `runtimePathEntries` | string[] | see below | Explicit PATH entries injected into pi's tool execution environment. No shell profile is sourced — these are the only directories on PATH. |
-| `runtimeEnv` | object | `{}` | Additional environment variables passed to pi's tool execution. String keys and string values only. |
+| `runtimeEnv`         | object   | `{}`      | Additional environment variables passed to pi's tool execution. String keys and string values only.                                        |
 
 Default `runtimePathEntries`:
+
 ```json
 [
   "~/.local/bin",
@@ -84,12 +85,12 @@ If you need tools from custom paths (e.g. `mise`, `pyenv`, `nvm`), add their bin
 
 ### TLS
 
-| Setting | Type | Default | Description |
-|---------|------|---------|-------------|
-| `tls.mode` | string | `"self-signed"` | Transport security mode. See modes below. |
-| `tls.certPath` | string | - | PEM certificate path. Required for `manual` mode. |
-| `tls.keyPath` | string | - | PEM private key path. Required for `manual` mode. |
-| `tls.caPath` | string | - | CA chain path. Used in `self-signed` mode for client certificate pinning. |
+| Setting        | Type   | Default         | Description                                                               |
+| -------------- | ------ | --------------- | ------------------------------------------------------------------------- |
+| `tls.mode`     | string | `"self-signed"` | Transport security mode. See modes below.                                 |
+| `tls.certPath` | string | -               | PEM certificate path. Required for `manual` mode.                         |
+| `tls.keyPath`  | string | -               | PEM private key path. Required for `manual` mode.                         |
+| `tls.caPath`   | string | -               | CA chain path. Used in `self-signed` mode for client certificate pinning. |
 
 New configs default to `"self-signed"` so iOS pairing uses HTTPS/WSS out of the box.
 For legacy configs that still have `"disabled"`, first `oppi serve` auto-promotes
@@ -97,14 +98,14 @@ TLS to `"self-signed"`.
 
 Modes:
 
-| Mode | Behavior |
-|------|----------|
-| `disabled` | Plain HTTP/WS. No encryption. |
-| `tailscale` | Requests/renews certs via `tailscale cert`. Requires MagicDNS + HTTPS certs enabled in tailnet DNS + connected `tailscale` CLI. |
-| `self-signed` | Auto-generates cert material under `~/.config/oppi/tls/self-signed/`. Client must trust the CA. |
-| `manual` | Uses `certPath` and `keyPath` you provide. Both are required. |
-| `auto` | Auto-selects based on environment (Tailscale if available, else self-signed). |
-| `cloudflare` | Cloudflare Tunnel integration. |
+| Mode          | Behavior                                                                                                                        |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `disabled`    | Plain HTTP/WS. No encryption.                                                                                                   |
+| `tailscale`   | Requests/renews certs via `tailscale cert`. Requires MagicDNS + HTTPS certs enabled in tailnet DNS + connected `tailscale` CLI. |
+| `self-signed` | Auto-generates cert material under `~/.config/oppi/tls/self-signed/`. Client must trust the CA.                                 |
+| `manual`      | Uses `certPath` and `keyPath` you provide. Both are required.                                                                   |
+| `auto`        | Auto-selects based on environment (Tailscale if available, else self-signed).                                                   |
+| `cloudflare`  | Cloudflare Tunnel integration.                                                                                                  |
 
 ```bash
 # Tailscale (recommended for LAN)
@@ -116,10 +117,10 @@ oppi config set tls '{"mode":"self-signed"}'
 
 ### Auto Title
 
-| Setting | Type | Default | Description |
-|---------|------|---------|-------------|
+| Setting             | Type    | Default | Description                                                                                                                                       |
+| ------------------- | ------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `autoTitle.enabled` | boolean | `false` | When `true`, auto-generates a 3-5 word task title from the first user message. Uses a standalone LLM call (no pi system prompt, no tool context). |
-| `autoTitle.model` | string | - | Model to use for title generation. Format: `"provider/model-id"`. When omitted, uses `defaultModel`. A cheap/fast local model works well here. |
+| `autoTitle.model`   | string  | -       | Model to use for title generation. Format: `"provider/model-id"`. When omitted, uses `defaultModel`. A cheap/fast local model works well here.    |
 
 ```json
 {
@@ -134,12 +135,12 @@ oppi config set tls '{"mode":"self-signed"}'
 
 Controls lifecycle of child sessions spawned via `spawn_agent`.
 
-| Setting | Type | Default | Description |
-|---------|------|---------|-------------|
-| `subagents.maxDepth` | number | `1` | Max spawn depth. `1` = parent can spawn children, but children cannot spawn grandchildren. `0` = spawning disabled. |
-| `subagents.autoStopWhenDone` | boolean | `true` | When `true`, a child that finishes its work and goes idle is stopped immediately. When `false`, children stay alive for follow-up messages. |
-| `subagents.startupGraceMs` | number | `60000` | How long to wait for a child to produce its first output before giving up. Covers VM boot, model loading, and first LLM call. 60000 = 60s. |
-| `subagents.defaultWaitTimeoutMs` | number | `1800000` | Default timeout for `spawn_agent(wait=true)` when the caller doesn't specify `timeout_seconds`. 1800000 = 30 min. |
+| Setting                          | Type    | Default   | Description                                                                                                                                 |
+| -------------------------------- | ------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `subagents.maxDepth`             | number  | `1`       | Max spawn depth. `1` = parent can spawn children, but children cannot spawn grandchildren. `0` = spawning disabled.                         |
+| `subagents.autoStopWhenDone`     | boolean | `true`    | When `true`, a child that finishes its work and goes idle is stopped immediately. When `false`, children stay alive for follow-up messages. |
+| `subagents.startupGraceMs`       | number  | `60000`   | How long to wait for a child to produce its first output before giving up. Covers VM boot, model loading, and first LLM call. 60000 = 60s.  |
+| `subagents.defaultWaitTimeoutMs` | number  | `1800000` | Default timeout for `spawn_agent(wait=true)` when the caller doesn't specify `timeout_seconds`. 1800000 = 30 min.                           |
 
 ```json
 {
@@ -152,46 +153,54 @@ Controls lifecycle of child sessions spawned via `spawn_agent`.
 }
 ```
 
+### ASR / Dictation
+
+Configures server-side dictation routing to an external STT backend.
+
+| Setting           | Type   | Default | Description                                                                                                                                                                 |
+| ----------------- | ------ | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `asr.sttEndpoint` | string | -       | STT backend base URL. When set, server dictation is enabled on `/stream` and audio is forwarded to the backend in real time. Oppi does not persist dictation audio locally. |
+
 ### Policy
 
 Declarative policy rules for tool call authorization. Evaluated before user-learned rules. Full evaluation order and pattern matching documented in [policy-engine.md](policy-engine.md).
 
-| Setting | Type | Default | Description |
-|---------|------|---------|-------------|
-| `policy.schemaVersion` | number | `1` | Policy schema version. Must be `1`. |
-| `policy.mode` | string | - | Optional label for the policy preset (e.g. `"default"`, `"strict"`). Informational only. |
-| `policy.description` | string | - | Human-readable description of the policy. Informational only. |
-| `policy.fallback` | string | `"allow"` | Decision when no guardrail, permission, or learned rule matches: `"allow"`, `"ask"`, `"block"`. |
-| `policy.guardrails` | array | default set | Hard guardrails. Evaluated first. Cannot be overridden by user-learned rules. |
-| `policy.permissions` | array | default set | Soft permissions. Can be overridden by user-learned rules. |
-| `policy.heuristics` | object | see below | Structural pattern detection. Catches dangerous patterns that simple matching misses. |
+| Setting                | Type   | Default     | Description                                                                                     |
+| ---------------------- | ------ | ----------- | ----------------------------------------------------------------------------------------------- |
+| `policy.schemaVersion` | number | `1`         | Policy schema version. Must be `1`.                                                             |
+| `policy.mode`          | string | -           | Optional label for the policy preset (e.g. `"default"`, `"strict"`). Informational only.        |
+| `policy.description`   | string | -           | Human-readable description of the policy. Informational only.                                   |
+| `policy.fallback`      | string | `"allow"`   | Decision when no guardrail, permission, or learned rule matches: `"allow"`, `"ask"`, `"block"`. |
+| `policy.guardrails`    | array  | default set | Hard guardrails. Evaluated first. Cannot be overridden by user-learned rules.                   |
+| `policy.permissions`   | array  | default set | Soft permissions. Can be overridden by user-learned rules.                                      |
+| `policy.heuristics`    | object | see below   | Structural pattern detection. Catches dangerous patterns that simple matching misses.           |
 
 #### Guardrail / Permission Entry
 
 Each entry in `guardrails` and `permissions`:
 
-| Field | Required | Description |
-|-------|----------|-------------|
-| `id` | Yes | Slug-like identifier. 3-64 chars, `[a-z0-9._-]`, must start with `[a-z0-9]`. |
-| `decision` | Yes | `"allow"`, `"ask"`, or `"block"`. |
-| `label` | No | Short human-readable label shown in the iOS approval UI. |
-| `reason` | No | Why this rule exists (shown in audit log). |
-| `match.tool` | No | Tool name: `"bash"`, `"read"`, `"edit"`, `"write"`. |
-| `match.executable` | No | Binary name for bash commands (e.g. `"git"`, `"rm"`). |
-| `match.commandMatches` | No | Glob pattern against the full bash command string. |
-| `match.pathMatches` | No | Glob pattern against file paths (read/edit/write). |
-| `match.pathWithin` | No | Directory containment — matches if path is under this directory. |
-| `match.domain` | No | Domain match for network operations. |
+| Field                  | Required | Description                                                                  |
+| ---------------------- | -------- | ---------------------------------------------------------------------------- |
+| `id`                   | Yes      | Slug-like identifier. 3-64 chars, `[a-z0-9._-]`, must start with `[a-z0-9]`. |
+| `decision`             | Yes      | `"allow"`, `"ask"`, or `"block"`.                                            |
+| `label`                | No       | Short human-readable label shown in the iOS approval UI.                     |
+| `reason`               | No       | Why this rule exists (shown in audit log).                                   |
+| `match.tool`           | No       | Tool name: `"bash"`, `"read"`, `"edit"`, `"write"`.                          |
+| `match.executable`     | No       | Binary name for bash commands (e.g. `"git"`, `"rm"`).                        |
+| `match.commandMatches` | No       | Glob pattern against the full bash command string.                           |
+| `match.pathMatches`    | No       | Glob pattern against file paths (read/edit/write).                           |
+| `match.pathWithin`     | No       | Directory containment — matches if path is under this directory.             |
+| `match.domain`         | No       | Domain match for network operations.                                         |
 
 At least one `match.*` field is required per entry.
 
 #### Heuristics
 
-| Setting | Default | What it catches |
-|---------|---------|-----------------|
-| `policy.heuristics.pipeToShell` | `"ask"` | Piped execution: `curl ... \| bash`, `wget ... \| sh`, etc. |
-| `policy.heuristics.dataEgress` | `"ask"` | Bulk data exfiltration: large `curl`/`wget` POSTs, `scp`/`rsync` to external hosts. |
-| `policy.heuristics.secretEnvInUrl` | `"ask"` | URLs embedding env vars with secret-like names (`$AWS_SECRET_ACCESS_KEY`, `$TOKEN`). |
+| Setting                              | Default   | What it catches                                                                                 |
+| ------------------------------------ | --------- | ----------------------------------------------------------------------------------------------- |
+| `policy.heuristics.pipeToShell`      | `"ask"`   | Piped execution: `curl ... \| bash`, `wget ... \| sh`, etc.                                     |
+| `policy.heuristics.dataEgress`       | `"ask"`   | Bulk data exfiltration: large `curl`/`wget` POSTs, `scp`/`rsync` to external hosts.             |
+| `policy.heuristics.secretEnvInUrl`   | `"ask"`   | URLs embedding env vars with secret-like names (`$AWS_SECRET_ACCESS_KEY`, `$TOKEN`).            |
 | `policy.heuristics.secretFileAccess` | `"block"` | Reads/writes to credential files: `~/.ssh/id_*`, `~/.aws/credentials`, `.env` with secret keys. |
 
 Each heuristic accepts `"allow"`, `"ask"`, `"block"`, or `false` (disabled).
@@ -204,14 +213,14 @@ User-learned rules live separately in `~/.config/oppi/rules.json`.
 
 These fields live in `config.json` but are managed by `oppi pair`, `oppi token rotate`, and the iOS client. Manual edits risk breaking authentication or push notifications.
 
-| Field | Type | Managed by | Description |
-|-------|------|------------|-------------|
-| `token` | string | `oppi pair`, `oppi token rotate` | Owner bearer token. Used by all authenticated HTTP/WS requests. |
-| `pairingToken` | string | `oppi pair` | One-time bootstrap token. Short-lived (90s default). Consumed by `POST /pair`. |
-| `pairingTokenExpiresAt` | number | `oppi pair` | Pairing token expiry (epoch ms). |
-| `authDeviceTokens` | string[] | `POST /pair` | Long-lived device tokens issued during pairing. Each iOS device gets one. |
-| `pushDeviceTokens` | string[] | iOS client | APNs device tokens registered by iOS for push notifications. |
-| `liveActivityToken` | string | iOS client | APNs token for iOS Live Activity updates. |
+| Field                   | Type     | Managed by                       | Description                                                                    |
+| ----------------------- | -------- | -------------------------------- | ------------------------------------------------------------------------------ |
+| `token`                 | string   | `oppi pair`, `oppi token rotate` | Owner bearer token. Used by all authenticated HTTP/WS requests.                |
+| `pairingToken`          | string   | `oppi pair`                      | One-time bootstrap token. Short-lived (90s default). Consumed by `POST /pair`. |
+| `pairingTokenExpiresAt` | number   | `oppi pair`                      | Pairing token expiry (epoch ms).                                               |
+| `authDeviceTokens`      | string[] | `POST /pair`                     | Long-lived device tokens issued during pairing. Each iOS device gets one.      |
+| `pushDeviceTokens`      | string[] | iOS client                       | APNs device tokens registered by iOS for push notifications.                   |
+| `liveActivityToken`     | string   | iOS client                       | APNs token for iOS Live Activity updates.                                      |
 
 Token matching: both `token` (owner) and `authDeviceTokens` (device) are accepted as Bearer tokens. Comparison uses constant-time equality to prevent timing attacks.
 

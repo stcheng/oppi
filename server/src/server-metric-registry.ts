@@ -207,11 +207,7 @@ export const SERVER_METRIC_REGISTRY = {
   },
   "server.dictation_finalize_ms": {
     unit: "ms",
-    description: "Total finalize duration (final STT + audio save). Tagged by language.",
-  },
-  "server.dictation_audio_save_ms": {
-    unit: "ms",
-    description: "Audio preservation (FLAC encode + write) latency.",
+    description: "Total finalize duration (final STT + response emit). Tagged by language.",
   },
   "server.dictation_retranscribe_count": {
     unit: "count",
@@ -223,7 +219,7 @@ export const SERVER_METRIC_REGISTRY = {
   },
   "server.dictation_error": {
     unit: "count",
-    description: "Dictation errors. Tagged by phase (stt, save), fatal (true/false).",
+    description: "Dictation errors. Tagged by phase (stt), fatal (true/false).",
   },
 } as const satisfies Readonly<Record<string, ServerMetricDefinition>>;
 

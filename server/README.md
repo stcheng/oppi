@@ -166,7 +166,7 @@ Key config sections:
 | Section  | What it controls                                                        |
 | -------- | ----------------------------------------------------------------------- |
 | `tls`    | HTTPS mode: `self-signed`, `tailscale`, or `none`                       |
-| `asr`    | Dictation pipeline: STT endpoint/model and optional audio preservation  |
+| `asr`    | Dictation pipeline: STT backend endpoint                                |
 | `policy` | Permission gate rules (allow/deny/ask per tool, guardrails, heuristics) |
 
 Model routing and API keys are managed by pi (`pi auth`), not the oppi config.

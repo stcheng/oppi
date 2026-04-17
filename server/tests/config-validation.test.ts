@@ -258,17 +258,15 @@ describe("Storage config validation", () => {
       ...Storage.getDefaultConfig(dir),
       asr: {
         sttEndpoint: "http://localhost:9847",
-        sttModel: "Qwen3-ASR-1.7B",
       },
     };
 
     const result = Storage.validateConfig(raw, dir, true);
     expect(result.valid).toBe(true);
     expect(result.config?.asr?.sttEndpoint).toBe("http://localhost:9847");
-    expect(result.config?.asr?.sttModel).toBe("Qwen3-ASR-1.7B");
   });
 
-  it("preserves asr config with supported fields", () => {
+  it("rejects legacy asr config fields in strict mode", () => {
     const raw = {
       ...Storage.getDefaultConfig(dir),
       asr: {
@@ -279,10 +277,9 @@ describe("Storage config validation", () => {
     };
 
     const result = Storage.validateConfig(raw, dir, true);
-    expect(result.valid).toBe(true);
-    expect(result.config?.asr?.sttEndpoint).toBe("http://localhost:9847");
-    expect(result.config?.asr?.sttModel).toBe("Qwen3-ASR-1.7B-bf16");
-    expect(result.config?.asr?.preserveAudio).toBe(false);
+    expect(result.valid).toBe(false);
+    expect(result.errors).toContain("config.asr.sttModel: unknown key");
+    expect(result.errors).toContain("config.asr.preserveAudio: unknown key");
   });
 
   it("omits asr when not present in config", () => {
@@ -326,15 +323,13 @@ describe("Storage config validation", () => {
         ...Storage.getDefaultConfig(dir),
         asr: {
           sttEndpoint: "http://localhost:9847",
-          sttModel: "Qwen3-ASR-1.7B",
         },
       }),
     );
 
     const storage = new Storage(dir);
     const config = storage.getConfig();
-    expect(config.asr?.sttEndpoint).toBe("http://localhost:9847");
-    expect(config.asr?.sttModel).toBe("Qwen3-ASR-1.7B");
+    expect(config.asr).toEqual({ sttEndpoint: "http://localhost:9847" });
   });
 
   it("validateConfigFile reports parse errors with file path", () => {

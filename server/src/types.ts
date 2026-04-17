@@ -260,13 +260,11 @@ export interface ServerConfig {
   subagents?: SubagentConfig;
 
   /**
-   * ASR / dictation pipeline configuration. Controls remote dictation routing,
-   * the STT backend endpoint/model, and optional audio preservation.
+   * ASR / dictation pipeline configuration. Controls remote dictation routing
+   * by pointing Oppi at an STT backend endpoint.
    */
   asr?: {
     sttEndpoint?: string;
-    sttModel?: string;
-    preserveAudio?: boolean;
   };
 }
 
@@ -1249,7 +1247,7 @@ export type ServerMessage = // ── Connection ──
         sttModel?: string;
       }
     | { type: "dictation_result"; text: string; snap?: boolean }
-    | { type: "dictation_final"; text: string; audioId?: string }
+    | { type: "dictation_final"; text: string }
     | { type: "dictation_error"; error: string; fatal: boolean }
   ) & {
     seq?: number;
