@@ -29,6 +29,9 @@ enum FuzzyMatch {
     private static let filenameBonus = 5
     private static let gapPenalty = -1
     private static let matchBase = 1
+    /// Guarantee exact matches rank above non-exact fuzzy matches.
+    private static let exactFilenameBonus = 10_000
+    private static let exactPathBonus = 20_000
 
     // MARK: - ASCII Helpers
 
@@ -205,6 +208,27 @@ enum FuzzyMatch {
             if buf[i] == 0x2F { filenameStart = i + 1; break }
         }
 
+        // Bonus key ensures exact matches always rank above fuzzy-only matches.
+        var exactBonus = 0
+        if cLen == qLen {
+            var exactPath = true
+            for i in 0..<qLen where asciiLower(buf[i]) != qLower[i] {
+                exactPath = false
+                break
+            }
+            if exactPath { exactBonus += exactPathBonus }
+        }
+
+        let filenameLen = cLen - filenameStart
+        if filenameLen == qLen {
+            var exactFilename = true
+            for i in 0..<qLen where asciiLower(buf[filenameStart + i]) != qLower[i] {
+                exactFilename = false
+                break
+            }
+            if exactFilename { exactBonus += exactFilenameBonus }
+        }
+
         let NEG_INF = Int.min / 2
 
         // Stack-allocated DP rows. Pointer swap avoids per-row copy.
@@ -277,7 +301,7 @@ enum FuzzyMatch {
             for ci in (qLen - 1)..<cLen where prev[ci] > bestScore {
                 bestScore = prev[ci]
             }
-            return bestScore > NEG_INF ? bestScore : nil
+            return bestScore > NEG_INF ? bestScore + exactBonus : nil
         }
     }
 
@@ -309,6 +333,27 @@ enum FuzzyMatch {
         var filenameStart = 0
         for i in stride(from: cLen - 1, through: 0, by: -1) { // swiftlint:disable:next for_where
             if cBytes[i] == 0x2F { filenameStart = i + 1; break }
+        }
+
+        // Bonus key ensures exact matches always rank above fuzzy-only matches.
+        var exactBonus = 0
+        if cLen == qLen {
+            var exactPath = true
+            for i in 0..<qLen where asciiLower(cBytes[i]) != qLower[i] {
+                exactPath = false
+                break
+            }
+            if exactPath { exactBonus += exactPathBonus }
+        }
+
+        let filenameLen = cLen - filenameStart
+        if filenameLen == qLen {
+            var exactFilename = true
+            for i in 0..<qLen where asciiLower(cBytes[filenameStart + i]) != qLower[i] {
+                exactFilename = false
+                break
+            }
+            if exactFilename { exactBonus += exactFilenameBonus }
         }
 
         let NEG_INF = Int.min / 2
@@ -388,7 +433,7 @@ enum FuzzyMatch {
             ci = prevFromFlat[qi * cLen + ci]
         }
 
-        return Result(score: bestScore, positions: positions)
+        return Result(score: bestScore + exactBonus, positions: positions)
     }
 
 }
