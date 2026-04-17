@@ -163,6 +163,15 @@ function sanitizeFtsQuery(raw: string): string {
   return terms.map((t) => `"${t}"`).join(" ");
 }
 
+function parseReindexDebounceMs(): number {
+  const fallbackMs = 500;
+  const raw = process.env.OPPI_SEARCH_REINDEX_DEBOUNCE_MS;
+  if (!raw) return fallbackMs;
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isInteger(parsed) || parsed <= 0) return fallbackMs;
+  return parsed;
+}
+
 // ---------------------------------------------------------------------------
 // SearchIndex
 // ---------------------------------------------------------------------------
@@ -171,7 +180,7 @@ export class SearchIndex {
   private db: SqliteDatabase;
   private pendingReindex = new Set<string>();
   private reindexTimer: ReturnType<typeof setTimeout> | null = null;
-  private static readonly REINDEX_DEBOUNCE_MS = 2000;
+  private static readonly REINDEX_DEBOUNCE_MS = parseReindexDebounceMs();
 
   // Prepared statements (lazy init after ensureSchema)
   private stmtUpsert!: SqliteStatement;
@@ -280,42 +289,51 @@ export class SearchIndex {
       "SELECT jsonl_mtime_ms, jsonl_size FROM fts_meta WHERE session_id = ?",
     );
 
-    // Search across all workspaces
-    // Column weights: title=10, user_messages=5, assistant_messages=1, tool_names=2
+    // Search across all workspaces.
+    // Column weights: title=10, user_messages=5, assistant_messages=1, tool_names=2.
+    // Add a small age penalty so newer sessions rank higher when text relevance is similar.
     this.stmtSearch = this.db.prepare(`
       SELECT
-        session_id AS sessionId,
-        workspace_id AS workspaceId,
-        title,
+        session_fts.session_id AS sessionId,
+        session_fts.workspace_id AS workspaceId,
+        session_fts.title AS title,
         COALESCE(
           NULLIF(snippet(session_fts, 3, '<b>', '</b>', '...', 40), ''),
           NULLIF(snippet(session_fts, 4, '<b>', '</b>', '...', 40), ''),
           NULLIF(snippet(session_fts, 5, '<b>', '</b>', '...', 40), ''),
           snippet(session_fts, 2, '<b>', '</b>', '...', 40)
         ) as snippet,
-        bm25(session_fts, 0.0, 0.0, 10.0, 5.0, 1.0, 2.0) as rank
+        (
+          bm25(session_fts, 0.0, 0.0, 10.0, 5.0, 1.0, 2.0) +
+          (((CAST(strftime('%s', 'now') AS REAL) * 1000) - COALESCE(m.jsonl_mtime_ms, 0)) / 86400000.0) * 0.02
+        ) as rank
       FROM session_fts
+      JOIN fts_meta m ON m.session_id = session_fts.session_id
       WHERE session_fts MATCH ?
-      ORDER BY rank
+      ORDER BY rank ASC, m.jsonl_mtime_ms DESC
       LIMIT ?
     `);
 
-    // Search within a specific workspace
+    // Search within a specific workspace.
     this.stmtSearchWorkspace = this.db.prepare(`
       SELECT
-        session_id AS sessionId,
-        workspace_id AS workspaceId,
-        title,
+        session_fts.session_id AS sessionId,
+        session_fts.workspace_id AS workspaceId,
+        session_fts.title AS title,
         COALESCE(
           NULLIF(snippet(session_fts, 3, '<b>', '</b>', '...', 40), ''),
           NULLIF(snippet(session_fts, 4, '<b>', '</b>', '...', 40), ''),
           NULLIF(snippet(session_fts, 5, '<b>', '</b>', '...', 40), ''),
           snippet(session_fts, 2, '<b>', '</b>', '...', 40)
         ) as snippet,
-        bm25(session_fts, 0.0, 0.0, 10.0, 5.0, 1.0, 2.0) as rank
+        (
+          bm25(session_fts, 0.0, 0.0, 10.0, 5.0, 1.0, 2.0) +
+          (((CAST(strftime('%s', 'now') AS REAL) * 1000) - COALESCE(m.jsonl_mtime_ms, 0)) / 86400000.0) * 0.02
+        ) as rank
       FROM session_fts
-      WHERE session_fts MATCH ? AND workspace_id = ?
-      ORDER BY rank
+      JOIN fts_meta m ON m.session_id = session_fts.session_id
+      WHERE session_fts MATCH ? AND session_fts.workspace_id = ?
+      ORDER BY rank ASC, m.jsonl_mtime_ms DESC
       LIMIT ?
     `);
 

@@ -40,11 +40,13 @@ function makeSession(overrides: Partial<Session> = {}): Session {
 }
 
 function makeManagerHarness(sessionOverrides: Partial<Session> = {}) {
+  let sessionRef: Session | null = null;
   const storage = {
     getConfig: () => TEST_CONFIG,
     saveSession: vi.fn(),
     addSessionMessage: vi.fn(),
     getWorkspace: vi.fn(() => null),
+    getSession: vi.fn((id: string) => (sessionRef && sessionRef.id === id ? sessionRef : null)),
   } as unknown as Storage;
 
   const gate = {
@@ -59,6 +61,7 @@ function makeManagerHarness(sessionOverrides: Partial<Session> = {}) {
 
   const { sdkBackend, abort, dispose, prompt: sdkPrompt } = makeSdkBackendStub();
   const session = makeSession(sessionOverrides);
+  sessionRef = session;
 
   // Inject active session directly into the manager.
   const active = {
@@ -418,6 +421,57 @@ describe("SessionManager event translation", () => {
     });
 
     expect(events.some((e) => e.type === "message_end")).toBe(true);
+  });
+
+  it("marks assistant/user message_end for search reindex", () => {
+    const { manager } = makeManagerHarness({ status: "busy" });
+    const markForReindex = vi.fn();
+    const flushForSession = vi.fn();
+    const indexSession = vi.fn();
+    const deleteSession = vi.fn();
+    manager.searchIndex = { markForReindex, flushForSession, indexSession, deleteSession };
+
+    feedEvent(manager, "s1", {
+      type: "message_end",
+      message: {
+        role: "assistant",
+        content: [{ type: "text", text: "indexed" }],
+      },
+    });
+
+    expect(markForReindex).toHaveBeenCalledWith("s1");
+    expect(flushForSession).not.toHaveBeenCalled();
+  });
+
+  it("flushes pending search reindex on agent_end", () => {
+    const { manager } = makeManagerHarness({ status: "busy" });
+    const markForReindex = vi.fn();
+    const flushForSession = vi.fn();
+    const indexSession = vi.fn();
+    const deleteSession = vi.fn();
+    manager.searchIndex = { markForReindex, flushForSession, indexSession, deleteSession };
+
+    feedEvent(manager, "s1", { type: "agent_end" });
+
+    expect(flushForSession).toHaveBeenCalledWith("s1");
+  });
+
+  it("removes ephemeral sessions from search index instead of reindexing", () => {
+    const { manager } = makeManagerHarness({ status: "busy", ephemeral: true });
+    const markForReindex = vi.fn();
+    const flushForSession = vi.fn();
+    const indexSession = vi.fn();
+    const deleteSession = vi.fn();
+    manager.searchIndex = { markForReindex, flushForSession, indexSession, deleteSession };
+
+    feedEvent(manager, "s1", {
+      type: "message_end",
+      message: { role: "assistant", content: [{ type: "text", text: "ignored" }] },
+    });
+
+    expect(deleteSession).toHaveBeenCalledWith("s1");
+    expect(markForReindex).not.toHaveBeenCalled();
+    expect(flushForSession).not.toHaveBeenCalled();
   });
 
   it("updates lastActivity on events", () => {

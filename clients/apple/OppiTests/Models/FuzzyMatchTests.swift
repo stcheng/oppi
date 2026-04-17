@@ -258,6 +258,28 @@ struct FuzzyMatchTests {
         #expect(api[0].path.contains("APIClient"))
     }
 
+    @Test func filenameWithExtensionBeatsPrefixPlusExtensionAcrossPath() {
+        let candidates = [
+            "server/src/server.ts",
+            "server/src/event-ring.ts",
+            "server/src/rules.ts",
+            "server/src/id.ts",
+            "server/src/qr.ts",
+            "server/src/cli.ts",
+            "server/src/tls.ts",
+        ]
+
+        let results = FuzzyMatch.search(query: "server.ts", candidates: candidates, limit: 10)
+        #expect(!results.isEmpty)
+        guard let top = results.first else { return }
+
+        #expect(top.path == "server/src/server.ts")
+
+        // Regression guard: prefer contiguous filename match in the tail segment,
+        // not a split match like "server" (dir) + ".ts" (filename).
+        #expect(top.positions == [11, 12, 13, 14, 15, 16, 17, 18, 19])
+    }
+
     // MARK: - Realistic Repo Index
 
     /// Tests search against a realistic file index (mirrors oppi repo structure).

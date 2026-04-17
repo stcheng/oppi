@@ -220,14 +220,15 @@ enum FuzzyMatch {
             var curr = rowB
 
             for qi in 0..<qLen {
+                // Best predecessor among non-adjacent positions j <= ci-2.
+                // Stored as prev[j] + j for O(1) transition with linear gap penalty.
                 var runMax = NEG_INF
-                var runMaxIdx = -1
                 let qb = qLower[qi]
 
                 for ci in qi..<cLen {
-                    if qi > 0, ci > 0, prev[ci - 1] > NEG_INF {
-                        let adj = prev[ci - 1] + (ci - 1)
-                        if adj > runMax { runMax = adj; runMaxIdx = ci - 1 }
+                    if qi > 0, ci > 1, prev[ci - 2] > NEG_INF {
+                        let adj = prev[ci - 2] + (ci - 2)
+                        if adj > runMax { runMax = adj }
                     }
 
                     guard asciiLower(buf[ci]) == qb else { continue }
@@ -248,9 +249,19 @@ enum FuzzyMatch {
                     if qi == 0 {
                         if ci > 0 { score += ci * gapPenalty }
                     } else {
-                        guard runMax > NEG_INF else { continue }
-                        let best = runMax + (ci - 1) * gapPenalty
-                        if runMaxIdx == ci - 1 { score += consecutiveBonus }
+                        var best = NEG_INF
+
+                        // Non-adjacent predecessor path.
+                        if runMax > NEG_INF {
+                            best = max(best, runMax + (ci - 1) * gapPenalty)
+                        }
+
+                        // Adjacent predecessor gets explicit consecutive bonus.
+                        if ci > 0, prev[ci - 1] > NEG_INF {
+                            best = max(best, prev[ci - 1] + consecutiveBonus)
+                        }
+
+                        guard best > NEG_INF else { continue }
                         score += best
                     }
 
@@ -301,22 +312,22 @@ enum FuzzyMatch {
         }
 
         let NEG_INF = Int.min / 2
-        let absGap = 1
 
         var prevRow = [Int](repeating: NEG_INF, count: cLen)
         var currRow = [Int](repeating: NEG_INF, count: cLen)
         var prevFromFlat = [Int](repeating: -1, count: qLen * cLen)
 
         for qi in 0..<qLen {
+            // Best predecessor among non-adjacent positions j <= ci-2.
             var runMax = NEG_INF
             var runMaxIdx = -1
             let rowOff = qi * cLen
             let qb = qLower[qi]
 
             for ci in qi..<cLen {
-                if qi > 0, ci > 0, prevRow[ci - 1] > NEG_INF {
-                    let adj = prevRow[ci - 1] + (ci - 1) * absGap
-                    if adj > runMax { runMax = adj; runMaxIdx = ci - 1 }
+                if qi > 0, ci > 1, prevRow[ci - 2] > NEG_INF {
+                    let adj = prevRow[ci - 2] + (ci - 2)
+                    if adj > runMax { runMax = adj; runMaxIdx = ci - 2 }
                 }
 
                 guard asciiLower(cBytes[ci]) == qb else { continue }
@@ -329,11 +340,31 @@ enum FuzzyMatch {
                 if qi == 0 {
                     if ci > 0 { score += ci * gapPenalty }
                 } else {
-                    guard runMax > NEG_INF else { continue }
-                    let best = runMax + (ci - 1) * gapPenalty
-                    if runMaxIdx == ci - 1 { score += consecutiveBonus }
+                    var best = NEG_INF
+                    var bestPrevIdx = -1
+
+                    // Non-adjacent predecessor path.
+                    if runMax > NEG_INF {
+                        let candidate = runMax + (ci - 1) * gapPenalty
+                        if candidate > best {
+                            best = candidate
+                            bestPrevIdx = runMaxIdx
+                        }
+                    }
+
+                    // Adjacent predecessor path (gap=0) with consecutive bonus.
+                    if ci > 0, prevRow[ci - 1] > NEG_INF {
+                        let adjacent = prevRow[ci - 1] + consecutiveBonus
+                        // Prefer adjacent on ties to keep highlights contiguous.
+                        if adjacent >= best {
+                            best = adjacent
+                            bestPrevIdx = ci - 1
+                        }
+                    }
+
+                    guard best > NEG_INF else { continue }
                     score += best
-                    prevFromFlat[rowOff + ci] = runMaxIdx
+                    prevFromFlat[rowOff + ci] = bestPrevIdx
                 }
 
                 currRow[ci] = score

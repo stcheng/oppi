@@ -149,4 +149,37 @@ describe("SearchIndex indexes transcript content only", () => {
       index.close();
     }
   });
+
+  it("boosts newer sessions for equal-relevance query matches", () => {
+    const dataDir = mkdtempSync(join(tmpdir(), "search-index-"));
+    cleanupPaths.add(dataDir);
+
+    const oldPath = join(dataDir, "old.jsonl");
+    const newPath = join(dataDir, "new.jsonl");
+    writeJsonl(oldPath, "recency boost token", "same relevance baseline");
+    writeJsonl(newPath, "recency boost token", "same relevance baseline");
+
+    const oldTime = new Date(Date.now() - 14 * 86_400_000);
+    const newTime = new Date(Date.now() - 60_000);
+    utimesSync(oldPath, oldTime, oldTime);
+    utimesSync(newPath, newTime, newTime);
+
+    const oldSession = makeSession({ id: "sess-old", piSessionFile: oldPath });
+    const newSession = makeSession({ id: "sess-new", piSessionFile: newPath });
+    const sessions = new Map([
+      [oldSession.id, oldSession],
+      [newSession.id, newSession],
+    ]);
+
+    const index = new SearchIndex(dataDir, (id) => sessions.get(id));
+    cleanupPaths.add(join(dataDir, "session-search.db"));
+
+    try {
+      index.sync([oldSession, newSession]);
+      const results = index.search("recency boost token", "ws-1", 10);
+      expect(results.map((r) => r.sessionId)).toEqual(["sess-new", "sess-old"]);
+    } finally {
+      index.close();
+    }
+  });
 });
