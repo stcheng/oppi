@@ -37,15 +37,15 @@ struct DictationServerMessageDecodingTests {
     }
 
     @Test func decodesFinal() throws {
-        let json = #"{"type":"dictation_final","text":"Hello world how are you","audioId":"dict_abc123"}"#
+        let json = #"{"type":"dictation_final","text":"Hello world how are you"}"#
         let message = try decode(json)
-        #expect(message == .dictationFinal(text: "Hello world how are you", audioId: "dict_abc123"))
+        #expect(message == .dictationFinal(text: "Hello world how are you"))
     }
 
     @Test func decodesFinalMinimal() throws {
         let json = #"{"type":"dictation_final","text":"Hello"}"#
         let message = try decode(json)
-        #expect(message == .dictationFinal(text: "Hello", audioId: nil))
+        #expect(message == .dictationFinal(text: "Hello"))
     }
 
     @Test func decodesError() throws {
@@ -183,7 +183,7 @@ struct DictationEventMappingTests {
     }
 
     @Test func finalMapsToReplaceFinalTranscript() {
-        let event = mapServerMessage(.dictationFinal(text: "Complete transcript", audioId: nil))
+        let event = mapServerMessage(.dictationFinal(text: "Complete transcript"))
         #expect(event == .replaceFinalTranscript("Complete transcript"))
     }
 
@@ -205,7 +205,7 @@ struct DictationEventMappingTests {
             return nil
         case .dictationResult(let text, let snap):
             return .replaceFinalTranscript(text, snap: snap)
-        case .dictationFinal(let text, _):
+        case .dictationFinal(let text):
             return text.isEmpty ? nil : .replaceFinalTranscript(text)
         case .dictationError(_, let fatal):
             return fatal ? nil : nil
@@ -597,7 +597,7 @@ struct OppiDictationSessionMessageListenerTests {
         session._startMessageListenerForTesting()
         messageCont.yield(.dictationResult(text: "Hello world", snap: false))
         // Send final to cleanly end the stream
-        messageCont.yield(.dictationFinal(text: "Hello world", audioId: nil))
+        messageCont.yield(.dictationFinal(text: "Hello world"))
 
         let events = await collectTask.value
         #expect(events.count >= 1)
@@ -619,7 +619,7 @@ struct OppiDictationSessionMessageListenerTests {
 
         session._startMessageListenerForTesting()
         messageCont.yield(.dictationResult(text: "Snapped text", snap: true))
-        messageCont.yield(.dictationFinal(text: "Snapped text", audioId: nil))
+        messageCont.yield(.dictationFinal(text: "Snapped text"))
 
         let events = await collectTask.value
         #expect(events.count >= 1)
@@ -641,7 +641,7 @@ struct OppiDictationSessionMessageListenerTests {
 
         session._startMessageListenerForTesting()
         messageCont.yield(.dictationResult(text: "Hello world", snap: false))
-        messageCont.yield(.dictationFinal(text: "Hello world", audioId: nil))
+        messageCont.yield(.dictationFinal(text: "Hello world"))
 
         let (events, error) = await collectTask.value
         #expect(error == nil)
@@ -667,7 +667,7 @@ struct OppiDictationSessionMessageListenerTests {
         }
 
         session._startMessageListenerForTesting()
-        messageCont.yield(.dictationFinal(text: "Final transcript", audioId: "abc"))
+        messageCont.yield(.dictationFinal(text: "Final transcript"))
 
         let (events, error) = await collectTask.value
         // Should have received the final transcript
@@ -690,7 +690,7 @@ struct OppiDictationSessionMessageListenerTests {
         }
 
         session._startMessageListenerForTesting()
-        messageCont.yield(.dictationFinal(text: "", audioId: nil))
+        messageCont.yield(.dictationFinal(text: ""))
 
         let (events, error) = await collectTask.value
         // Empty final text should not produce a transcript event
@@ -737,7 +737,7 @@ struct OppiDictationSessionMessageListenerTests {
         messageCont.yield(.dictationError(error: "transient hiccup", fatal: false))
         // Stream should still accept more messages
         messageCont.yield(.dictationResult(text: "After error", snap: false))
-        messageCont.yield(.dictationFinal(text: "After error", audioId: nil))
+        messageCont.yield(.dictationFinal(text: "After error"))
 
         let (events, error) = await collectTask.value
         #expect(error == nil)
@@ -759,7 +759,7 @@ struct OppiDictationSessionMessageListenerTests {
 
         session._startMessageListenerForTesting()
         messageCont.yield(.dictationReady(provider: DictationProviderInfo(sttProvider: "test", sttModel: "test")))
-        messageCont.yield(.dictationFinal(text: "Done", audioId: nil))
+        messageCont.yield(.dictationFinal(text: "Done"))
 
         let (events, _) = await collectTask.value
         // dictationReady should not produce any VoiceSessionEvent transcript
@@ -788,7 +788,7 @@ struct OppiDictationSessionMessageListenerTests {
         messageCont.yield(.dictationResult(text: "Hello", snap: false))
         messageCont.yield(.dictationResult(text: "Hello world", snap: false))
         messageCont.yield(.dictationResult(text: "Hello world how", snap: false))
-        messageCont.yield(.dictationFinal(text: "Hello world how are you", audioId: nil))
+        messageCont.yield(.dictationFinal(text: "Hello world how are you"))
 
         let (events, error) = await collectTask.value
         #expect(error == nil)
@@ -929,7 +929,7 @@ struct OppiDictationSessionAudioDrainTests {
 
         // End the message stream to finish the session
         session._startMessageListenerForTesting()
-        messageCont.yield(.dictationFinal(text: "done", audioId: nil))
+        messageCont.yield(.dictationFinal(text: "done"))
 
         var metricTagCount = 0
         do {
@@ -1060,7 +1060,7 @@ struct OppiDictationSessionCancelStopTests {
 
         // Give stop a moment to send the message, then end the stream
         try? await Task.sleep(for: .milliseconds(50))
-        messageCont.yield(.dictationFinal(text: "final", audioId: nil))
+        messageCont.yield(.dictationFinal(text: "final"))
 
         await stopTask.value
 
@@ -1091,7 +1091,7 @@ struct OppiDictationSessionCancelStopTests {
             await session.stop()
         }
         try? await Task.sleep(for: .milliseconds(50))
-        messageCont.yield(.dictationFinal(text: "", audioId: nil))
+        messageCont.yield(.dictationFinal(text: ""))
         await stopTask.value
 
         await session.stop()

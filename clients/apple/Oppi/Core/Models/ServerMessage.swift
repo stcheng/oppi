@@ -67,7 +67,7 @@ enum ServerMessage: Sendable, Equatable {
     // Dictation (multiplexed over /stream)
     case dictationReady(provider: DictationProviderInfo?)
     case dictationResult(text: String, snap: Bool)
-    case dictationFinal(text: String, audioId: String?)
+    case dictationFinal(text: String)
     case dictationError(error: String, fatal: Bool)
 
     // Errors
@@ -163,7 +163,7 @@ extension ServerMessage: Decodable {
         case workspaceId, status
         // dictation
         case sttProvider, sttModel
-        case text, snap, audioId
+        case text, snap
     }
 
     init(from decoder: Decoder) throws {
@@ -387,8 +387,7 @@ extension ServerMessage: Decodable {
 
         case "dictation_final":
             let text = try c.decode(String.self, forKey: .text)
-            let audioId = try c.decodeIfPresent(String.self, forKey: .audioId)
-            self = .dictationFinal(text: text, audioId: audioId)
+            self = .dictationFinal(text: text)
 
         case "dictation_error":
             let errorMsg = try c.decode(String.self, forKey: .error)

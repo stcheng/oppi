@@ -266,7 +266,7 @@ final class OppiDictationSession: VoiceTranscriptionSession {
                     logger.debug("Dictation result: \(text.count) chars\(snap ? " (snap)" : "")")
                     yieldTranscriptIfChanged(text, snap: snap)
 
-                case .dictationFinal(let text, _):
+                case .dictationFinal(let text):
                     logger.info("Dictation final: \(text.count) chars")
                     yieldTranscriptIfChanged(text)
                     eventContinuation.finish()
