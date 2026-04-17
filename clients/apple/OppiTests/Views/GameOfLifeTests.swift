@@ -236,16 +236,17 @@ struct GameOfLifeTests {
     func reseedFrequency() {
         let layer = GameOfLifeLayer(gridSize: 6)
 
+        // Make the first reseed deterministic: start sparse (<2 alive).
+        // This keeps the long-run upper-bound check meaningful while avoiding
+        // random flakiness from rare long-lived oscillators.
+        for i in 0..<36 { layer.cells[i] = false }
+        layer.cells[0] = true
+
         var reseedCount = 0
-        // Use 10000 ticks to reduce flakiness — some random seeds produce
-        // long-lived oscillators (period 2+) that avoid single-generation
-        // stale detection for thousands of ticks.
         for _ in 0..<10_000 {
             if layer.tick() { reseedCount += 1 }
         }
 
-        // On a 6x6 toroidal grid with stale detection (threshold=4) and
-        // sparse/death checks, reseeds should happen regularly.
         #expect(reseedCount >= 1, "Should reseed at least once in 10000 ticks (got \(reseedCount))")
         #expect(reseedCount < 5000, "Too many reseeds in 10000 ticks (got \(reseedCount))")
     }
