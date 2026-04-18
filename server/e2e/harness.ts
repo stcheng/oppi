@@ -31,7 +31,7 @@ export const ADMIN_TOKEN = "e2e-admin-token";
 // Resolved after local model server probe
 export let E2E_MODEL = "";
 
-const PREFERRED_MODEL_REGEX = /qwen3\.?5.*27b/i;
+const PREFERRED_MODEL_REGEX = /qwen3\.?6/i;
 
 function chooseModelId(modelIds: string[]): string | null {
   if (modelIds.length === 0) return null;
@@ -102,7 +102,7 @@ export async function ensureMLXServerReady(): Promise<boolean> {
       console.log(`[e2e] OMLX server ready on :${OMLX_PORT}, using preferred model: ${modelId}`);
     } else {
       console.warn(
-        `[e2e] Preferred model (Qwen3.5-27B*) not found, falling back to: ${modelId}`,
+        `[e2e] Preferred model (Qwen3.6*) not found, falling back to: ${modelId}`,
       );
     }
 

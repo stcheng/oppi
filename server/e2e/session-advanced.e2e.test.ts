@@ -390,15 +390,19 @@ describe("E2E: Advanced Session Lifecycle", { timeout: 600_000 }, () => {
       );
       expect(queueResult.success).toBe(true);
 
-      // Wait for first agent_end (initial prompt completes)
-      const { index: firstEndIdx } = await waitForEvent(
+      // Follow-up queue items may run within the current agent loop and emit
+      // a single final agent_end after all queued work is complete.
+      const { index: queueItemStartIdx } = await waitForEvent(
         stream,
-        (e) => e.direction === "in" && e.type === "agent_end" && e.sessionId === sessionId,
-        "first agent_end (queue test)",
+        (e) =>
+          e.direction === "in" &&
+          e.type === "queue_item_started" &&
+          e.sessionId === sessionId,
+        "queue_item_started (follow-up)",
         { startIndex, timeoutMs: 300_000 },
       );
 
-      // Verify queue-related events appeared (queue_state or queue_item_started)
+      // Verify queue bookkeeping events appeared
       const queueEvents = stream.events
         .slice(startIndex)
         .filter(
@@ -409,12 +413,25 @@ describe("E2E: Advanced Session Lifecycle", { timeout: 600_000 }, () => {
         );
       expect(queueEvents.length).toBeGreaterThan(0);
 
-      // Wait for second agent_end — the follow-up should execute automatically
+      // Confirm the queued follow-up message was consumed
+      await waitForEvent(
+        stream,
+        (e) =>
+          e.direction === "in" &&
+          e.type === "message_end" &&
+          e.sessionId === sessionId &&
+          typeof e.content === "string" &&
+          e.content.includes("Now say goodbye"),
+        "queued follow-up message_end",
+        { startIndex: queueItemStartIdx, timeoutMs: 300_000 },
+      );
+
+      // Agent turn should eventually finish after processing queued follow-up
       await waitForEvent(
         stream,
         (e) => e.direction === "in" && e.type === "agent_end" && e.sessionId === sessionId,
-        "second agent_end (follow-up)",
-        { startIndex: firstEndIdx + 1, timeoutMs: 300_000 },
+        "agent_end after follow-up",
+        { startIndex: queueItemStartIdx, timeoutMs: 300_000 },
       );
     } finally {
       approver.stop();

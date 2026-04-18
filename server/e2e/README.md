@@ -6,7 +6,7 @@ End-to-end tests that exercise the full Oppi stack: Docker server + local OMLX m
 
 - Docker (OrbStack recommended)
 - OMLX-compatible OpenAI API server on localhost:8400 with at least one model loaded
-- Preferred model: `Qwen3.5-27B-*` (fallback: first model returned by `/v1/models`)
+- Preferred model: `Qwen3.6-*` (fallback: first model returned by `/v1/models`)
 
 ## Test Suites
 
