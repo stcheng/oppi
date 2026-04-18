@@ -263,6 +263,189 @@ struct AssistantTimelineRowContentViewTests {
     }
 
     @MainActor
+    @Test func narrowTableCardDoesNotExceedContainerWidth() {
+        let tableView = NativeTableBlockView()
+        tableView.translatesAutoresizingMaskIntoConstraints = false
+
+        let container = UIView(frame: CGRect(x: 0, y: 0, width: 320, height: 200))
+        container.addSubview(tableView)
+        NSLayoutConstraint.activate([
+            tableView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            tableView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            tableView.topAnchor.constraint(equalTo: container.topAnchor),
+        ])
+
+        tableView.apply(
+            headers: [[.text("Key")]],
+            rows: [[[.text("v")]]],
+            palette: ThemeRuntimeState.currentPalette()
+        )
+
+        container.setNeedsLayout()
+        container.layoutIfNeeded()
+
+        guard let cardView = tableView.subviews.first else {
+            Issue.record("Expected NativeTableBlockView to contain card view")
+            return
+        }
+
+        #expect(
+            cardView.frame.width <= tableView.bounds.width + 0.5,
+            "Table card width \(cardView.frame.width) should not exceed container width \(tableView.bounds.width)"
+        )
+    }
+
+    @MainActor
+    @Test func tableHorizontalOffsetResetsWhenContentChanges() throws {
+        let tableView = NativeTableBlockView()
+        tableView.translatesAutoresizingMaskIntoConstraints = false
+
+        let container = UIView(frame: CGRect(x: 0, y: 0, width: 320, height: 260))
+        container.addSubview(tableView)
+        NSLayoutConstraint.activate([
+            tableView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            tableView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            tableView.topAnchor.constraint(equalTo: container.topAnchor),
+        ])
+
+        tableView.apply(
+            headers: [[.text("Column")], [.text("Very Long Notes")]],
+            rows: [
+                [[.text("A")], [.text(String(repeating: "long-value-", count: 12))]],
+            ],
+            palette: ThemeRuntimeState.currentPalette()
+        )
+
+        container.setNeedsLayout()
+        container.layoutIfNeeded()
+
+        let horizontalScroll = try #require(timelineAllScrollViews(in: tableView).first { !($0 is UITextView) })
+        horizontalScroll.contentOffset.x = 140
+
+        tableView.apply(
+            headers: [[.text("Name")], [.text("Status")]],
+            rows: [
+                [[.text("alpha")], [.text("ok")]],
+            ],
+            palette: ThemeRuntimeState.currentPalette()
+        )
+
+        container.setNeedsLayout()
+        container.layoutIfNeeded()
+
+        #expect(
+            abs(horizontalScroll.contentOffset.x) < 0.5,
+            "Table horizontal offset should reset after content changes, got x=\(horizontalScroll.contentOffset.x)"
+        )
+    }
+
+    @MainActor
+    @Test func tableTextViewPinsNonScrollableOffsetToTop() throws {
+        let tableView = NativeTableBlockView()
+        tableView.translatesAutoresizingMaskIntoConstraints = false
+
+        let container = UIView(frame: CGRect(x: 0, y: 0, width: 320, height: 260))
+        container.addSubview(tableView)
+        NSLayoutConstraint.activate([
+            tableView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            tableView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            tableView.topAnchor.constraint(equalTo: container.topAnchor),
+        ])
+
+        tableView.apply(
+            headers: [[.text("Name")], [.text("Value")]],
+            rows: (0..<20).map { index in
+                [[.text("row-\(index)")], [.text("value-\(index)")]]
+            },
+            palette: ThemeRuntimeState.currentPalette()
+        )
+
+        container.setNeedsLayout()
+        container.layoutIfNeeded()
+
+        let tableTextView = try #require(timelineAllTextViews(in: tableView).first)
+        tableTextView.contentOffset = CGPoint(x: 0, y: 80)
+        tableTextView.setNeedsLayout()
+        tableTextView.layoutIfNeeded()
+
+        #expect(
+            abs(tableTextView.contentOffset.y + tableTextView.adjustedContentInset.top) < 0.5,
+            "Table text view should pin non-scrollable offset to top, got y=\(tableTextView.contentOffset.y)"
+        )
+    }
+
+    @MainActor
+    @Test func tableAndMermaidRenderTogetherWithoutTableCorruption() async throws {
+        let markdown = """
+        ## What we can extend vs what we need to add
+
+        | Area | Keep | Add |
+        | --- | --- | --- |
+        | Selection menu | existing text injector | WKWebView support |
+        | Prompt path | PromptAssembler v2 | capture card UI |
+
+        So: extend existing abstractions + add 3-4 focused types.
+
+        ## Visual diagram to keep
+
+        ```mermaid
+        flowchart TD
+            A["SelectedTextSourceContext"] --> B["Selection menu injectors"]
+            B --> C["ContextCapture model"]
+            C --> D["PromptAssembler v2"]
+        ```
+        """
+
+        let markdownView = AssistantMarkdownContentView()
+        let container = UIView(frame: CGRect(x: 0, y: 0, width: 360, height: 1_600))
+        markdownView.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(markdownView)
+        NSLayoutConstraint.activate([
+            markdownView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            markdownView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            markdownView.topAnchor.constraint(equalTo: container.topAnchor),
+        ])
+
+        markdownView.apply(configuration: .make(
+            content: markdown,
+            isStreaming: false,
+            themeID: .dark
+        ))
+        container.setNeedsLayout()
+        container.layoutIfNeeded()
+
+        let tableView = try #require(timelineFirstView(ofType: NativeTableBlockView.self, in: markdownView))
+        let tableTextView = try #require(timelineAllTextViews(in: tableView).first)
+
+        let initialText = timelineRenderedText(of: tableTextView)
+        #expect(initialText.contains("Selection menu"))
+        #expect(initialText.contains("WKWebView support"))
+
+        if let mermaidView = timelineFirstView(ofType: NativeMermaidBlockView.self, in: markdownView) {
+            for _ in 0..<150 {
+                container.setNeedsLayout()
+                container.layoutIfNeeded()
+
+                if timelineAllImageViews(in: mermaidView).contains(where: { !$0.isHidden && $0.image != nil }) {
+                    break
+                }
+                try await Task.sleep(for: .milliseconds(20))
+            }
+        }
+
+        container.setNeedsLayout()
+        container.layoutIfNeeded()
+
+        let finalText = timelineRenderedText(of: tableTextView)
+        #expect(finalText.contains("Selection menu"))
+        #expect(finalText.contains("WKWebView support"))
+        #expect(
+            abs(tableTextView.contentOffset.y + tableTextView.adjustedContentInset.top) < 0.5,
+            "Table text view should stay pinned at top, got y=\(tableTextView.contentOffset.y)"
+        )
+    }
+
+    @MainActor
     @Test func streamingTableUpdatesInPlace() throws {
         // Simulate streaming: table starts with header + separator, then rows arrive.
         // Phase 1: header + separator only
@@ -280,7 +463,7 @@ struct AssistantTimelineRowContentViewTests {
         let tableAfterPhase1 = timelineFirstView(ofType: NativeTableBlockView.self, in: mdView)
         #expect(tableAfterPhase1 != nil, "Table view should exist after header + separator")
 
-        // Phase 2: first row arrives
+        // Phase 2: first row arrives.
         let phase2 = """
         Results:
 
@@ -288,12 +471,17 @@ struct AssistantTimelineRowContentViewTests {
         | --- | --- |
         | alpha | 100 |
         """
+        mdView.apply(configuration: .make(content: phase2, isStreaming: true, themeID: ThemeRuntimeState.currentThemeID()))
+        _ = fittedTimelineSize(for: mdView, width: 370)
 
-        // Same NativeTableBlockView instance should be reused (in-place update, not rebuild)
+        // Same NativeTableBlockView instance should be reused (in-place update, not rebuild).
         let tableAfterPhase2 = timelineFirstView(ofType: NativeTableBlockView.self, in: mdView)
         #expect(tableAfterPhase2 === tableAfterPhase1, "Table view should be updated in-place, not rebuilt")
 
-        // Phase 3: second row arrives (partial)
+        let phase2TextView = try #require(tableAfterPhase2.flatMap { timelineAllTextViews(in: $0).first })
+        #expect(timelineRenderedText(of: phase2TextView).contains("alpha"))
+
+        // Phase 3: second row arrives (partial).
         let phase3 = """
         Results:
 
@@ -302,9 +490,14 @@ struct AssistantTimelineRowContentViewTests {
         | alpha | 100 |
         | beta | 20
         """
+        mdView.apply(configuration: .make(content: phase3, isStreaming: true, themeID: ThemeRuntimeState.currentThemeID()))
+        _ = fittedTimelineSize(for: mdView, width: 370)
 
         let tableAfterPhase3 = timelineFirstView(ofType: NativeTableBlockView.self, in: mdView)
         #expect(tableAfterPhase3 === tableAfterPhase1, "Table view should still be the same instance")
+
+        let phase3TextView = try #require(tableAfterPhase3.flatMap { timelineAllTextViews(in: $0).first })
+        #expect(timelineRenderedText(of: phase3TextView).contains("beta"))
     }
 
     @MainActor
@@ -332,6 +525,113 @@ struct AssistantTimelineRowContentViewTests {
 
         let tableAfterHeader = timelineFirstView(ofType: NativeTableBlockView.self, in: mdView)
         #expect(tableAfterHeader != nil, "Table view should appear after structural rebuild")
+    }
+
+    @MainActor
+    @Test func streamingTableRemainsStableWhenMermaidBlockArrives() throws {
+        let phase1 = """
+        ## What we can extend
+
+        | Surface | Action |
+        | --- | --- |
+        | Selection menu | keep |
+
+        So: extend existing abstractions.
+        """
+
+        let mdView = AssistantMarkdownContentView()
+        mdView.apply(configuration: .make(content: phase1, isStreaming: true, themeID: ThemeRuntimeState.currentThemeID()))
+        _ = fittedTimelineSize(for: mdView, width: 370)
+
+        let tableAfterPhase1 = try #require(timelineFirstView(ofType: NativeTableBlockView.self, in: mdView))
+        let tableTextViewPhase1 = try #require(timelineAllTextViews(in: tableAfterPhase1).first)
+        #expect(timelineRenderedText(of: tableTextViewPhase1).contains("Selection menu"))
+
+        let phase2 = """
+        ## What we can extend
+
+        | Surface | Action |
+        | --- | --- |
+        | Selection menu | keep |
+
+        So: extend existing abstractions.
+
+        ```mermaid
+        flowchart TD
+            A -->|menu injectors| B
+            B -->|context capture| C
+        """
+        mdView.apply(configuration: .make(content: phase2, isStreaming: true, themeID: ThemeRuntimeState.currentThemeID()))
+        _ = fittedTimelineSize(for: mdView, width: 370)
+
+        let phase2Table = try #require(timelineFirstView(ofType: NativeTableBlockView.self, in: mdView))
+        #expect(phase2Table === tableAfterPhase1)
+        let tableTextViewPhase2 = try #require(timelineAllTextViews(in: phase2Table).first)
+        #expect(timelineRenderedText(of: tableTextViewPhase2).contains("Selection menu"))
+
+        let phase3 = phase2 + "\n        ```\n"
+        mdView.apply(configuration: .make(content: phase3, isStreaming: false, themeID: ThemeRuntimeState.currentThemeID()))
+        _ = fittedTimelineSize(for: mdView, width: 370)
+
+        let phase3Table = try #require(timelineFirstView(ofType: NativeTableBlockView.self, in: mdView))
+        let tableTextViewPhase3 = try #require(timelineAllTextViews(in: phase3Table).first)
+        let rendered = timelineRenderedText(of: tableTextViewPhase3)
+
+        #expect(rendered.contains("Selection menu"))
+        #expect(!rendered.contains("menu injectors"), "Mermaid edge labels should not leak into table rendering")
+    }
+
+    @MainActor
+    @Test func streamingTableTextViewStaysPinnedToTopBetweenRelayouts() throws {
+        let markdownView = AssistantMarkdownContentView()
+        let container = UIView(frame: CGRect(x: 0, y: 0, width: 340, height: 500))
+        markdownView.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(markdownView)
+        NSLayoutConstraint.activate([
+            markdownView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            markdownView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            markdownView.topAnchor.constraint(equalTo: container.topAnchor),
+        ])
+
+        var content = """
+        | Name | Value |
+        | --- | --- |
+        | alpha | 100 |
+        """
+
+        markdownView.apply(configuration: .make(
+            content: content,
+            isStreaming: true,
+            themeID: .dark
+        ))
+        container.setNeedsLayout()
+        container.layoutIfNeeded()
+
+        let tableView = try #require(timelineFirstView(ofType: NativeTableBlockView.self, in: markdownView))
+        let initialTextView = try #require(timelineAllTextViews(in: tableView).first)
+        #expect(
+            abs(initialTextView.contentOffset.y + initialTextView.adjustedContentInset.top) < 0.5,
+            "Fixture expects table text to start pinned to top"
+        )
+
+        for index in 0..<20 {
+            content += "\n| row-\(index) | \(index) |"
+            markdownView.apply(configuration: .make(
+                content: content,
+                isStreaming: true,
+                themeID: .dark
+            ))
+            // Intentionally skip layout to mirror streaming ticks between
+            // collection-view relayout passes.
+        }
+
+        let updatedTableView = try #require(timelineFirstView(ofType: NativeTableBlockView.self, in: markdownView))
+        let updatedTextView = try #require(timelineAllTextViews(in: updatedTableView).first)
+
+        #expect(
+            abs(updatedTextView.contentOffset.y + updatedTextView.adjustedContentInset.top) < 0.5,
+            "Non-scrollable table text view drifted to contentOffset.y=\(updatedTextView.contentOffset.y)"
+        )
     }
 
     @MainActor

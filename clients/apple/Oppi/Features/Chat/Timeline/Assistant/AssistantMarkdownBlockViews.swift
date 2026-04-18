@@ -259,8 +259,8 @@ final class NativeTableBlockView: UIView {
         return sv
     }()
 
-    private let tableLabel: UITextView = {
-        let tv = UITextView()
+    private let tableLabel: BaselineSafeTextView = {
+        let tv = BaselineSafeTextView()
         tv.isEditable = false
         tv.isScrollEnabled = false
         tv.isSelectable = false
