@@ -1,0 +1,147 @@
+import { describe, expect, it } from "vitest";
+
+import { normalizePiUsage, resolveCacheWriteForModelBreakdown } from "../src/token-usage.js";
+
+describe("normalizePiUsage", () => {
+  it("returns canonical usage when explicit fields are present", () => {
+    const usage = normalizePiUsage({
+      input: 120,
+      output: 45,
+      cacheRead: 800,
+      cacheWrite: 30,
+      cost: { total: 0.25 },
+    });
+
+    expect(usage).toEqual({
+      input: 120,
+      output: 45,
+      cacheRead: 800,
+      cacheWrite: 30,
+      cost: 0.25,
+    });
+  });
+
+  it("normalizes OpenAI Chat Completions usage fields", () => {
+    const usage = normalizePiUsage({
+      prompt_tokens: 1500,
+      completion_tokens: 80,
+      prompt_tokens_details: {
+        cached_tokens: 1200,
+        cache_write_tokens: 100,
+      },
+      cost: { total: 0.41 },
+    });
+
+    expect(usage).toEqual({
+      input: 200, // 1500 - 1200 - 100
+      output: 80,
+      cacheRead: 1200,
+      cacheWrite: 100,
+      cost: 0.41,
+    });
+  });
+
+  it("normalizes OpenAI Responses usage fields", () => {
+    const usage = normalizePiUsage({
+      input_tokens: 1400,
+      output_tokens: 70,
+      input_tokens_details: {
+        cached_tokens: 1100,
+        cache_write_tokens: 120,
+      },
+      cost: { total: 0.33 },
+    });
+
+    expect(usage).toEqual({
+      input: 180, // 1400 - 1100 - 120
+      output: 70,
+      cacheRead: 1100,
+      cacheWrite: 120,
+      cost: 0.33,
+    });
+  });
+
+  it("normalizes Anthropic cache_read/cache_creation usage fields", () => {
+    const usage = normalizePiUsage({
+      input: 90,
+      output: 20,
+      cache_read_input_tokens: 700,
+      cache_creation_input_tokens: 55,
+      cost: { total: 0.11 },
+    });
+
+    expect(usage).toEqual({
+      input: 90,
+      output: 20,
+      cacheRead: 700,
+      cacheWrite: 55,
+      cost: 0.11,
+    });
+  });
+
+  it("returns null for non-object usage", () => {
+    expect(normalizePiUsage(undefined)).toBeNull();
+    expect(normalizePiUsage(null)).toBeNull();
+    expect(normalizePiUsage("oops")).toBeNull();
+  });
+});
+
+describe("resolveCacheWriteForModelBreakdown", () => {
+  it("uses reported cacheWrite when available", () => {
+    const resolved = resolveCacheWriteForModelBreakdown("openai-codex/gpt-5.4", {
+      input: 1000,
+      output: 200,
+      cacheRead: 5000,
+      cacheWrite: 77,
+    });
+
+    expect(resolved).toEqual({ value: 77, source: "reported" });
+  });
+
+  it("estimates cacheWrite for OpenAI GPT models from uncached input", () => {
+    const resolved = resolveCacheWriteForModelBreakdown("openai-codex/gpt-5.4", {
+      input: 1200,
+      output: 300,
+      cacheRead: 5000,
+      cacheWrite: 0,
+    });
+
+    expect(resolved.value).toBe(1200);
+    expect(resolved.source).toBe("estimated");
+    expect(resolved.ruleId).toBe("openai-gpt-uncached-input");
+  });
+
+  it("supports OpenRouter OpenAI model IDs", () => {
+    const resolved = resolveCacheWriteForModelBreakdown("openrouter/openai/gpt-5.4", {
+      input: 900,
+      output: 200,
+      cacheRead: 4000,
+      cacheWrite: 0,
+    });
+
+    expect(resolved.value).toBe(900);
+    expect(resolved.source).toBe("estimated");
+  });
+
+  it("does not estimate cacheWrite for non-OpenAI providers", () => {
+    const resolved = resolveCacheWriteForModelBreakdown("anthropic/claude-opus-4-6", {
+      input: 1200,
+      output: 300,
+      cacheRead: 5000,
+      cacheWrite: 0,
+    });
+
+    expect(resolved).toEqual({ value: 0, source: "none" });
+  });
+
+  it("does not estimate when there is no cache read signal", () => {
+    const resolved = resolveCacheWriteForModelBreakdown("openai-codex/gpt-5.4", {
+      input: 1200,
+      output: 300,
+      cacheRead: 0,
+      cacheWrite: 0,
+    });
+
+    expect(resolved).toEqual({ value: 0, source: "none", ruleId: "openai-gpt-uncached-input" });
+  });
+});

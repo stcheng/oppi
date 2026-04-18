@@ -16,6 +16,7 @@ import type { MobileRendererRegistry } from "./mobile-renderer.js";
 import type { PiMessage } from "./pi-events.js";
 import { sanitizeToolResultDetails } from "./visual-schema.js";
 import { stripAnsiEscapes } from "./ansi.js";
+import { normalizePiUsage } from "./token-usage.js";
 
 // ─── Shell Preview Constants ───
 
@@ -160,20 +161,7 @@ function extractUsage(message: PiMessage): {
   cacheRead: number;
   cacheWrite: number;
 } | null {
-  const usage = asRecord(message.usage);
-  if (!usage) {
-    return null;
-  }
-
-  const cost = asRecord(usage.cost);
-
-  return {
-    input: typeof usage.input === "number" ? usage.input : 0,
-    output: typeof usage.output === "number" ? usage.output : 0,
-    cost: typeof cost?.total === "number" ? cost.total : 0,
-    cacheRead: typeof usage.cacheRead === "number" ? usage.cacheRead : 0,
-    cacheWrite: typeof usage.cacheWrite === "number" ? usage.cacheWrite : 0,
-  };
+  return normalizePiUsage(message.usage);
 }
 
 /**

@@ -5,6 +5,7 @@
  */
 import { round2 } from "../metric-utils.js";
 import type { Session, Workspace } from "../types.js";
+import { resolveCacheWriteForModelBreakdown } from "../token-usage.js";
 
 // ─── Response types ───
 
@@ -300,7 +301,7 @@ export function aggregateStats(input: AggregateInput): AggregateResult {
     m.cost += cost;
     m.tokens += tokens;
     m.cacheRead += s.tokens?.cacheRead ?? 0;
-    m.cacheWrite += s.tokens?.cacheWrite ?? 0;
+    m.cacheWrite += resolveCacheWriteForModelBreakdown(s.model, s.tokens).value;
 
     // Workspace
     const wsId = s.workspaceId ?? "unknown";

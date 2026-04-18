@@ -317,6 +317,60 @@ describe("aggregateStats", () => {
     });
   });
 
+  test("infers cacheWrite from input for OpenAI GPT models when cacheWrite is absent", () => {
+    const sessions = [
+      makeSession({
+        id: "s1",
+        createdAt: now - DAY_MS,
+        cost: 5,
+        model: "openai-codex/gpt-5.4",
+        tokens: { input: 1200, output: 300, cacheRead: 5000, cacheWrite: 0 },
+      }),
+    ];
+
+    const result = aggregate({ sessions });
+    expect(result.modelBreakdown).toHaveLength(1);
+    expect(result.modelBreakdown[0]).toMatchObject({
+      model: "openai-codex/gpt-5.4",
+      cacheRead: 5000,
+      // OpenAI Responses-style fallback: write-equivalent = uncached input
+      cacheWrite: 1200,
+      tokens: 6500,
+    });
+  });
+
+  test("prefers reported cacheWrite over inferred value for OpenAI GPT models", () => {
+    const sessions = [
+      makeSession({
+        id: "s1",
+        createdAt: now - DAY_MS,
+        cost: 5,
+        model: "openai-codex/gpt-5.4",
+        tokens: { input: 1200, output: 300, cacheRead: 5000, cacheWrite: 77 },
+      }),
+    ];
+
+    const result = aggregate({ sessions });
+    expect(result.modelBreakdown).toHaveLength(1);
+    expect(result.modelBreakdown[0]?.cacheWrite).toBe(77);
+  });
+
+  test("does not infer cacheWrite for non-OpenAI models", () => {
+    const sessions = [
+      makeSession({
+        id: "s1",
+        createdAt: now - DAY_MS,
+        cost: 5,
+        model: "anthropic/claude-opus-4-6",
+        tokens: { input: 1200, output: 300, cacheRead: 5000, cacheWrite: 0 },
+      }),
+    ];
+
+    const result = aggregate({ sessions });
+    expect(result.modelBreakdown).toHaveLength(1);
+    expect(result.modelBreakdown[0]?.cacheWrite).toBe(0);
+  });
+
   test("aggregates workspace breakdown", () => {
     const workspaces = [
       makeWorkspace({ id: "ws-1", name: "coding" }),

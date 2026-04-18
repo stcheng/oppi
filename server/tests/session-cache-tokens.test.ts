@@ -30,10 +30,7 @@ function makeSession(overrides?: Partial<Session>): Session {
   };
 }
 
-function makeAssistantMessage(
-  text: string,
-  usage?: PiMessage["usage"],
-): PiMessage {
+function makeAssistantMessage(text: string, usage?: PiMessage["usage"]): PiMessage {
   return {
     role: "assistant",
     content: [{ type: "text", text }],
@@ -480,7 +477,7 @@ describe("cache tokens: extractUsage edge cases", () => {
     expect(session.tokens.cacheWrite).toBe(0);
   });
 
-  it("handles NaN values for cache fields (typeof NaN is number)", () => {
+  it("treats NaN cache fields as invalid and falls back to 0", () => {
     const session = makeSession();
 
     applyMessageEndToSession(session, {
@@ -494,11 +491,9 @@ describe("cache tokens: extractUsage edge cases", () => {
       },
     });
 
-    // NaN passes typeof === "number" check! This is a real edge case.
-    // extractUsage will return NaN, and 0 + NaN = NaN.
-    // This documents the current behavior — NaN propagation is a risk.
-    expect(session.tokens.cacheRead).toBeNaN();
-    expect(session.tokens.cacheWrite).toBeNaN();
+    // normalizePiUsage rejects non-finite numbers, preventing NaN propagation.
+    expect(session.tokens.cacheRead).toBe(0);
+    expect(session.tokens.cacheWrite).toBe(0);
   });
 
   it("returns null usage when usage object is missing entirely", () => {
@@ -569,6 +564,63 @@ describe("cache tokens: extractUsage edge cases", () => {
     expect(session.cost).toBe(0);
     // contextTokens should still be set (usage existed, even with all zeros)
     expect(session.contextTokens).toBe(0);
+  });
+
+  it("parses OpenAI prompt_tokens_details cache_write_tokens when canonical fields are absent", () => {
+    const session = makeSession();
+
+    applyMessageEndToSession(session, {
+      role: "assistant",
+      content: [{ type: "text", text: "answer" }],
+      usage: {
+        prompt_tokens: 1200,
+        completion_tokens: 60,
+        prompt_tokens_details: {
+          cached_tokens: 900,
+          cache_write_tokens: 150,
+        },
+        cost: { total: 0.42 },
+      } as unknown as PiMessage["usage"],
+    });
+
+    expect(session.tokens).toEqual({
+      input: 150,
+      output: 60,
+      cacheRead: 900,
+      cacheWrite: 150,
+    });
+    expect(session.contextTokens).toBe(1260);
+  });
+
+  it("parses Responses-style input_tokens_details cache_write_tokens and avoids input double-counting", () => {
+    const session = makeSession();
+
+    applyMessageEndToSession(session, {
+      role: "assistant",
+      content: [{ type: "text", text: "answer" }],
+      usage: {
+        // Some providers send canonical fields where input still includes cache writes.
+        input: 350,
+        output: 60,
+        cacheRead: 900,
+        input_tokens: 1250,
+        output_tokens: 60,
+        input_tokens_details: {
+          cached_tokens: 900,
+          cache_write_tokens: 200,
+        },
+        cost: { total: 0.33 },
+      } as unknown as PiMessage["usage"],
+    });
+
+    // input_tokens (1250) - cached (900) - write (200) = 150 non-cached, non-write input
+    expect(session.tokens).toEqual({
+      input: 150,
+      output: 60,
+      cacheRead: 900,
+      cacheWrite: 200,
+    });
+    expect(session.contextTokens).toBe(1310);
   });
 });
 
@@ -848,7 +900,7 @@ describe("cache tokens: realistic multi-turn", () => {
       cacheRead: 1500,
       cacheWrite: 1100,
     });
-    expect(session.cost).toBeCloseTo(0.10);
+    expect(session.cost).toBeCloseTo(0.1);
     // contextTokens = last message only
     expect(session.contextTokens).toBe(2900);
     expect(session.messageCount).toBe(2); // only text messages counted
