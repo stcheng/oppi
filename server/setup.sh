@@ -15,10 +15,20 @@ if command -v bun &>/dev/null; then
   RT=bun
   echo "Using Bun $(bun --version)"
 elif command -v node &>/dev/null; then
+  NODE_VERSION="$(node --version)"
+  NODE_MAJOR="${NODE_VERSION#v}"
+  NODE_MAJOR="${NODE_MAJOR%%.*}"
+
+  if [[ "$NODE_MAJOR" -lt 22 ]]; then
+    echo "Error: Node.js 22+ required (found $NODE_VERSION)."
+    echo "Install Node.js 22+ or Bun (https://bun.sh)."
+    exit 1
+  fi
+
   RT=node
-  echo "Using Node.js $(node --version)"
+  echo "Using Node.js $NODE_VERSION"
 else
-  echo "Error: Install Bun (https://bun.sh) or Node.js 20+"
+  echo "Error: Install Bun (https://bun.sh) or Node.js 22+"
   exit 1
 fi
 

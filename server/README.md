@@ -34,9 +34,23 @@ node dist/src/cli.js config set tls '{"mode":"tailscale"}'
 
 Create a workspace in the app and start a session.
 
+If you prefer a one-command install from outside the repo, use:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/duh17/oppi/main/install.sh | bash
+```
+
+Repo-root equivalent:
+
+```bash
+git clone https://github.com/duh17/oppi.git
+cd oppi
+bash install.sh
+```
+
 ## Requirements
 
-- Node.js 20+
+- Node.js 22+
 - [pi](https://github.com/badlogic/pi-mono) CLI installed (`pi auth` for LLM auth)
 - macOS or Linux
 
