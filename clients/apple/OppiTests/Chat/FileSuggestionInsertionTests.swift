@@ -240,6 +240,99 @@ struct FileSuggestionInsertionTests {
                 "Match positions should be populated for highlighting")
     }
 
+    @Test func fetchRanksServerTsHighestForServerTsQuery() async {
+        let (conn, _) = makeTestConnection()
+        conn.fileIndexStore.setPathsForTesting([
+            "server/src/server.ts",
+            "server/src/event-ring.ts",
+            "server/src/rules.ts",
+            "server/src/id.ts",
+            "server/src/qr.ts",
+            "server/src/cli.ts",
+            "server/src/tls.ts",
+        ])
+
+        conn.fetchFileSuggestions(query: "server.ts")
+        try? await Task.sleep(for: .milliseconds(100))
+
+        #expect(!conn.chatState.fileSuggestions.isEmpty)
+        #expect(conn.chatState.fileSuggestions[0].path == "server/src/server.ts")
+    }
+
+    @Test func fetchPrefersFilenamePrefixOverDockerCompose() async {
+        let (conn, _) = makeTestConnection()
+        conn.fileIndexStore.setPathsForTesting([
+            "server/docker-compose.yml",
+            "clients/apple/Oppi/Features/Chat/Composer/ComposerAutocomplete.swift",
+        ])
+
+        conn.fetchFileSuggestions(query: "compose")
+        try? await Task.sleep(for: .milliseconds(100))
+
+        #expect(!conn.chatState.fileSuggestions.isEmpty)
+        #expect(conn.chatState.fileSuggestions[0].path ==
+                "clients/apple/Oppi/Features/Chat/Composer/ComposerAutocomplete.swift")
+    }
+
+    @Test func fetchDemotesMediaForCodeLikeQuery() async {
+        let (conn, _) = makeTestConnection()
+        conn.fileIndexStore.setPathsForTesting([
+            "docs/images/app-icon.png",
+            "server/tests/api-routes.test.ts",
+            "clients/apple/Oppi/Core/Networking/APIClient.swift",
+        ])
+
+        conn.fetchFileSuggestions(query: "api")
+        try? await Task.sleep(for: .milliseconds(100))
+
+        #expect(!conn.chatState.fileSuggestions.isEmpty)
+        #expect(!conn.chatState.fileSuggestions[0].path.hasSuffix(".png"))
+    }
+
+    @Test func fetchPrefersImplementationOverTestsWhenQueryIsNotTest() async {
+        let (conn, _) = makeTestConnection()
+        conn.fileIndexStore.setPathsForTesting([
+            "clients/apple/OppiTests/Network/ServerConnectionTests.swift",
+            "clients/apple/Oppi/Core/Networking/ServerConnection.swift",
+        ])
+
+        conn.fetchFileSuggestions(query: "serverconnection")
+        try? await Task.sleep(for: .milliseconds(100))
+
+        #expect(!conn.chatState.fileSuggestions.isEmpty)
+        #expect(conn.chatState.fileSuggestions[0].path ==
+                "clients/apple/Oppi/Core/Networking/ServerConnection.swift")
+    }
+
+    @Test func fetchPrefersExactBasenameOverTestVariant() async {
+        let (conn, _) = makeTestConnection()
+        conn.fileIndexStore.setPathsForTesting([
+            "server/src/routes/workspace-files.ts",
+            "server/src/routes/workspace-files.test.ts",
+        ])
+
+        conn.fetchFileSuggestions(query: "workspace-files")
+        try? await Task.sleep(for: .milliseconds(100))
+
+        #expect(!conn.chatState.fileSuggestions.isEmpty)
+        #expect(conn.chatState.fileSuggestions[0].path == "server/src/routes/workspace-files.ts")
+    }
+
+    @Test func fetchFallsBackToFuzzyWhenNoLiteralMatchExists() async {
+        let (conn, _) = makeTestConnection()
+        conn.fileIndexStore.setPathsForTesting([
+            "server/src/routes/workspace-files.ts",
+            "server/src/routes/workspace-files.test.ts",
+            "clients/apple/Oppi/Core/Models/FuzzyMatch.swift",
+        ])
+
+        conn.fetchFileSuggestions(query: "wft")
+        try? await Task.sleep(for: .milliseconds(100))
+
+        #expect(!conn.chatState.fileSuggestions.isEmpty)
+        #expect(conn.chatState.fileSuggestions[0].path.contains("workspace-files"))
+    }
+
     @Test func fetchEmptyQueryReturnsFilesByLength() {
         let (conn, _) = makeTestConnection()
         conn.fileIndexStore.setPathsForTesting([
