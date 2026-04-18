@@ -27,6 +27,28 @@ All commands run from `server/`.
 
 6. If the server has no workspaces, Oppi opens **Create Workspace**.
 
+If your phone is not on the same LAN (for example Tailscale or VPS), generate an invite with an explicit host:
+
+```bash
+cd server
+node dist/src/cli.js pair --host <hostname-or-ip>
+```
+
+Notes:
+
+- `--host` must be host/IP only (no `https://`, no `:port`).
+- Invite port comes from server config:
+
+  ```bash
+  node dist/src/cli.js config get port
+  ```
+
+- If clients must connect on a different port, set it first, restart `serve`, then generate a fresh invite:
+
+  ```bash
+  node dist/src/cli.js config set port <public-port>
+  ```
+
 ## Additional devices
 
 1. Generate a new invite:
@@ -41,7 +63,7 @@ All commands run from `server/`.
 ## Invite rules
 
 - Invite is single-use.
-- Invite expires after 5 minutes.
+- Invite expires after 90 seconds by default.
 - Invite includes server identity and transport details.
 
 ## Troubleshooting
@@ -55,20 +77,28 @@ All commands run from `server/`.
    node dist/src/cli.js pair
    ```
 
-2. Retry pairing.
+2. Retry pairing immediately.
 
 ### Could not reach server
 
-1. Confirm phone-to-server connectivity (LAN or Tailscale).
+1. Confirm phone-to-server connectivity (LAN, Tailscale, or public DNS).
 
-2. Regenerate invite with explicit host:
+2. Check server health and config:
+
+   ```bash
+   cd server
+   node dist/src/cli.js status
+   node dist/src/cli.js doctor
+   ```
+
+3. Regenerate invite with explicit host:
 
    ```bash
    cd server
    node dist/src/cli.js pair --host <hostname-or-ip>
    ```
 
-3. Retry pairing.
+4. Retry pairing.
 
 ### Secure connection failed
 

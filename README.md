@@ -37,16 +37,45 @@ The server embeds the [pi SDK](https://github.com/badlogic/pi-mono) directly —
 
 Requires Node.js 22+ and [pi](https://github.com/badlogic/pi-mono) with at least one provider authenticated (`pi auth`).
 
+One-line bootstrap (choose one):
+
 ```bash
-git clone https://github.com/duh17/oppi.git
-cd oppi/server
-bash setup.sh              # install deps, build, start foreground
-bash setup.sh --install    # same, but install as macOS background service
+# Start in foreground (recommended for first run)
+curl -fsSL https://raw.githubusercontent.com/duh17/oppi/main/install.sh | bash
+
+# Install as a background service on macOS (launchd)
+curl -fsSL https://raw.githubusercontent.com/duh17/oppi/main/install.sh | bash -s -- --install
 ```
 
-`setup.sh` installs dependencies, builds, and either starts the server or installs a LaunchAgent. On first run, the server shows a pairing QR code — scan it in the Oppi iOS app.
+Local clone flow (equivalent, choose one):
 
-Your phone and server need to be on the same local network, or reachable via Tailscale:
+```bash
+git clone https://github.com/duh17/oppi.git
+cd oppi
+
+# Foreground first run
+bash install.sh
+
+# Background service on macOS
+bash install.sh --install
+```
+
+`install.sh` installs dependencies, builds, and either starts the server or installs a LaunchAgent. On first run, the server prints a pairing QR code and invite link.
+
+Your phone and server must be reachable over LAN, Tailscale, or a public hostname. For remote pairing (Tailscale or VPS), generate invites with an explicit host:
+
+```bash
+cd server
+node dist/src/cli.js pair --host <hostname-or-ip>
+```
+
+Notes:
+
+- `--host` expects host/IP only (no `https://`, no `:port`).
+- Invite is single-use and short-lived (90 seconds by default). If pairing fails, generate a fresh invite.
+- Invite port comes from server config (`node dist/src/cli.js config get port`).
+
+If you want first-run QR output from `serve` to already use your Tailscale host, start with:
 
 ```bash
 node dist/src/cli.js serve --host <your-host>.ts.net
@@ -54,7 +83,7 @@ node dist/src/cli.js serve --host <your-host>.ts.net
 
 ### Background service (macOS)
 
-If you used `bash setup.sh --install`, the server runs as a LaunchAgent that starts on login and restarts on crash. Manage it with:
+If you used `bash install.sh --install`, the server runs as a LaunchAgent that starts on login and restarts on crash. Manage it with:
 
 ```bash
 node dist/src/cli.js server status     # check if running
